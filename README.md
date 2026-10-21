@@ -1,4 +1,8 @@
-# QuadExplorer
+<img src="src/QuadExplorer/Assets/app.png" width="88" alt="Folder Splitter icon">
+
+# Folder Splitter
+
+**한국어** · [English](README.en.md) · [简体中文](README.zh-CN.md)
 
 한 창에서 최대 **4개 폴더를 동시에 보고, 각 영역에서 독립적인 탭을 사용하는 Windows 파일 관리자**입니다.
 
@@ -6,7 +10,9 @@ Windows 기본 파일 목록(Shell `IExplorerBrowser`)을 사용합니다. 기�
 
 ## 실행
 
-Windows 11 x64용입니다. 릴리스의 `QuadExplorer-win-x64.zip`을 풀고 `QuadExplorer.exe`를 실행합니다. 배포 실행 파일에는 .NET 런타임이 포함되므로 별도 런타임 설치가 필요 없습니다.
+[최신 Windows 실행 파일 다운로드](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
+
+Windows 11 x64용입니다. 릴리스의 `folder-splitter-win-x64.zip`을 풀고 `FolderSplitter.exe`를 실행합니다. 배포 실행 파일에는 .NET 런타임이 포함되므로 별도 런타임 설치가 필요 없습니다.
 
 초기 버전은 코드 서명되지 않았습니다. Windows가 다운로드한 앱의 게시자를 확인할 수 없다는 안내를 표시할 수 있습니다.
 
@@ -57,6 +63,7 @@ Windows 11 x64용입니다. 릴리스의 `QuadExplorer-win-x64.zip`을 풀고 `Q
 ## 데이터와 호환성
 
 - 설정 위치: `%LOCALAPPDATA%\QuadExplorer\session.json`
+- 이전 QuadExplorer 버전의 탭과 즐겨찾기를 유지하기 위해 설정 경로는 그대로 사용합니다.
 - 같은 설정 파일을 사용하는 앱은 한 번에 하나만 실행합니다.
 - 최대 영역당 32개 탭, 즐겨찾기 100개입니다.
 - 연결이 끊긴 드라이브나 사라진 폴더는 오류를 표시하고 주소창으로 다른 폴더를 선택할 수 있습니다.
@@ -67,7 +74,7 @@ Windows 11 x64용입니다. 릴리스의 `QuadExplorer-win-x64.zip`을 풀고 `Q
 별도 작업 세션이나 테스트용으로 설정 경로를 지정할 수 있습니다.
 
 ```powershell
-.\QuadExplorer.exe --session C:\Work\quad-session.json C:\Projects D:\Research
+.\FolderSplitter.exe --session C:\Work\folder-session.json C:\Projects D:\Research
 ```
 
 추가 폴더 인수는 활성 영역의 새 탭으로 열립니다.
@@ -87,8 +94,8 @@ UI 통합 테스트는 로그인된 대화형 Windows 데스크톱에서 실행�
 출력:
 
 ```text
-artifacts/win-x64/QuadExplorer.exe
-artifacts/QuadExplorer-win-x64.zip
+artifacts/FolderSplitter/FolderSplitter.exe
+artifacts/folder-splitter-win-x64.zip
 ```
 
 ## 구성
@@ -101,9 +108,16 @@ src/QuadExplorer/
   ShellInterop.cs       Windows SDK COM/PInvoke 선언
   SessionState.cs       설정 검증과 원자적 저장
   Theme.cs              밝은 테마와 공통 컨트롤
+  Assets/               앱 아이콘 원본 PNG와 다중 해상도 ICO
 tests/
   QuadExplorer.Tests/   설정 모델 회귀 테스트
   QuadExplorer.UiTests/ 실제 Shell 보기 통합 테스트
 ```
 
 앱 코드에는 외부 NuGet 패키지 의존성이 없습니다. Windows Shell과 .NET Windows Forms를 사용합니다.
+
+아이콘 원본을 교체할 때는 아래 명령으로 Windows용 ICO를 다시 생성합니다.
+
+```powershell
+.\tools\Build-Icon.ps1 -SourcePng .\src\QuadExplorer\Assets\app.png
+```

@@ -5,6 +5,7 @@ namespace QuadExplorer;
 public sealed class MainForm : Form, IMessageFilter
 {
     private readonly string sessionPath;
+    private readonly Icon appIcon;
     private readonly SessionState initialState;
     private readonly ExplorerPane[] panes;
     private readonly SplitContainer columns;
@@ -31,7 +32,7 @@ public sealed class MainForm : Form, IMessageFilter
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
         favorites = [.. initialState.Favorites];
-        Text = "QuadExplorer";
+        Text = "Folder Splitter";
         BackColor = Theme.Canvas;
         ForeColor = Theme.Text;
         MinimumSize = new Size(900, 600);
@@ -39,7 +40,10 @@ public sealed class MainForm : Form, IMessageFilter
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 9.5f);
-        Icon = SystemIcons.Application;
+        using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("QuadExplorer.AppIcon")!)
+        using (var sourceIcon = new Icon(iconStream))
+            appIcon = (Icon)sourceIcon.Clone();
+        Icon = appIcon;
 
         panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i])).ToArray();
         foreach (var pane in panes)
@@ -144,7 +148,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         toolbar.Height = 48;
         toolbar.Padding = new Padding(10, 7, 10, 7);
-        var brand = new ToolStripLabel("QuadExplorer") { Font = new Font(Font, FontStyle.Bold), Margin = new Padding(5, 0, 18, 0) };
+        var brand = new ToolStripLabel("Folder Splitter") { Font = new Font(Font, FontStyle.Bold), Margin = new Padding(5, 0, 18, 0) };
         toolbar.Items.Add(brand);
         var sidebarButton = new ToolStripButton("Sidebar") { CheckOnClick = true, Checked = initialState.ShowSidebar, ToolTipText = "Show or hide quick access" };
         sidebarButton.Click += (_, _) => { sidebar.Visible = sidebarButton.Checked; ScheduleSave(); };
@@ -350,7 +354,7 @@ public sealed class MainForm : Form, IMessageFilter
         if (saveError is not null && e.CloseReason == CloseReason.UserClosing)
         {
             e.Cancel = MessageBox.Show(this, "Your session could not be saved:\n\n" + saveError + "\n\nClose anyway?",
-                "QuadExplorer", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes;
+                "Folder Splitter", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes;
         }
         base.OnFormClosing(e);
     }
@@ -364,6 +368,7 @@ public sealed class MainForm : Form, IMessageFilter
             places.ContextMenuStrip?.Dispose();
         }
         base.Dispose(disposing);
+        if (disposing) appIcon.Dispose();
     }
 
     private void ShowHelp()
@@ -374,6 +379,6 @@ public sealed class MainForm : Form, IMessageFilter
             "NAVIGATION\nCtrl+L / Alt+D   Address bar\nAlt+Left / Right / Up   Back, forward, parent\nF5   Refresh\nCtrl+D   Pin current folder\n\n" +
             "FILES\nUse Windows context menus and drag files between panes.\nCtrl+C / Ctrl+X / Ctrl+V   Copy, cut, paste\nF2   Rename    |    Delete   Recycle\nCtrl+Shift+N   New folder\n\n" +
             "Tabs, favorites and layout are saved locally.\nPane options include view modes and Open in File Explorer.",
-            "QuadExplorer shortcuts", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            "Folder Splitter shortcuts", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 }

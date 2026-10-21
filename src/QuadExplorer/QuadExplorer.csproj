@@ -8,9 +8,15 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationDefaultFont>Segoe UI, 9.5pt</ApplicationDefaultFont>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.0</Version>
-    <Product>QuadExplorer</Product>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
+    <AssemblyName>FolderSplitter</AssemblyName>
+    <RootNamespace>QuadExplorer</RootNamespace>
+    <Version>0.2.0</Version>
+    <Product>Folder Splitter</Product>
     <Description>A native Windows file manager with independent tabbed panes.</Description>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/app.ico" LogicalName="QuadExplorer.AppIcon" />
+  </ItemGroup>
 </Project>

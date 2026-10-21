@@ -20,7 +20,7 @@ internal static class Program
             else
             {
                 MessageBox.Show($"Not a folder or recognized argument:\n{args[i]}",
-                    "QuadExplorer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
         }
@@ -29,8 +29,8 @@ internal static class Program
         using var mutex = new Mutex(true, @"Local\QuadExplorer-" + key, out bool firstInstance);
         if (!firstInstance)
         {
-            MessageBox.Show("QuadExplorer is already running. Use its taskbar button to switch to it.",
-                "QuadExplorer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Folder Splitter is already running. Use its taskbar button to switch to it.",
+                "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         Application.Run(new MainForm(sessionPath, folders));

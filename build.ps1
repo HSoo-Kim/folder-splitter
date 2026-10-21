@@ -28,7 +28,8 @@ if ($UiTests) {
 if ($Publish) {
     Run-Dotnet publish "$root/src/QuadExplorer/QuadExplorer.csproj" -c Release -r win-x64 `
         --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-        -p:DebugType=None -p:DebugSymbols=false -o "$root/artifacts/win-x64"
-    Compress-Archive -Path "$root/artifacts/win-x64/QuadExplorer.exe", "$root/README.md" `
-        -DestinationPath "$root/artifacts/QuadExplorer-win-x64.zip" -Force
+        -p:DebugType=None -p:DebugSymbols=false -o "$root/artifacts/FolderSplitter"
+    Compress-Archive -Path "$root/artifacts/FolderSplitter/FolderSplitter.exe", "$root/README.md", `
+        "$root/README.en.md", "$root/README.zh-CN.md" `
+        -DestinationPath "$root/artifacts/folder-splitter-win-x64.zip" -Force
 }
