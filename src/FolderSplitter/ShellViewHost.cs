@@ -14,6 +14,11 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private Func<string>? errorMessage;
     private string requestedLocation;
     private string? pendingSelection;
+    private object? enumerationSource;
+    private readonly Action enumerationDone;
+    private bool enumerationReady;
+    private bool navigationReady;
+    private static readonly Guid FolderViewEvents = new("62112AA2-EBE4-11CF-A5FB-0020AFE7292D");
 
     public string LocationPath { get; private set; }
     public string DisplayName { get; private set; }
@@ -24,6 +29,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public ShellViewHost(string location, UiText? text = null)
     {
+        enumerationDone = OnEnumerationDone;
         this.text = text ?? new UiText();
         LocationPath = requestedLocation = location;
         DisplayName = TitleFor(location, this.text);
@@ -163,6 +169,12 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     private void ReleaseView()
     {
+        if (enumerationSource is not null)
+        {
+            ComEventsHelper.Remove(enumerationSource, FolderViewEvents, 201, enumerationDone);
+            Marshal.ReleaseComObject(enumerationSource);
+            enumerationSource = null;
+        }
         if (view is null) return;
         Marshal.ReleaseComObject(view);
         view = null;
@@ -191,6 +203,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public int OnNavigationPending(nint pidlFolder)
     {
+        navigationReady = false;
         HasNavigated = false;
         error.Visible = false;
         return 0;
@@ -200,6 +213,15 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     {
         ReleaseView();
         view = shellView;
+        enumerationReady = !Directory.Exists(requestedLocation);
+        if (!enumerationReady)
+        {
+            Guid dispatch = new("00020400-0000-0000-C000-000000000046");
+            Marshal.ThrowExceptionForHR(view.GetItemObject(0, ref dispatch, out nint pointer));
+            try { enumerationSource = Marshal.GetObjectForIUnknown(pointer); }
+            finally { Marshal.Release(pointer); }
+            ComEventsHelper.Combine(enumerationSource, FolderViewEvents, 201, enumerationDone);
+        }
         return 0;
     }
 
@@ -208,8 +230,22 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         LocationPath = ShellNative.Name(pidlFolder, 0x80028000) ?? requestedLocation; // Desktop absolute parsing.
         DisplayName = ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath, text);
         requestedLocation = LocationPath;
-        HasNavigated = true;
+        navigationReady = true;
         error.Visible = false;
+        if (pendingSelection is not null && !enumerationReady) return 0;
+        CompleteNavigation();
+        return 0;
+    }
+
+    private void OnEnumerationDone()
+    {
+        enumerationReady = true;
+        if (pendingSelection is not null && navigationReady) CompleteNavigation();
+    }
+
+    private void CompleteNavigation()
+    {
+        HasNavigated = true;
         string? selected = pendingSelection;
         pendingSelection = null;
         if (selected is not null && string.Equals(Path.GetDirectoryName(selected), LocationPath,
@@ -228,11 +264,11 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             finally { if (item != 0) Marshal.FreeCoTaskMem(item); }
         }
         Navigated?.Invoke(this, EventArgs.Empty);
-        return 0;
     }
 
     public int OnNavigationFailed(nint pidlFolder)
     {
+        navigationReady = false;
         pendingSelection = null;
         ReportError(() => text.T("Folder unavailable: {0}", requestedLocation));
         return 0;

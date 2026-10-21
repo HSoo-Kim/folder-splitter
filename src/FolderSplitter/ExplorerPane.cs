@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using QuadExplorer.Search;
 
 namespace QuadExplorer;
 
@@ -26,12 +27,23 @@ public sealed class ExplorerPane : UserControl
     private readonly ContextMenuStrip tabMenu = new();
     private readonly Image folderIcon = Theme.FolderIcon();
     private int selectedIndex = -1;
+    private readonly IPathSearchBackend? search;
+    private readonly Func<IReadOnlyList<string>>? searchRoots;
+    private readonly AddressCandidates candidates;
+    private readonly System.Windows.Forms.Timer searchTimer = new() { Interval = 50 };
+    private CancellationTokenSource? searchCancellation;
+    private int searchGeneration;
+    internal event EventHandler? CandidatesUpdated;
+    internal event EventHandler? SearchSettled;
+    internal IReadOnlyList<SearchHit> SearchCandidates => candidates.Hits;
+    internal bool CandidatesVisible => candidates.Visible;
 
     public int PaneNumber { get; }
     public int SelectedIndex => selectedIndex;
     public int TabCount => tabs.Count;
     public ShellViewHost? ActiveView => selectedIndex >= 0 ? tabs[selectedIndex].Host : null;
     public string CurrentPath => ActiveView?.LocationPath ?? "";
+    internal IEnumerable<string> RecentPaths => closedTabs.Take(4);
     public event EventHandler? Activated;
     public event EventHandler? StateChanged;
     public event EventHandler<string>? FavoriteRequested;
@@ -40,9 +52,16 @@ public sealed class ExplorerPane : UserControl
     internal event Action<ExplorerPane, ShellViewHost, SplitEdge>? SplitTabRequested;
     internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
 
-    public ExplorerPane(int number, PaneState state, UiText? text = null)
+    public ExplorerPane(int number, PaneState state, UiText? text = null,
+        IPathSearchBackend? search = null, Func<IReadOnlyList<string>>? searchRoots = null)
     {
         this.text = text ?? new UiText();
+        this.search = search;
+        this.searchRoots = searchRoots;
+        candidates = new AddressCandidates(number);
+        candidates.Chosen += OpenCandidate;
+        searchTimer.Tick += async (_, _) => { searchTimer.Stop(); await QueryCandidates(); };
+        if (search is not null) search.IndexChanged += SearchIndexChanged;
         PaneNumber = number;
         Dock = DockStyle.Fill;
         BackColor = Theme.Border;
@@ -73,11 +92,28 @@ public sealed class ExplorerPane : UserControl
         };
         address.KeyDown += (_, e) =>
         {
-            if (e.KeyCode == Keys.Enter) { Navigate(address.Text); e.SuppressKeyPress = true; }
-            else if (e.KeyCode == Keys.Escape) { address.Text = CurrentPath; FocusFiles(); e.SuppressKeyPress = true; }
+            if (candidates.Visible && e.KeyCode is Keys.Down or Keys.Up)
+            {
+                candidates.MoveSelection(e.KeyCode == Keys.Down ? 1 : -1);
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Enter)
+            {
+                if (candidates.Visible && candidates.SelectedHit is { } hit) OpenCandidate(hit);
+                else { CloseCandidates(); Navigate(address.Text); }
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                if (candidates.Visible) CloseCandidates();
+                else { address.Text = CurrentPath; FocusFiles(); }
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Tab) CloseCandidates();
         };
         navigation.Controls.Add(address, 3, 0);
-        BindTip(address, "Enter a folder path; Enter to navigate, Ctrl+L to select address");
+        languageBindings.Add(RefreshAddressTip);
+        RefreshAddressTip();
         var go = Theme.Button("\uE8AD", $"Pane {number} go to address", () => Navigate(address.Text));
         go.Font = new Font("Segoe Fluent Icons", 10);
         go.AutoSize = true;
@@ -118,7 +154,121 @@ public sealed class ExplorerPane : UserControl
         foreach (string path in state.Tabs) AddTab(path, select: false);
         if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
         else ShowEmptyState();
+        address.TextChanged += (_, _) => ScheduleSearch();
+        address.GotFocus += (_, _) => ScheduleSearch();
+        address.LostFocus += (_, _) =>
+        {
+            if (IsDisposed || Disposing || !IsHandleCreated) return;
+            BeginInvoke(() =>
+            {
+                if (!IsDisposed && !address.Focused && !candidates.Bounds.Contains(Cursor.Position))
+                    CloseCandidates();
+            });
+        };
+        SizeChanged += (_, _) => CloseCandidates();
+        VisibleChanged += (_, _) => { if (!Visible) CloseCandidates(); };
         RefreshLanguage();
+    }
+
+    private void ScheduleSearch()
+    {
+        CloseCandidates();
+        bool rooted = SearchQuery.IsRootedInput(address.Text);
+        bool enabled = search is { IsAvailable: true };
+        RefreshAddressTip();
+        var completion = !enabled || rooted ? AutoCompleteMode.SuggestAppend : AutoCompleteMode.None;
+        if (address.AutoCompleteMode != completion && IsHandleCreated)
+            BeginInvoke(() =>
+            {
+                if (IsDisposed || address.IsDisposed) return;
+                var current = search is not { IsAvailable: true } || SearchQuery.IsRootedInput(address.Text)
+                    ? AutoCompleteMode.SuggestAppend : AutoCompleteMode.None;
+                if (address.AutoCompleteMode != current) address.AutoCompleteMode = current;
+            });
+        if (!address.Focused || search is not { IsAvailable: true } || rooted || address.Text.Trim().Length < 2) return;
+        if (!search.IsReady)
+        {
+            candidates.Present(address, [], text.T("Building search index..."));
+            CandidatesUpdated?.Invoke(this, EventArgs.Empty);
+        }
+        searchTimer.Start();
+    }
+
+    private async Task QueryCandidates()
+    {
+        if (!address.Focused || search is not { IsAvailable: true }) return;
+        int generation = searchGeneration;
+        string input = address.Text;
+        var source = new CancellationTokenSource();
+        searchCancellation = source;
+        try
+        {
+            if (!search.IsReady) { candidates.Present(address, [], text.T("Building search index...")); return; }
+            var roots = searchRoots?.Invoke() ?? new[] { CurrentPath };
+            var hits = await Task.Run(() => search.QueryAsync(input, roots, 50, source.Token), source.Token);
+            if (source.IsCancellationRequested || IsDisposed || generation != searchGeneration ||
+                address.Text != input || !address.Focused) return;
+            candidates.Present(address, hits);
+            CandidatesUpdated?.Invoke(this, EventArgs.Empty);
+        }
+        catch (OperationCanceledException) when (source.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or TimeoutException or Win32Exception)
+        {
+            if (!IsDisposed && generation == searchGeneration)
+            {
+                candidates.Hide();
+                SetLocalizedStatus("Search failed: {0}", ex.Message);
+                CandidatesUpdated?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(searchCancellation, source)) searchCancellation = null;
+            source.Dispose();
+            if (!IsDisposed) SearchSettled?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void SearchIndexChanged(object? sender, EventArgs e)
+    {
+        if (IsDisposed || Disposing || !IsHandleCreated) return;
+        try
+        {
+            BeginInvoke(() =>
+            {
+                if (IsDisposed) return;
+                if (search is not { IsAvailable: true }) { CloseCandidates(); return; }
+                // Whole-volume changes must not remove a row while the user is choosing it.
+                // A text edit refreshes results; opening still checks target existence.
+                if (candidates.Visible && candidates.Hits.Count > 0) return;
+                if (searchCancellation is null) ScheduleSearch();
+            });
+        }
+        catch (InvalidOperationException) when (IsDisposed || !IsHandleCreated) { }
+    }
+
+    private void CloseCandidates()
+    {
+        searchGeneration++;
+        searchTimer.Stop();
+        searchCancellation?.Cancel();
+        candidates.Hide();
+    }
+
+    private void OpenCandidate(SearchHit hit)
+    {
+        CloseCandidates();
+        if (hit.IsDirectory)
+        {
+            if (Directory.Exists(hit.FullPath)) Navigate(hit.FullPath);
+            else SetLocalizedStatus("No longer available: {0}", hit.FullPath);
+        }
+        else if (File.Exists(hit.FullPath))
+        {
+            if (ActiveView is { } view) view.NavigateAndSelect(hit.FullPath);
+            else AddTab(hit.FullPath);
+        }
+        else SetLocalizedStatus("No longer available: {0}", hit.FullPath);
     }
 
     private void AddButton(TableLayoutPanel row, int column, string glyph, string name, Action action)
@@ -146,8 +296,13 @@ public sealed class ExplorerPane : UserControl
 
     internal string ToolTipFor(Control control) => tips.GetToolTip(control) ?? "";
 
+    private void RefreshAddressTip() => tips.SetToolTip(address, text.T(search is { IsAvailable: true }
+        ? "Enter a folder path, or type part of a file/folder name to search; Ctrl+L to select address"
+        : "Enter a folder path; Enter to navigate, Ctrl+L to select address"));
+
     internal void RefreshLanguage()
     {
+        if (candidates.Visible) ScheduleSearch();
         foreach (var refresh in languageBindings) refresh();
         emptyHint.Text = text.T("Enter a folder path above or choose a folder from Pane options.");
         foreach (var tab in tabs)
@@ -164,7 +319,9 @@ public sealed class ExplorerPane : UserControl
         if (tabs.Count >= 32) { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return; }
         if (string.IsNullOrWhiteSpace(path))
             path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var host = new ShellViewHost(path, text) { Visible = false };
+        string? selectFile = File.Exists(path) ? Path.GetFullPath(path) : null;
+        var host = new ShellViewHost(selectFile is null ? path : Path.GetDirectoryName(selectFile)!, text) { Visible = false };
+        if (selectFile is not null) host.NavigateAndSelect(selectFile);
         var button = new FolderTabButton
         {
             Text = ShortTitle(host.DisplayName), Image = folderIcon, AutoSize = false,
@@ -201,6 +358,7 @@ public sealed class ExplorerPane : UserControl
 
     public void SelectTab(int index, bool focus = true)
     {
+        CloseCandidates();
         if (index < 0 || index >= tabs.Count) return;
         if (selectedIndex >= 0 && selectedIndex < tabs.Count) tabs[selectedIndex].Host.Visible = false;
         selectedIndex = index;
@@ -353,7 +511,16 @@ public sealed class ExplorerPane : UserControl
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { tips.Dispose(); tabMenu.Dispose(); folderIcon.Dispose(); }
+        if (disposing)
+        {
+            CloseCandidates();
+            if (search is not null) search.IndexChanged -= SearchIndexChanged;
+            searchTimer.Dispose();
+            candidates.Dispose();
+            tips.Dispose();
+            tabMenu.Dispose();
+            folderIcon.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

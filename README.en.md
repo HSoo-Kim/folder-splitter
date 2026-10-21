@@ -31,6 +31,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Drag tabs to split**: Drop a tab near a file-list edge to split, or in the center to move it into that pane. Up to four panes are supported. The tab context menu also offers `Split tab`.
 - **Independent tabs per pane**: New tab, duplicate tab, reopen closed tab, move a tab to another pane.
 - **Separate navigation**: Address input, path autocomplete, back/forward/up to parent folder.
+- **Partial-path candidates**: Type at least two characters, such as `공유용/월별연구계획_20261019`, in an address bar. Current folder, open tabs, favorites and recently closed tabs rank first. Choose with Up/Down and Enter or click; choosing a file opens its parent with that file selected. The independent index needs no Everything installation.
 - **Resizable splits**: Drag the dividers, or use `Equal size` to even out the layout.
 - **Quick access and favorites**: User folder, Desktop, Downloads, Documents, This PC, Recycle Bin. You can pin any folder you like.
 - **Native Windows file operations**: Right-click menu in the file list, copy/cut/paste, rename, delete, and drag and drop between panes.
@@ -85,7 +86,9 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 - For a disconnected drive or a folder that no longer exists, the app shows an error and you can pick another folder from the address bar.
 - Deleting, overwriting, and conflict handling are delegated to the Windows Shell. The app itself never recursively deletes user files.
 - OneDrive/Dropbox status indicators, third-party Shell extensions, and network shares depend on the provider's installation state and permissions.
-- The current version uses a light theme. Full search indexing, replacing the default File Explorer, and importing existing File Explorer tabs aren't included.
+- Ready local fixed drives are indexed in the background by file/folder name and path, not file contents. The first run shows index preparation; later runs use the saved snapshot while reconciling changes.
+- Cache: `%LOCALAPPDATA%\FolderSplitter\Search\paths.v1.index`. An explicit `--session` uses an adjacent `.search.index` file. Inaccessible paths and junction/symlink contents are excluded. Network and removable drives retain direct-path navigation.
+- The current version uses a light theme. Replacing File Explorer and importing its existing tabs aren't included. See the [benchmark and limitations](docs/search-evidence/benchmark.md).
 
 You can point to a different settings path for a separate work session or for testing.
 

@@ -1,4 +1,5 @@
 using QuadExplorer;
+using QuadExplorer.Search;
 using System.Runtime.InteropServices;
 
 internal static class Program
@@ -88,6 +89,7 @@ internal static class Program
             RunDockingScenario(session, folders);
             RunEmptyPaneScenario(session, folders);
             RunLanguageScenario(session, folders);
+            RunSearchScenario(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -454,6 +456,237 @@ internal static class Program
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+
+    private static void RunSearchScenario(string root)
+    {
+        string fixture = Path.Combine(root, "search");
+        string share = Directory.CreateDirectory(Path.Combine(fixture, "공유용")).FullName;
+        string folder = Directory.CreateDirectory(Path.Combine(share, "월별연구계획_20261019")).FullName;
+        string file = Path.Combine(share, "월별연구계획_20261019_v2.txt");
+        File.WriteAllText(file, "search fixture");
+        Directory.CreateDirectory(Path.Combine(fixture, "X공유용", "월별연구계획_20261019"));
+        Directory.CreateDirectory(Path.Combine(fixture, "공유용X", "월별연구계획_20261019"));
+        File.WriteAllText(Path.Combine(fixture, "distinct-second-query.txt"), "stale result fixture");
+        string session = Path.Combine(root, "search-session.json");
+        SessionStore.Save(session, new SessionState
+        {
+            Layout = 1, ExplorerFavoritesImported = true,
+            Panes = [new PaneState { Tabs = [fixture] }]
+        });
+        using var real = new IndependentSearchBackend(new[] { fixture }, Path.Combine(root, "search-index.fsix"));
+        using var backend = new DelayedSearchBackend(real);
+        using var form = new MainForm(session, [], backend);
+        var pane = form.GetPane(0);
+        var address = Descendants(pane).OfType<TextBox>().Single();
+        Task navigation = pane.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(pane.ActiveView);
+        form.Shown += async (_, _) =>
+        {
+            try
+            {
+                await navigation.WaitAsync(TimeSpan.FromSeconds(15));
+                const string query = "공유용/월별연구계획_20261019";
+                var loading = SearchSignal(pane);
+                address.Focus();
+                address.Text = query;
+                await loading.WaitAsync(TimeSpan.FromSeconds(10));
+                Check(pane.CandidatesVisible && pane.SearchCandidates.Count == 0 && !real.IsReady,
+                    "first index build shows a nonselectable loading row without blocking address");
+                CaptureLanguage(form.OwnedForms.OfType<AddressCandidates>().Single(), "search-building-popup");
+                var initialResults = SearchSignal(pane, predicate: () => pane.SearchCandidates.Count > 0);
+                await real.BuildOrLoadAsync(CancellationToken.None);
+                await initialResults.WaitAsync(TimeSpan.FromSeconds(15));
+                Check(pane.CandidatesVisible && pane.SearchCandidates.Count == 3
+                    && pane.SearchCandidates[0].FullPath == folder
+                    && pane.SearchCandidates.All(h => !h.FullPath.Contains("공유용X")),
+                    "partial path candidates show matching anchors with exact ancestor first");
+                Check(address.AutoCompleteMode == AutoCompleteMode.None,
+                    "partial path candidates do not compete with native directory autocomplete");
+                CaptureLanguage(form, "search-candidates");
+                CaptureLanguage(form.OwnedForms.OfType<AddressCandidates>().Single(), "search-candidates-popup");
+                var original = pane.SearchCandidates.Select(h => h.FullPath).ToArray();
+                var stablePopup = form.OwnedForms.OfType<AddressCandidates>().Single();
+                var stableList = stablePopup.Controls.OfType<ListBox>().Single();
+                stableList.SelectedIndex = 1;
+                var unrelatedUpdated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                EventHandler? unrelatedChanged = null;
+                unrelatedChanged = (_, _) =>
+                {
+                    if (real.QueryAll(SearchQuery.Parse("unrelated-index-notification")).Count == 0) return;
+                    backend.IndexChanged -= unrelatedChanged;
+                    form.BeginInvoke(() =>
+                    {
+                        Check(pane.CandidatesVisible && stableList.SelectedIndex == 1 &&
+                            pane.SearchCandidates.Select(hit => hit.FullPath).SequenceEqual(original),
+                            "unrelated real index update preserves visible candidates and pointer selection");
+                        unrelatedUpdated.TrySetResult();
+                    });
+                };
+                backend.IndexChanged += unrelatedChanged;
+                try
+                {
+                    File.WriteAllText(Path.Combine(fixture, "unrelated-index-notification.txt"), "unrelated change");
+                    await unrelatedUpdated.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                }
+                finally { backend.IndexChanged -= unrelatedChanged; }
+                foreach (string variant in new[] { query.Replace('/', '\\'), query.Replace("/", "//"), "  " + query + "  " })
+                {
+                    await Search(pane, address, variant);
+                    Check(pane.SearchCandidates.Select(h => h.FullPath).SequenceEqual(original),
+                        "partial path slash and padding variant preserves candidate list");
+                }
+                await Navigate(pane.ActiveView!, () => PostMessage(address.Handle, 0x100, (nint)Keys.Enter, 0));
+                Check(pane.CurrentPath == folder, "Enter opens selected partial-path folder candidate");
+
+                await Search(pane, address, query);
+                var popup = form.OwnedForms.OfType<AddressCandidates>().Single();
+                var list = popup.Controls.OfType<ListBox>().Single();
+                int row = list.Items.Cast<SearchHit>().ToList().FindIndex(hit => hit.FullPath == file);
+                Check(row >= 0, "file candidate is present in native popup list");
+                int point = (list.ItemHeight * row + list.ItemHeight / 2) << 16 | 20;
+                await Navigate(pane.ActiveView!, () =>
+                {
+                    PostMessage(list.Handle, 0x201, 1, point);
+                    PostMessage(list.Handle, 0x202, 0, point);
+                });
+                Check(pane.CurrentPath == share && SelectedPaths(pane.ActiveView!).SequenceEqual(new[] { file }),
+                    "click file candidate opens parent and selects native file");
+                CaptureLanguage(form, "search-file-selected");
+
+                await Search(pane, address, "no-such-search-entry-97d31e");
+                Check(!pane.CandidatesVisible && pane.SearchCandidates.Count == 0, "zero matches closes candidate popup");
+                await Search(pane, address, query);
+                form.SetLanguage("ja");
+                Check(form.Language == "ja", "language switch with candidates open does not throw");
+                await Search(pane, address, query);
+                var recreated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                EventHandler handleCreated = (_, _) => recreated.TrySetResult();
+                address.HandleCreated += handleCreated;
+                try
+                {
+                    address.Text = fixture;
+                    await recreated.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                }
+                finally { address.HandleCreated -= handleCreated; }
+                Check(!pane.CandidatesVisible && address.AutoCompleteMode == AutoCompleteMode.SuggestAppend,
+                    "rooted paths keep native autocomplete without partial search");
+
+                backend.DelayNext();
+                address.Focus();
+                address.Text = query;
+                await backend.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                await Search(pane, address, "distinct-second-query");
+                var before = pane.SearchCandidates.Select(h => h.FullPath).ToArray();
+                var oldSettled = SearchSignal(pane, completed: true);
+                backend.Release();
+                await oldSettled.WaitAsync(TimeSpan.FromSeconds(10));
+                Check(pane.SearchCandidates.Select(h => h.FullPath).SequenceEqual(before)
+                    && before.Length == 1 && before[0].EndsWith("distinct-second-query.txt"),
+                    "late uncancellable old query cannot replace newer candidates");
+
+                await Search(pane, address, query);
+                pane.CloseTab();
+                Check(pane.TabCount == 0 && !pane.CandidatesVisible, "closing active tab dismisses candidates");
+                var changed = PaneChange(pane, () => pane.AddTab(file), () => pane.ActiveView?.HasNavigated == true);
+                await changed;
+                Check(pane.CurrentPath == share && SelectedPaths(pane.ActiveView!).SequenceEqual(new[] { file }),
+                    "file candidate in an empty pane selects file on first host creation");
+
+                await Search(pane, address, query);
+                list = form.OwnedForms.OfType<AddressCandidates>().Single().Controls.OfType<ListBox>().Single();
+                list.SelectedIndex = list.Items.Cast<SearchHit>().ToList().FindIndex(hit => hit.FullPath == file);
+                backend.HoldChanges = true; // Real index updates continue; simulate a delayed notification to this UI.
+                var status = Descendants(pane).OfType<Label>().Single(label => label.AccessibleName == "Pane 1 status");
+                var unavailable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                EventHandler statusChanged = (_, _) =>
+                {
+                    if (status.Text.Contains(file, StringComparison.Ordinal)) unavailable.TrySetResult();
+                };
+                status.TextChanged += statusChanged;
+                try
+                {
+                    File.Delete(file);
+                    PostMessage(address.Handle, 0x100, (nint)Keys.Enter, 0);
+                    await unavailable.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                    Check(!pane.CandidatesVisible && pane.CurrentPath == share && pane.ActiveView!.ErrorStatus is null,
+                        "deleted cached candidate reports unavailable without navigating or crashing");
+                }
+                finally { status.TextChanged -= statusChanged; backend.HoldChanges = false; }
+
+                backend.Disabled = true;
+                address.Text = query + " ";
+                Check(!pane.CandidatesVisible, "unavailable search backend exposes no candidate popup");
+                await Navigate(pane.ActiveView!, () => pane.Navigate(fixture));
+                Check(pane.CurrentPath == fixture && !pane.CandidatesVisible,
+                    "direct folder navigation remains usable without search backend");
+            }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+            finally { backend.Release(); form.Close(); }
+        };
+        Application.Run(form);
+    }
+
+    private static async Task Search(ExplorerPane pane, TextBox address, string value)
+    {
+        var signal = SearchSignal(pane);
+        address.Focus();
+        address.Text = value;
+        await signal.WaitAsync(TimeSpan.FromSeconds(15));
+    }
+
+    private static Task SearchSignal(ExplorerPane pane, bool completed = false, Func<bool>? predicate = null)
+    {
+        var source = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler? changed = null;
+        changed = (_, _) =>
+        {
+            if (predicate is not null && !predicate()) return;
+            if (completed) pane.SearchSettled -= changed;
+            else pane.CandidatesUpdated -= changed;
+            source.TrySetResult();
+        };
+        if (completed) pane.SearchSettled += changed;
+        else pane.CandidatesUpdated += changed;
+        return source.Task;
+    }
+
+    private sealed class DelayedSearchBackend : IPathSearchBackend
+    {
+        private readonly IPathSearchBackend inner;
+        private bool delayNext;
+        internal volatile bool HoldChanges;
+        internal volatile bool Disabled;
+        private TaskCompletionSource gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Started { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal DelayedSearchBackend(IPathSearchBackend inner)
+        {
+            this.inner = inner;
+            inner.IndexChanged += Forward;
+        }
+        private void Forward(object? sender, EventArgs e)
+        {
+            if (!HoldChanges) IndexChanged?.Invoke(this, e);
+        }
+        public bool IsAvailable => !Disabled && inner.IsAvailable;
+        public bool IsReady => inner.IsReady;
+        public event EventHandler? IndexChanged;
+        internal void DelayNext()
+        {
+            delayNext = true;
+            gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+        internal void Release() => gate.TrySetResult();
+        public async Task<IReadOnlyList<SearchHit>> QueryAsync(string text, IReadOnlyList<string> roots, int limit, CancellationToken ct)
+        {
+            if (!delayNext) return await inner.QueryAsync(text, roots, limit, ct);
+            delayNext = false;
+            var hits = await inner.QueryAsync(text, roots, limit, CancellationToken.None);
+            Started.TrySetResult();
+            await gate.Task;
+            return hits;
+        }
+        public void Dispose() { inner.IndexChanged -= Forward; Release(); }
+    }
 
     private static Task NavigationSignal(ShellViewHost host)
     {

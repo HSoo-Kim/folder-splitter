@@ -17,6 +17,13 @@ public sealed class UiText
 
     private static readonly Dictionary<string, (string Korean, string Chinese, string Japanese)> Strings = new()
     {
+        ["Building search index..."] = ("검색 색인 만드는 중...", "正在建立搜索索引...", "検索インデックスを作成中..."),
+        ["Enter a folder path, or type part of a file/folder name to search; Ctrl+L to select address"] =
+            ("폴더 경로로 이동하거나 파일·폴더 이름 일부로 검색 — 주소 선택 Ctrl+L",
+             "输入文件夹路径，或输入部分文件/文件夹名进行搜索；Ctrl+L 选中地址",
+             "フォルダーのパス、またはファイル・フォルダー名の一部で検索（Ctrl+L でアドレスを選択）"),
+        ["Search failed: {0}"] = ("검색 실패: {0}", "搜索失败：{0}", "検索に失敗しました: {0}"),
+        ["No longer available: {0}"] = ("더 이상 찾을 수 없습니다: {0}", "已不可用：{0}", "見つからなくなりました: {0}"),
         ["Sidebar"] = ("사이드바", "侧边栏", "サイドバー"),
         ["Show / hide quick access sidebar"] = ("빠른 접근 사이드바 표시 / 숨기기", "显示 / 隐藏快速访问侧边栏", "クイック アクセス サイドバーの表示 / 非表示"),
         ["QUICK ACCESS"] = ("빠른 접근", "快速访问", "クイックアクセス"),

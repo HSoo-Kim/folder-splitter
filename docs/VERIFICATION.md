@@ -1,4 +1,26 @@
-# Folder Splitter 0.5.2 검증 기록
+# Folder Splitter 0.6.0 검증 기록
+
+Windows 11 build 26100, .NET SDK 10.0.402에서 다음 명령이 종료 코드 0으로 완료됐습니다.
+
+```powershell
+.\build.ps1 -UiTests -Publish
+```
+
+- 엄격한 Release 빌드와 자체 런타임 포함 게시 성공.
+- 설정·분할 모델 31개, 자체 색인 158개 assertion, 네이티브 UI 145개 검사 통과.
+- 실제 Explorer 즐겨찾기 20개 읽기 및 정규화·중복 제거 검사 통과.
+- 실제 게시 앱에서 한글 부분 경로 후보와 전체 경로 표시, Enter 폴더 이동, 파일 후보 클릭 후 부모 폴더의 실제 파일 선택을 확인.
+- 초기 색인 준비, 슬래시·공백 변형, 결과 없음, 지연된 이전 응답, 삭제된 후보, 비활성 백엔드, 빈 영역 첫 파일 선택 검사 통과.
+- 실제 관련 없는 파일 생성 후에도 선택 중인 후보 목록과 선택 행이 유지되는 회귀 검사 통과. 수정 전 같은 검사는 실패했습니다.
+- 기존 네 언어·탭·분할·즐겨찾기·버전 푸터 검사를 유지.
+
+자체 엔진은 372만 공통 후보 비교에서 p95 62.13ms로 사전 기준을 통과했습니다. Everything IPC는 벤치마크 도구에만 있고 제품은 Everything 설치를 요구하지 않습니다. 실제 REA 분석과 성능·커버리지·실시간 비교 한계는 [측정 기록](search-evidence/benchmark.md), 수치는 [JSON](search-evidence/benchmark-results.json)에 있습니다. 실시간 전체 결과 비교 중 파일 변동으로 실패한 실행도 해당 기록에 명시했습니다.
+
+실제 화면 증거는 비공개 `qa-workspace/search-ui-evidence/`에 보관합니다. `published-candidates.png`, `published-folder-enter.png`, `published-file-selected.png`는 게시 실행 파일을 OS 자동화로 조작한 화면입니다. 파일 선택은 화면의 실제 선택 행과 네이티브 `CF_HDROP` 회귀 검사 양쪽으로 확인했습니다.
+
+아래는 이전 0.5.2 기준선의 검증 이력입니다.
+
+## 0.5.2 기준선
 
 검증 환경: Windows 11 x64, OS build 26100, .NET SDK 10.0.402.
 

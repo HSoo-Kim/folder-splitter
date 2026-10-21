@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using QuadExplorer.Search;
 
 namespace QuadExplorer;
 
@@ -6,6 +7,7 @@ public sealed class MainForm : Form, IMessageFilter
 {
     private readonly string sessionPath;
     private readonly UiText text;
+    private readonly IPathSearchBackend? search;
     private readonly List<Action> languageBindings = [];
     private readonly ToolStripComboBox languageSelector = new()
     {
@@ -52,8 +54,9 @@ public sealed class MainForm : Form, IMessageFilter
         public override string ToString() => Label;
     }
 
-    public MainForm(string sessionPath, IReadOnlyList<string> folders)
+    public MainForm(string sessionPath, IReadOnlyList<string> folders, IPathSearchBackend? search = null)
     {
+        this.search = search;
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
         text = new UiText(initialState.Language);
@@ -80,7 +83,8 @@ public sealed class MainForm : Form, IMessageFilter
             appIcon = (Icon)sourceIcon.Clone();
         Icon = appIcon;
 
-        panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i], text)).ToArray();
+        panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i], text,
+            search, SearchRoots)).ToArray();
         foreach (var pane in panes)
         {
             pane.Activated += (_, _) => ActivatePane(Array.IndexOf(panes, pane));
@@ -234,6 +238,10 @@ public sealed class MainForm : Form, IMessageFilter
     }
 
     private ExplorerPane Active => panes[activePane];
+    private IReadOnlyList<string> SearchRoots() => new[] { Active.CurrentPath }
+        .Concat(panes.SelectMany(p => p.CaptureState().Tabs)).Concat(favorites)
+        .Concat(panes.SelectMany(p => p.RecentPaths))
+        .Where(Path.IsPathRooted).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     internal PaneLayout CurrentLayout => layoutTree;
     internal ExplorerPane GetPane(int id) => panes[id];
     internal string Language => text.Language;
@@ -882,6 +890,7 @@ public sealed class MainForm : Form, IMessageFilter
         if (disposing)
         {
             foreach (var pane in panes) if (!pane.IsDisposed) pane.Dispose();
+            search?.Dispose();
             appIcon.Dispose();
         }
     }

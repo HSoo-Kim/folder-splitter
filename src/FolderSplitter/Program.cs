@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using QuadExplorer.Search;
 
 namespace QuadExplorer;
 
@@ -37,6 +38,13 @@ internal static class Program
                 "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        Application.Run(new MainForm(sessionPath, folders));
+        var roots = DriveInfo.GetDrives().Where(drive => drive.DriveType == DriveType.Fixed && drive.IsReady)
+            .Select(drive => drive.RootDirectory.FullName).ToArray();
+        string storePath = sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase)
+            ? IndependentSearchBackend.DefaultStorePath : Path.ChangeExtension(sessionPath, ".search.index");
+        var search = new IndependentSearchBackend(roots, storePath);
+        _ = search.BuildOrLoadAsync().ContinueWith(task => System.Diagnostics.Debug.WriteLine(task.Exception),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        Application.Run(new MainForm(sessionPath, folders, search));
     }
 }
