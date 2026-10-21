@@ -1,4 +1,5 @@
 using QuadExplorer;
+using System.Runtime.InteropServices;
 
 internal static class Program
 {
@@ -32,6 +33,7 @@ internal static class Program
                     await Task.WhenAll(initialNavigation).WaitAsync(TimeSpan.FromSeconds(20));
                     Check(panes.Length == 4 && panes.All(p => p.Visible), "four native shell panes loaded");
                     Check(panes.Select(p => p.CurrentPath).SequenceEqual(folders, StringComparer.OrdinalIgnoreCase), "independent initial folders");
+                    Check(panes.All(p => HasNativeDropTarget(p.ActiveView!)), "initial shell panes register native drop targets");
 
                     await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(child));
                     Check(panes[0].CurrentPath == child && panes[1].CurrentPath == folders[1], "Unicode folder navigation is isolated");
@@ -46,6 +48,7 @@ internal static class Program
                     var newView = Descendants(panes[0]).OfType<ShellViewHost>().Single(h => h.LocationPath == folders[1]);
                     await Navigate(newView, () => panes[0].SelectTab(1));
                     Check(panes[0].TabCount == 2 && panes[0].CurrentPath == folders[1], "new independent tab");
+                    Check(HasNativeDropTarget(newView), "new shell tab registers a native drop target");
                     panes[0].CloseTab();
                     Check(panes[0].TabCount == 1 && panes[0].CurrentPath == folders[0], "close restores previous tab");
                     panes[0].ReopenTab();
@@ -130,4 +133,26 @@ internal static class Program
         if (!success) throw new InvalidOperationException(name);
         Console.WriteLine("PASS " + name);
     }
+
+    private delegate bool WindowCallback(nint window, nint parameter);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumChildWindows(nint parent, WindowCallback callback, nint parameter);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint GetProp(nint window, string property);
+
+    private static bool HasNativeDropTarget(Control host)
+    {
+        bool registered = false;
+        EnumChildWindows(host.Handle, (window, _) =>
+        {
+            registered |= GetProp(window, "OleDropTargetInterface") != 0
+                || GetProp(window, "OleDropTargetMarshalHwnd") != 0;
+            return true;
+        }, 0);
+        return registered;
+    }
+
 }

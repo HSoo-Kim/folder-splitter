@@ -37,6 +37,8 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        // Shell views register their drag/drop targets during initialization.
+        Application.OleRequired();
         try
         {
             var type = Type.GetTypeFromCLSID(ShellNative.BrowserClass, throwOnError: true)!;
