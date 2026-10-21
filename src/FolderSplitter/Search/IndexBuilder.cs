@@ -156,7 +156,7 @@ internal sealed class IndexBuilder
                     continue;
                 var isDirectory = (info.Attributes & FileAttributes.Directory) != 0;
                 entries.Add(new IndexEntry(info.Name, isDirectory));
-                if (isDirectory && (info.Attributes & FileAttributes.ReparsePoint) == 0)
+                if (isDirectory && ((info.Attributes & FileAttributes.ReparsePoint) == 0 || info.LinkTarget is null))
                     children.Add(info.FullName);
             }
         }
