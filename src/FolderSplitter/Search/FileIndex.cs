@@ -26,6 +26,26 @@ internal sealed class FileIndex
     internal IReadOnlyList<SearchHit> Search(SearchQuery query, IReadOnlyList<string> priorityRoots,
         int limit, bool anchorsOnly, CancellationToken cancellationToken)
     {
+        if (!anchorsOnly || Count < 200_000)
+            return SearchRange(query, priorityRoots, limit, anchorsOnly, 0, Directories.Length, true, cancellationToken);
+        // Each partition's top K contains every item that can enter the global top K.
+        int workers = Math.Min(4, Environment.ProcessorCount);
+        var results = new IReadOnlyList<SearchHit>[workers];
+        Parallel.For(0, workers, new ParallelOptions
+        {
+            CancellationToken = cancellationToken, MaxDegreeOfParallelism = workers
+        }, worker =>
+        {
+            results[worker] = SearchRange(query, priorityRoots, limit, true,
+                Directories.Length * worker / workers, Directories.Length * (worker + 1) / workers,
+                worker == 0, cancellationToken);
+        });
+        return PathRanker.Rank(query, results.SelectMany(hits => hits), priorityRoots, limit);
+    }
+
+    private IReadOnlyList<SearchHit> SearchRange(SearchQuery query, IReadOnlyList<string> priorityRoots,
+        int limit, bool anchorsOnly, int start, int end, bool includeRoots, CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         if (query.Terms.Length == 0 || limit <= 0)
             return [];
@@ -34,10 +54,12 @@ internal sealed class FileIndex
         var buffer = ArrayPool<char>.Shared.Rent(512);
         try
         {
-            foreach (var root in Roots)
-                Add(root.AsSpan(), true);
-            foreach (var directory in Directories)
+            if (includeRoots)
+                foreach (var root in Roots)
+                    Add(root.AsSpan(), true);
+            for (int number = start; number < end; number++)
             {
+                var directory = Directories[number];
                 cancellationToken.ThrowIfCancellationRequested();
                 var parentLength = directory.Path.Length;
                 var separator = directory.Path.EndsWith('\\') ? 0 : 1;

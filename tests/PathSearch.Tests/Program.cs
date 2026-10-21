@@ -112,7 +112,7 @@ internal static class Program
 
     private static async Task CompactIndex()
     {
-        var directories = Enumerable.Range(0, 40).Select(number =>
+        var directories = Enumerable.Range(0, 80).Select(number =>
             new IndexDirectory($@"C:\fixture\group{number:D2}", Enumerable.Range(0, 2500)
                 .Select(file => new IndexEntry($"item{file:D5}.txt", false)).ToArray())).ToArray();
         var index = new FileIndex([], directories, [], DateTime.UtcNow);
@@ -123,8 +123,8 @@ internal static class Program
         var broad = index.Search(query, [], 10, true, CancellationToken.None);
         var milliseconds = clock.Elapsed.TotalMilliseconds;
         var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
-        Check(broad.Count == 10 && broad[0].FullPath.EndsWith("item00000.txt"), "100k compact broad query");
-        Check(allocated < 1_000_000, "Broad topK does not allocate full paths for 100k matches");
+        Check(broad.Count == 10 && broad[0].FullPath.EndsWith("item00000.txt"), "Partitioned compact broad query");
+        Check(allocated < 1_000_000, "Broad topK does not allocate full paths for every match");
         Console.WriteLine($"METRIC synthetic_entries={index.Count} broad_query_ms={milliseconds:F3} allocated_bytes={allocated}");
 
         var reference = directories.SelectMany(directory => directory.Entries.Select(entry =>
