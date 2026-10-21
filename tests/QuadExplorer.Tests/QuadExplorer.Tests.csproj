@@ -7,6 +7,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../src/QuadExplorer/SessionState.cs" Link="SessionState.cs" />
+    <Compile Include="../../src/FolderSplitter/SessionState.cs" Link="SessionState.cs" />
   </ItemGroup>
 </Project>

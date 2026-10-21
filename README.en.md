@@ -1,4 +1,4 @@
-<img src="src/QuadExplorer/Assets/app.png" width="88" alt="Folder Splitter icon">
+<img src="src/FolderSplitter/Assets/app.png" width="88" alt="Folder Splitter icon">
 
 # Folder Splitter
 
@@ -101,7 +101,7 @@ artifacts/folder-splitter-win-x64.zip
 ## Project layout
 
 ```text
-src/QuadExplorer/
+src/FolderSplitter/
   MainForm.cs           Window, splits, quick access, shortcuts
   ExplorerPane.cs       Per-pane tabs and address bar
   ShellViewHost.cs      Native Shell view lifetime management
@@ -119,5 +119,5 @@ The app code has no external NuGet package dependencies. It uses the Windows She
 When you replace the source icon, regenerate the Windows ICO with the command below.
 
 ```powershell
-.\tools\Build-Icon.ps1 -SourcePng .\src\QuadExplorer\Assets\app.png
+.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
 ```

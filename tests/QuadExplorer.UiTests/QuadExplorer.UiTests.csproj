@@ -8,6 +8,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/QuadExplorer/QuadExplorer.csproj" />
+    <ProjectReference Include="../../src/FolderSplitter/FolderSplitter.csproj" />
   </ItemGroup>
 </Project>

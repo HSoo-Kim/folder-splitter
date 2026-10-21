@@ -20,13 +20,13 @@ function Run-Dotnet {
     }
 }
 
-Run-Dotnet build "$root/src/QuadExplorer/QuadExplorer.csproj" -c Release --nologo
+Run-Dotnet build "$root/src/FolderSplitter/FolderSplitter.csproj" -c Release --nologo
 Run-Dotnet run --project "$root/tests/QuadExplorer.Tests/QuadExplorer.Tests.csproj" -c Release
 if ($UiTests) {
     Run-Dotnet run --project "$root/tests/QuadExplorer.UiTests/QuadExplorer.UiTests.csproj" -c Release
 }
 if ($Publish) {
-    Run-Dotnet publish "$root/src/QuadExplorer/QuadExplorer.csproj" -c Release -r win-x64 `
+    Run-Dotnet publish "$root/src/FolderSplitter/FolderSplitter.csproj" -c Release -r win-x64 `
         --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None -p:DebugSymbols=false -o "$root/artifacts/FolderSplitter"
     Compress-Archive -Path "$root/artifacts/FolderSplitter/FolderSplitter.exe", "$root/README.md", `

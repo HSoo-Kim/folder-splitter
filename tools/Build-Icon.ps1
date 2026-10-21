@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
-$destination = Join-Path $PSScriptRoot "../src/QuadExplorer/Assets"
+$destination = Join-Path $PSScriptRoot "../src/FolderSplitter/Assets"
 [IO.Directory]::CreateDirectory($destination) | Out-Null
 $sourcePath = (Resolve-Path $SourcePng).Path
 $source = [Drawing.Image]::FromFile($sourcePath)

@@ -1,4 +1,4 @@
-<img src="src/QuadExplorer/Assets/app.png" width="88" alt="Folder Splitter icon">
+<img src="src/FolderSplitter/Assets/app.png" width="88" alt="Folder Splitter icon">
 
 # Folder Splitter
 
@@ -101,7 +101,7 @@ artifacts/folder-splitter-win-x64.zip
 ## 구성
 
 ```text
-src/QuadExplorer/
+src/FolderSplitter/
   MainForm.cs           창, 분할, 빠른 접근, 단축키
   ExplorerPane.cs       영역별 탭과 주소창
   ShellViewHost.cs      네이티브 Shell 보기 수명 관리
@@ -119,5 +119,5 @@ tests/
 아이콘 원본을 교체할 때는 아래 명령으로 Windows용 ICO를 다시 생성합니다.
 
 ```powershell
-.\tools\Build-Icon.ps1 -SourcePng .\src\QuadExplorer\Assets\app.png
+.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
 ```

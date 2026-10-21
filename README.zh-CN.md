@@ -1,4 +1,4 @@
-<img src="src/QuadExplorer/Assets/app.png" width="88" alt="Folder Splitter icon">
+<img src="src/FolderSplitter/Assets/app.png" width="88" alt="Folder Splitter icon">
 
 # Folder Splitter
 
@@ -101,7 +101,7 @@ artifacts/folder-splitter-win-x64.zip
 ## 项目结构
 
 ```text
-src/QuadExplorer/
+src/FolderSplitter/
   MainForm.cs           窗口、分屏、快速访问、快捷键
   ExplorerPane.cs       各区域的标签页与地址栏
   ShellViewHost.cs      原生 Shell 视图的生命周期管理
@@ -119,5 +119,5 @@ tests/
 替换图标源文件后，用以下命令重新生成 Windows 用的 ICO。
 
 ```powershell
-.\tools\Build-Icon.ps1 -SourcePng .\src\QuadExplorer\Assets\app.png
+.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
 ```
