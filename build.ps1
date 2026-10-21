@@ -22,6 +22,7 @@ function Run-Dotnet {
 
 Run-Dotnet build "$root/src/FolderSplitter/FolderSplitter.csproj" -c Release --nologo
 Run-Dotnet run --project "$root/tests/QuadExplorer.Tests/QuadExplorer.Tests.csproj" -c Release
+Run-Dotnet run --project "$root/tests/PathSearch.Tests/PathSearch.Tests.csproj" -c Release
 if ($UiTests) {
     Run-Dotnet run --project "$root/tests/ExplorerFavorites.Tests/ExplorerFavorites.Tests.csproj" -c Release
     Run-Dotnet run --project "$root/tests/QuadExplorer.UiTests/QuadExplorer.UiTests.csproj" -c Release
