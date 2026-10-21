@@ -49,6 +49,11 @@ internal static class Program
                     await Navigate(panes[0].ActiveView!, () => panes[0].ActiveView!.Travel(0x2000));
                     Check(panes[0].CurrentPath == folders[0], "native parent navigation");
 
+                    string selectedFile = Path.Combine(folders[0], "sample.txt");
+                    await Navigate(panes[0].ActiveView!, () => panes[0].ActiveView!.NavigateAndSelect(selectedFile));
+                    Check(SelectedPaths(panes[0].ActiveView!).SequenceEqual(new[] { selectedFile },
+                        StringComparer.OrdinalIgnoreCase), "file candidate selects its actual native shell item");
+
                     panes[0].AddTab(folders[1], select: false);
                     var newView = Descendants(panes[0]).OfType<ShellViewHost>().Single(h => h.LocationPath == folders[1]);
                     await Navigate(newView, () => panes[0].SelectTab(1));
@@ -519,4 +524,44 @@ internal static class Program
         return registered;
     }
 
+    private static string[] SelectedPaths(ShellViewHost host)
+    {
+        var view = (IShellView)typeof(ShellViewHost)
+            .GetField("view", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(host)!;
+        Guid dataId = new("0000010e-0000-0000-C000-000000000046");
+        Marshal.ThrowExceptionForHR(view.GetItemObject(1, ref dataId, out nint pointer));
+        var data = (System.Runtime.InteropServices.ComTypes.IDataObject)Marshal.GetObjectForIUnknown(pointer);
+        Marshal.Release(pointer);
+        var format = new System.Runtime.InteropServices.ComTypes.FORMATETC
+        {
+            cfFormat = 15, dwAspect = System.Runtime.InteropServices.ComTypes.DVASPECT.DVASPECT_CONTENT,
+            lindex = -1, tymed = System.Runtime.InteropServices.ComTypes.TYMED.TYMED_HGLOBAL
+        };
+        try
+        {
+            data.GetData(ref format, out var medium);
+            try
+            {
+                uint count = DragQueryFile(medium.unionmember, uint.MaxValue, null, 0);
+                var paths = new string[count];
+                for (uint i = 0; i < count; i++)
+                {
+                    uint length = DragQueryFile(medium.unionmember, i, null, 0);
+                    var buffer = new System.Text.StringBuilder((int)length + 1);
+                    DragQueryFile(medium.unionmember, i, buffer, length + 1);
+                    paths[i] = buffer.ToString();
+                }
+                return paths;
+            }
+            finally { ReleaseStgMedium(ref medium); }
+        }
+        finally { Marshal.ReleaseComObject(data); }
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint DragQueryFile(nint drop, uint index, System.Text.StringBuilder? path, uint size);
+
+    [DllImport("ole32.dll")]
+    private static extern void ReleaseStgMedium(ref System.Runtime.InteropServices.ComTypes.STGMEDIUM medium);
 }

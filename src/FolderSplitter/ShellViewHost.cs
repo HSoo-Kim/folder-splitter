@@ -13,6 +13,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private readonly UiText text;
     private Func<string>? errorMessage;
     private string requestedLocation;
+    private string? pendingSelection;
 
     public string LocationPath { get; private set; }
     public string DisplayName { get; private set; }
@@ -53,12 +54,30 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             browser.Initialize(Handle, ref rect, ref settings);
             initialized = true;
             browser.Advise(this, out cookie);
-            Navigate(requestedLocation);
+            BrowseToFolder(requestedLocation);
         }
         catch (COMException ex) { ReportError(ex.Message); }
     }
 
     public void Navigate(string location)
+    {
+        pendingSelection = null;
+        BrowseToFolder(location);
+    }
+
+    public void NavigateAndSelect(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            ReportError(() => text.T("Could not open:\n{0}\n\n{1}", filePath,
+                new FileNotFoundException(null, filePath).Message));
+            return;
+        }
+        pendingSelection = Path.GetFullPath(filePath);
+        BrowseToFolder(Path.GetDirectoryName(pendingSelection)!);
+    }
+
+    private void BrowseToFolder(string location)
     {
         location = Environment.ExpandEnvironmentVariables(location.Trim().Trim('"'));
         if (location.Length == 0) return;
@@ -191,12 +210,30 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         requestedLocation = LocationPath;
         HasNavigated = true;
         error.Visible = false;
+        string? selected = pendingSelection;
+        pendingSelection = null;
+        if (selected is not null && string.Equals(Path.GetDirectoryName(selected), LocationPath,
+                StringComparison.OrdinalIgnoreCase) && view is not null)
+        {
+            nint item = 0;
+            try
+            {
+                Marshal.ThrowExceptionForHR(ShellNative.SHParseDisplayName(selected, 0, out item, 0, out _));
+                Marshal.ThrowExceptionForHR(view.SelectItem(ShellNative.ILFindLastID(item), 0x1D));
+            }
+            catch (COMException ex)
+            {
+                ReportError(() => text.T("Could not open:\n{0}\n\n{1}", selected, ex.Message));
+            }
+            finally { if (item != 0) Marshal.FreeCoTaskMem(item); }
+        }
         Navigated?.Invoke(this, EventArgs.Empty);
         return 0;
     }
 
     public int OnNavigationFailed(nint pidlFolder)
     {
+        pendingSelection = null;
         ReportError(() => text.T("Folder unavailable: {0}", requestedLocation));
         return 0;
     }

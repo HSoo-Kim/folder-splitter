@@ -16,6 +16,9 @@ internal static class ShellNative
     [DllImport("shell32.dll", PreserveSig = true)]
     public static extern int SHGetNameFromIDList(nint pidl, uint nameType, out nint name);
 
+    [DllImport("shell32.dll")]
+    public static extern nint ILFindLastID(nint pidl);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsChild(nint parent, nint window);
