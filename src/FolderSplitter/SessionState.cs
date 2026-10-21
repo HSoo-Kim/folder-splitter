@@ -15,6 +15,7 @@ public sealed record PaneState
 public sealed record SessionState
 {
     public int Layout { get; init; } = 4;
+    public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];
     public List<string> Favorites { get; init; } = [];
     public int ActivePane { get; init; }
@@ -22,6 +23,7 @@ public sealed record SessionState
     public int WindowHeight { get; init; } = 900;
     public bool Maximized { get; init; }
     public bool ShowSidebar { get; init; } = true;
+    public bool FavoritesExpanded { get; init; } = true;
     public double ColumnRatio { get; init; } = .5;
     public double LeftRowRatio { get; init; } = .5;
     public double RightRowRatio { get; init; } = .5;
@@ -129,13 +131,35 @@ public static class SessionStore
             }
         }
 
-        var layout = state.Layout is 1 or 2 or 4 ? state.Layout : 4;
+        var layout = state.Layout is >= 1 and <= 4 ? state.Layout : 4;
+        bool hasTree = PaneLayout.TryNormalize(state.LayoutTree, out var layoutTree);
+        if (!hasTree)
+        {
+            layoutTree = PaneLayout.Preset(layout);
+            if (!layoutTree.IsLeaf)
+            {
+                layoutTree = layoutTree with
+                {
+                    Ratio = NormalizeRatio(state.ColumnRatio),
+                    First = layoutTree.First!.IsLeaf ? layoutTree.First
+                        : layoutTree.First! with { Ratio = NormalizeRatio(state.LeftRowRatio) },
+                    Second = layoutTree.Second!.IsLeaf ? layoutTree.Second
+                        : layoutTree.Second! with { Ratio = NormalizeRatio(state.RightRowRatio) }
+                };
+            }
+        }
+        int[] visible = layoutTree.GetPanes();
+        layout = visible.Length;
+        int active = hasTree
+            ? visible.Contains(state.ActivePane) ? state.ActivePane : visible[0]
+            : Math.Clamp(state.ActivePane, 0, layout - 1);
         return state with
         {
             Layout = layout,
+            LayoutTree = layoutTree,
             Panes = panes,
             Favorites = favorites,
-            ActivePane = Math.Clamp(state.ActivePane, 0, layout - 1),
+            ActivePane = active,
             WindowWidth = Math.Clamp(state.WindowWidth, 900, 10000),
             WindowHeight = Math.Clamp(state.WindowHeight, 600, 10000),
             ColumnRatio = NormalizeRatio(state.ColumnRatio),

@@ -8,19 +8,24 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly Icon appIcon;
     private readonly SessionState initialState;
     private readonly ExplorerPane[] panes;
-    private readonly SplitContainer columns;
-    private readonly SplitContainer leftRows;
-    private readonly SplitContainer rightRows;
+    private readonly Panel paneHost = new() { Dock = DockStyle.Fill, BackColor = Theme.Canvas };
+    private readonly List<(SplitContainer Control, string Path)> splits = [];
+    private PaneLayout layoutTree;
+    private int[] visiblePanes;
     private readonly Panel sidebar;
     private readonly ListBox places;
+    private readonly ListBox favoritePlaces;
+    private readonly Button favoritesHeader;
+    private bool favoritesExpanded;
     private readonly List<string> favorites;
     private readonly ToolStrip toolbar = Theme.Strip();
-    private readonly ToolStripButton[] layoutButtons = new ToolStripButton[3];
+    private readonly ToolStripButton[] layoutButtons = new ToolStripButton[4];
     private readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 800 };
     private int activePane;
-    private int layout;
     private bool ready;
     private bool saving;
+    private bool rebuilding;
+    private bool tabDragging;
     private string? saveError;
     private readonly record struct Place(string Label, string Path, bool Favorite = false)
     {
@@ -31,13 +36,18 @@ public sealed class MainForm : Form, IMessageFilter
     {
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
+        layoutTree = initialState.LayoutTree!;
+        visiblePanes = layoutTree.GetPanes().Order().ToArray();
+        activePane = initialState.ActivePane;
         favorites = [.. initialState.Favorites];
+        favoritesExpanded = initialState.FavoritesExpanded;
         Text = "Folder Splitter";
         BackColor = Theme.Canvas;
         ForeColor = Theme.Text;
         MinimumSize = new Size(900, 600);
         Size = new Size(initialState.WindowWidth, initialState.WindowHeight);
         StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 9.5f);
         using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("QuadExplorer.AppIcon")!)
@@ -52,20 +62,8 @@ public sealed class MainForm : Form, IMessageFilter
             pane.StateChanged += (_, _) => ScheduleSave();
             pane.FavoriteRequested += (_, path) => AddFavorite(path);
             pane.MoveTabRequested += MoveTab;
-        }
-        columns = Split(Orientation.Vertical);
-        leftRows = Split(Orientation.Horizontal);
-        rightRows = Split(Orientation.Horizontal);
-        leftRows.Panel1.Controls.Add(panes[0]);
-        leftRows.Panel2.Controls.Add(panes[2]);
-        rightRows.Panel1.Controls.Add(panes[1]);
-        rightRows.Panel2.Controls.Add(panes[3]);
-        columns.Panel1.Controls.Add(leftRows);
-        columns.Panel2.Controls.Add(rightRows);
-        foreach (var split in new[] { columns, leftRows, rightRows })
-        {
-            split.SplitterMoved += (_, _) => ScheduleSave();
-            split.DoubleClick += (_, _) => EqualizeSplits();
+            pane.TabDragRequested += StartTabDrag;
+            pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
         }
 
         sidebar = new Panel { Dock = DockStyle.Left, Width = 172, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
@@ -77,9 +75,9 @@ public sealed class MainForm : Form, IMessageFilter
         };
         places = new ListBox
         {
-            Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Theme.Canvas,
+            Dock = DockStyle.Top, Height = 216, BorderStyle = BorderStyle.None, BackColor = Theme.Canvas,
             ForeColor = Theme.Text, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 36,
-            IntegralHeight = false, AccessibleName = "Quick access and favorites"
+            IntegralHeight = false, AccessibleName = "Quick access"
         };
         places.DrawItem += DrawPlace;
         places.MouseClick += (_, _) => OpenPlace();
@@ -100,10 +98,44 @@ public sealed class MainForm : Form, IMessageFilter
         placeMenu.Opening += (_, _) => placeMenu.Items[1].Enabled = places.SelectedItem is Place { Favorite: true };
         places.MouseDown += (_, e) => { if (e.Button == MouseButtons.Right) places.SelectedIndex = places.IndexFromPoint(e.Location); };
         places.ContextMenuStrip = placeMenu;
+        favoritePlaces = new ListBox
+        {
+            Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Theme.Canvas,
+            ForeColor = Theme.Text, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 36,
+            IntegralHeight = false, AccessibleName = "Favorites"
+        };
+        favoritePlaces.DrawItem += DrawPlace;
+        favoritePlaces.MouseClick += (_, _) => { if (favoritePlaces.SelectedItem is Place p) Active.Navigate(p.Path); };
+        favoritePlaces.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter && favoritePlaces.SelectedItem is Place p)
+            { Active.Navigate(p.Path); e.Handled = true; }
+        };
+        var favoriteMenu = new ContextMenuStrip();
+        favoriteMenu.Items.Add("Open in new tab", null, (_, _) =>
+        { if (favoritePlaces.SelectedItem is Place p) Active.AddTab(p.Path); });
+        favoriteMenu.Items.Add("Remove favorite", null, (_, _) =>
+        {
+            if (favoritePlaces.SelectedItem is Place p)
+            { favorites.Remove(p.Path); ReloadPlaces(); ScheduleSave(); }
+        });
+        favoritePlaces.ContextMenuStrip = favoriteMenu;
+        favoritePlaces.MouseDown += (_, e) =>
+        { if (e.Button == MouseButtons.Right) favoritePlaces.SelectedIndex = favoritePlaces.IndexFromPoint(e.Location); };
+        favoritesHeader = new Button
+        {
+            Dock = DockStyle.Top, Height = 32, FlatStyle = FlatStyle.Flat,
+            Font = new Font("Segoe UI", 8, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Muted
+        };
+        favoritesHeader.FlatAppearance.BorderSize = 0;
+        favoritesHeader.Click += (_, _) => ToggleFavorites();
         var pin = Theme.Button("+  Pin folder", "Pin current folder to favorites", () => AddFavorite(Active.CurrentPath), 152);
         pin.Dock = DockStyle.Bottom;
         pin.Height = 36;
         pin.BackColor = Theme.Canvas;
+        sidebar.Controls.Add(favoritePlaces);
+        sidebar.Controls.Add(favoritesHeader);
         sidebar.Controls.Add(places);
         sidebar.Controls.Add(pin);
         sidebar.Controls.Add(sideTitle);
@@ -111,38 +143,32 @@ public sealed class MainForm : Form, IMessageFilter
 
         BuildToolbar();
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
-        workspace.Controls.Add(columns);
+        workspace.Controls.Add(paneHost);
         workspace.Controls.Add(sidebar);
         Controls.Add(workspace);
         Controls.Add(toolbar);
         sidebar.Visible = initialState.ShowSidebar;
-        layout = initialState.Layout;
-        activePane = initialState.ActivePane;
         saveTimer.Tick += (_, _) => { saveTimer.Stop(); SaveSession(); };
         Shown += (_, _) =>
         {
-            ApplyLayout(layout);
-            SetSplitRatio(columns, initialState.ColumnRatio);
-            SetSplitRatio(leftRows, initialState.LeftRowRatio);
-            SetSplitRatio(rightRows, initialState.RightRowRatio);
             if (initialState.Maximized) WindowState = FormWindowState.Maximized;
+            UpdateMinimumSize();
+            rebuilding = true;
+            try { ApplySplitRatios(); }
+            finally { rebuilding = false; }
             ready = true;
             ActivatePane(activePane);
             foreach (string folder in folders) Active.AddTab(folder);
             Active.FocusFiles();
         };
         ResizeEnd += (_, _) => ScheduleSave();
+        RenderLayout(layoutTree);
         Application.AddMessageFilter(this);
     }
 
     private ExplorerPane Active => panes[activePane];
-
-    private static SplitContainer Split(Orientation orientation) => new()
-    {
-        Size = new Size(700, 500),
-        Dock = DockStyle.Fill, Orientation = orientation, SplitterWidth = 6,
-        BackColor = Theme.Canvas, Panel1MinSize = 100, Panel2MinSize = 100,
-    };
+    internal PaneLayout CurrentLayout => layoutTree;
+    internal ExplorerPane GetPane(int id) => panes[id];
 
     private void BuildToolbar()
     {
@@ -151,21 +177,35 @@ public sealed class MainForm : Form, IMessageFilter
         var brand = new ToolStripLabel("Folder Splitter") { Font = new Font(Font, FontStyle.Bold), Margin = new Padding(5, 0, 18, 0) };
         toolbar.Items.Add(brand);
         var sidebarButton = new ToolStripButton("Sidebar") { CheckOnClick = true, Checked = initialState.ShowSidebar, ToolTipText = "Show or hide quick access" };
-        sidebarButton.Click += (_, _) => { sidebar.Visible = sidebarButton.Checked; ScheduleSave(); };
+        sidebarButton.Click += (_, _) => { sidebar.Visible = sidebarButton.Checked; UpdateMinimumSize(); ScheduleSave(); };
         toolbar.Items.Add(sidebarButton);
         toolbar.Items.Add(new ToolStripSeparator());
-        int[] counts = [1, 2, 4];
+        int[] counts = [1, 2, 3, 4];
         for (int i = 0; i < counts.Length; i++)
         {
             int count = counts[i];
             var button = new ToolStripButton($"{count} pane{(count == 1 ? "" : "s")}")
             {
-                ToolTipText = $"{count} pane layout (Ctrl+{count})", AutoSize = false, Width = 66,
+                ToolTipText = $"{count} pane layout (Ctrl+{count})", AutoSize = true,
                 AccessibleName = $"{count} pane layout"
             };
             button.Click += (_, _) => ApplyLayout(count);
             layoutButtons[i] = button;
             toolbar.Items.Add(button);
+            if (count == 3)
+            {
+                var arrangements = new ToolStripDropDownButton("\u25BE")
+                {
+                    AccessibleName = "Three pane arrangements",
+                    ToolTipText = "Choose the three-pane arrangement",
+                    AutoSize = false, Width = 22
+                };
+                arrangements.DropDownItems.Add("Two left, one right", null, (_, _) => ApplyLayout(3));
+                arrangements.DropDownItems.Add("One left, two right", null, (_, _) => ApplyLayout(3, false));
+                arrangements.DropDownItems.Add("Two above, one below", null, (_, _) => ApplyLayout(3, true, false));
+                arrangements.DropDownItems.Add("One above, two below", null, (_, _) => ApplyLayout(3, false, false));
+                toolbar.Items.Add(arrangements);
+            }
         }
         toolbar.Items.Add(new ToolStripSeparator());
         var equalize = new ToolStripButton("Equal size") { ToolTipText = "Reset split dividers to equal size" };
@@ -188,7 +228,19 @@ public sealed class MainForm : Form, IMessageFilter
         places.Items.Add(new Place("Documents", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)));
         places.Items.Add(new Place("This PC", ShellNative.ThisPc));
         places.Items.Add(new Place("Recycle Bin", ShellNative.RecycleBin));
-        foreach (string path in favorites) places.Items.Add(new Place(ShellViewHost.TitleFor(path), path, true));
+        favoritePlaces.Items.Clear();
+        foreach (string path in favorites) favoritePlaces.Items.Add(new Place(ShellViewHost.TitleFor(path), path, true));
+        favoritePlaces.Visible = favoritesExpanded;
+        favoritesHeader.Text = $"{(favoritesExpanded ? "\u25BE" : "\u25B8")} Favorites";
+        favoritesHeader.AccessibleName = favoritesExpanded ? "Collapse favorites" : "Expand favorites";
+    }
+
+    internal bool FavoritesExpanded => favoritesExpanded;
+    internal void ToggleFavorites()
+    {
+        favoritesExpanded = !favoritesExpanded;
+        ReloadPlaces();
+        ScheduleSave();
     }
 
     private void DrawPlace(object? sender, DrawItemEventArgs e)
@@ -197,7 +249,7 @@ public sealed class MainForm : Form, IMessageFilter
         bool selected = e.State.HasFlag(DrawItemState.Selected);
         using var background = new SolidBrush(selected ? Theme.Selected : Theme.Canvas);
         e.Graphics.FillRectangle(background, e.Bounds);
-        var place = (Place)places.Items[e.Index];
+        var place = (Place)((ListBox)sender!).Items[e.Index];
         var rect = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 16, e.Bounds.Height);
         TextRenderer.DrawText(e.Graphics, (place.Favorite ? "\u2606  " : "") + place.Label, Font, rect,
             selected ? Theme.Accent : Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
@@ -221,32 +273,109 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void MoveTab(ExplorerPane source, string path, int number)
     {
-        var target = panes[number - 1];
-        if (target.TabCount >= 32) { source.SetStatus("Destination has 32 tabs. Close one first."); return; }
-        if (number > layout) ApplyLayout(number > 2 ? 4 : 2);
-        target.AddTab(path);
-        source.CloseTab();
-        ActivatePane(number - 1);
-        target.FocusFiles();
+        if (source.ActiveView is not { } tab) return;
+        if (!visiblePanes.Contains(number - 1)) ApplyLayout(Math.Max(visiblePanes.Length, number));
+        DockTab(source, tab, number - 1, null);
     }
 
-    private void ApplyLayout(int count)
+    internal void ApplyLayout(int count, bool splitFirst = true, bool vertical = true)
     {
-        layout = count;
-        SuspendLayout();
-        columns.Panel2Collapsed = count == 1;
-        leftRows.Panel2Collapsed = count != 4;
-        rightRows.Panel2Collapsed = count != 4;
-        for (int i = 0; i < 3; i++) layoutButtons[i].Checked = count == new[] { 1, 2, 4 }[i];
-        if (activePane >= count) activePane = 0;
-        ResumeLayout(true);
+        RenderLayout(PaneLayout.Preset(count, splitFirst, vertical));
+    }
+
+    private void RenderLayout(PaneLayout tree)
+    {
+        rebuilding = true;
+        paneHost.SuspendLayout();
+        try
+        {
+            layoutTree = tree;
+            visiblePanes = tree.GetPanes().Order().ToArray();
+            foreach (var pane in panes)
+            {
+                pane.Visible = false;
+                pane.Parent?.Controls.Remove(pane);
+            }
+            foreach (Control old in paneHost.Controls.Cast<Control>().ToArray()) old.Dispose();
+            splits.Clear();
+            UpdateMinimumSize();
+            paneHost.Controls.Add(BuildNode(tree, ""));
+            if (!visiblePanes.Contains(activePane)) activePane = visiblePanes[0];
+            for (int i = 0; i < layoutButtons.Length; i++)
+                layoutButtons[i].Checked = visiblePanes.Length == i + 1;
+        }
+        finally
+        {
+            paneHost.ResumeLayout(true);
+            ApplySplitRatios();
+            rebuilding = false;
+        }
         ActivatePane(activePane);
         ScheduleSave();
+
+        Control BuildNode(PaneLayout node, string path)
+        {
+            if (node.IsLeaf)
+            {
+                panes[node.Pane].Visible = true;
+                return panes[node.Pane];
+            }
+            Size minimum = MinimumContentSize(node);
+            Size first = MinimumContentSize(node.First!);
+            Size second = MinimumContentSize(node.Second!);
+            var split = new SplitContainer
+            {
+                Size = new Size(Math.Max(700, minimum.Width + 20), Math.Max(500, minimum.Height + 20)),
+                Dock = DockStyle.Fill,
+                Orientation = node.Vertical ? Orientation.Vertical : Orientation.Horizontal,
+                SplitterWidth = 6, BackColor = Theme.Canvas,
+                Panel1MinSize = node.Vertical ? first.Width : first.Height,
+                Panel2MinSize = node.Vertical ? second.Width : second.Height
+            };
+            splits.Add((split, path));
+            split.Panel1.Controls.Add(BuildNode(node.First!, path + "0"));
+            split.Panel2.Controls.Add(BuildNode(node.Second!, path + "1"));
+            split.SplitterMoved += (_, _) =>
+            {
+                if (rebuilding || !ready) return;
+                layoutTree = layoutTree.SetRatio(path, SplitRatio(split));
+                ScheduleSave();
+            };
+            split.DoubleClick += (_, _) => EqualizeSplits();
+            return split;
+        }
+    }
+
+    private Size MinimumContentSize(PaneLayout node)
+    {
+        if (node.IsLeaf) return new Size((int)Math.Ceiling(260 * DeviceDpi / 96d), (int)Math.Ceiling(180 * DeviceDpi / 96d));
+        Size first = MinimumContentSize(node.First!);
+        Size second = MinimumContentSize(node.Second!);
+        return node.Vertical
+            ? new Size(first.Width + second.Width + 6, Math.Max(first.Height, second.Height))
+            : new Size(Math.Max(first.Width, second.Width), first.Height + second.Height + 6);
+    }
+
+    private void UpdateMinimumSize()
+    {
+        Size minimum = MinimumContentSize(layoutTree);
+        MinimumSize = new Size(Math.Max(900, minimum.Width + (sidebar.Visible ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
+            Math.Max(600, minimum.Height + toolbar.Height + 12 + Height - ClientSize.Height));
+    }
+
+    private void ApplySplitRatios()
+    {
+        foreach (var (split, path) in splits)
+        {
+            var node = layoutTree;
+            foreach (char step in path) node = step == '0' ? node.First! : node.Second!;
+            SetSplitRatio(split, node.Ratio);
+        }
     }
 
     private void ActivatePane(int index)
     {
-        if (index < 0 || index >= layout) return;
+        if (!visiblePanes.Contains(index)) return;
         activePane = index;
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == index);
         ScheduleSave();
@@ -254,8 +383,139 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void EqualizeSplits()
     {
-        foreach (var split in new[] { columns, leftRows, rightRows }) SetSplitRatio(split, .5);
+        layoutTree = layoutTree.Equalize();
+        rebuilding = true;
+        try { ApplySplitRatios(); }
+        finally { rebuilding = false; }
         ScheduleSave();
+    }
+
+    private void StartTabDrag(ExplorerPane source, ShellViewHost tab)
+    {
+        if (tabDragging || source.IndexOfTab(tab) < 0) return;
+        source.SelectTab(source.IndexOfTab(tab), focus: false);
+        ActivatePane(source.PaneNumber - 1);
+        Rectangle bounds = paneHost.RectangleToScreen(paneHost.ClientRectangle);
+        Rectangle[] regions = visiblePanes.Select(i => panes[i].RectangleToScreen(panes[i].ClientRectangle)).ToArray();
+        using var overlay = new TabDockOverlay(bounds, regions, point => FindDropPlan(point, source, tab));
+        var data = new DataObject();
+        data.SetData(TabDockOverlay.DragFormat, false, "tab");
+        tabDragging = true;
+        DragDropEffects effect;
+        try
+        {
+            overlay.Show(this);
+            effect = DoDragDrop(data, DragDropEffects.Move);
+        }
+        finally
+        {
+            overlay.Hide();
+            tabDragging = false;
+        }
+        if (effect == DragDropEffects.Move && overlay.Result is { } drop && !IsDisposed)
+            DockTab(source, tab, drop.TargetPane, drop.Edge);
+    }
+
+    private TabDropPlan? FindDropPlan(Point screen, ExplorerPane source, ShellViewHost tab)
+    {
+        foreach (int target in visiblePanes)
+        {
+            Rectangle full = panes[target].RectangleToScreen(panes[target].ClientRectangle);
+            if (!full.Contains(screen)) continue;
+            SplitEdge? edge = null;
+            Rectangle files = panes[target].FileAreaOnScreen;
+            if (files.Contains(screen))
+            {
+                double left = (double)(screen.X - files.Left) / files.Width;
+                double right = (double)(files.Right - screen.X) / files.Width;
+                double top = (double)(screen.Y - files.Top) / files.Height;
+                double bottom = (double)(files.Bottom - screen.Y) / files.Height;
+                var nearest = new[] { (left, SplitEdge.Left), (right, SplitEdge.Right), (top, SplitEdge.Top), (bottom, SplitEdge.Bottom) }
+                    .MinBy(pair => pair.Item1);
+                if (nearest.Item1 <= .2) edge = nearest.Item2;
+            }
+            Rectangle preview = full;
+            if (edge is SplitEdge.Left or SplitEdge.Right)
+            {
+                preview.Width /= 2;
+                if (edge == SplitEdge.Right) preview.X += full.Width - preview.Width;
+            }
+            else if (edge is SplitEdge.Top or SplitEdge.Bottom)
+            {
+                preview.Height /= 2;
+                if (edge == SplitEdge.Bottom) preview.Y += full.Height - preview.Height;
+            }
+            bool allowed = CanDockTab(source, tab, target, edge, out string reason);
+            string label = allowed ? edge is { } side ? $"Split {side.ToString().ToLowerInvariant()}" : $"Move tab to pane {target + 1}" : reason;
+            return new TabDropPlan(target, edge, preview, label, allowed);
+        }
+        return null;
+    }
+
+    private bool CanDockTab(ExplorerPane source, ShellViewHost tab, int target, SplitEdge? edge, out string reason)
+    {
+        reason = "";
+        if (source.IndexOfTab(tab) < 0 || !visiblePanes.Contains(source.PaneNumber - 1) || !visiblePanes.Contains(target))
+        { reason = "This tab is no longer available."; return false; }
+        int sourceId = source.PaneNumber - 1;
+        if (edge is null && target == sourceId)
+        { reason = "Drop near a file-list edge to split.\nEsc cancels."; return false; }
+        bool relocatePane = edge is not null && target != sourceId && source.TabCount == 1;
+        if (edge is not null && !relocatePane && visiblePanes.Length == 4)
+        { reason = "Maximum 4 panes.\nDrop in a pane's center to move the tab instead."; return false; }
+        int destination = edge is null ? target : relocatePane ? sourceId : Enumerable.Range(0, 4).First(i => !visiblePanes.Contains(i));
+        if (!relocatePane && panes[destination].TabCount >= 32)
+        { reason = "Destination has 32 tabs.\nClose a tab first."; return false; }
+        return true;
+    }
+
+    internal bool DockTab(ExplorerPane source, ShellViewHost tab, int target, SplitEdge? edge)
+    {
+        if (!CanDockTab(source, tab, target, edge, out string reason))
+        { source.SetStatus(reason.Replace("\n", " ")); return false; }
+        int sourceId = source.PaneNumber - 1;
+        if (edge is { } side && sourceId != target && source.TabCount == 1)
+        {
+            RenderLayout(RemovePane(layoutTree, sourceId)!.Split(target, sourceId, side));
+            ActivatePane(sourceId);
+            source.FocusFiles();
+            return true;
+        }
+
+        string path = tab.LocationPath;
+        bool keepSource = edge is not null && source.TabCount == 1;
+        int destination = target;
+        bool newPane = edge is not null;
+        if (edge is { } splitEdge)
+        {
+            destination = Enumerable.Range(0, 4).First(i => !visiblePanes.Contains(i));
+            RenderLayout(layoutTree.Split(target, destination, splitEdge));
+        }
+        var receiving = panes[destination];
+        bool replaceDefault = newPane && receiving.TabCount == 1 &&
+            receiving.CurrentPath == Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        receiving.AddTab(path);
+        if (replaceDefault) receiving.CloseTab(0);
+        if (!keepSource)
+        {
+            bool emptyPane = source.TabCount == 1;
+            source.CloseTab(source.IndexOfTab(tab));
+            if (emptyPane) RenderLayout(RemovePane(layoutTree, sourceId)!);
+        }
+        ActivatePane(destination);
+        receiving.FocusFiles();
+        ScheduleSave();
+        return true;
+
+        static PaneLayout? RemovePane(PaneLayout node, int id)
+        {
+            if (node.IsLeaf) return node.Pane == id ? null : node;
+            var first = RemovePane(node.First!, id);
+            var second = RemovePane(node.Second!, id);
+            if (first is null) return second;
+            if (second is null) return first;
+            return node with { First = first, Second = second };
+        }
     }
 
     private static void SetSplitRatio(SplitContainer split, double ratio)
@@ -273,10 +533,10 @@ public sealed class MainForm : Form, IMessageFilter
 
     public bool PreFilterMessage(ref Message m)
     {
-        if (!ContainsFocus) return false;
+        if (!ContainsFocus || tabDragging) return false;
         if (m.Msg == 0x201 || m.Msg == 0x204 || m.Msg == 0x100 || m.Msg == 0x104)
         {
-            for (int i = 0; i < layout; i++)
+            foreach (int i in visiblePanes)
                 if (panes[i].IsHandleCreated && (m.HWnd == panes[i].Handle || ShellNative.IsChild(panes[i].Handle, m.HWnd)))
                 { if (i != activePane) ActivatePane(i); break; }
         }
@@ -303,8 +563,10 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.Shift | Keys.Tab: Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
             case Keys.Control | Keys.D2: ApplyLayout(2); break;
+            case Keys.Control | Keys.D3: ApplyLayout(3); break;
+            case Keys.Control | Keys.Shift | Keys.D3: ApplyLayout(3, false); break;
             case Keys.Control | Keys.D4: ApplyLayout(4); break;
-            case Keys.F6: ActivatePane((activePane + 1) % layout); Active.FocusFiles(); break;
+            case Keys.F6: ActivatePane(visiblePanes[(Array.IndexOf(visiblePanes, activePane) + 1) % visiblePanes.Length]); Active.FocusFiles(); break;
             case Keys.F5: Active.ActiveView?.RefreshFolder(); break;
             case Keys.Alt | Keys.Left: Active.ActiveView?.Travel(0x4000); break;
             case Keys.Alt | Keys.Right: Active.ActiveView?.Travel(0x8000); break;
@@ -317,7 +579,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void ScheduleSave()
     {
-        if (!ready || saving) return;
+        if (!ready || saving || rebuilding) return;
         saveTimer.Stop();
         saveTimer.Start();
     }
@@ -331,11 +593,14 @@ public sealed class MainForm : Form, IMessageFilter
             Rectangle bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
             SessionStore.Save(sessionPath, new SessionState
             {
-                Layout = layout, ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
+                Layout = visiblePanes.Length, LayoutTree = layoutTree,
+                ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
+                FavoritesExpanded = favoritesExpanded,
                 WindowWidth = bounds.Width, WindowHeight = bounds.Height,
                 Maximized = WindowState == FormWindowState.Maximized,
-                ColumnRatio = SplitRatio(columns), LeftRowRatio = SplitRatio(leftRows), RightRowRatio = SplitRatio(rightRows)
+                ColumnRatio = layoutTree.Ratio,
+                LeftRowRatio = layoutTree.First?.Ratio ?? .5, RightRowRatio = layoutTree.Second?.Ratio ?? .5
             });
             saveError = null;
         }
@@ -363,19 +628,26 @@ public sealed class MainForm : Form, IMessageFilter
     {
         if (disposing)
         {
+            ready = false;
+            rebuilding = true;
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
             places.ContextMenuStrip?.Dispose();
+            favoritePlaces.ContextMenuStrip?.Dispose();
         }
         base.Dispose(disposing);
-        if (disposing) appIcon.Dispose();
+        if (disposing)
+        {
+            foreach (var pane in panes) if (!pane.IsDisposed) pane.Dispose();
+            appIcon.Dispose();
+        }
     }
 
     private void ShowHelp()
     {
         MessageBox.Show(this,
-            "LAYOUT\nCtrl+1 / Ctrl+2 / Ctrl+4   One, two or four panes\nF6   Next pane\nDrag dividers to resize; Equal size resets them.\n\n" +
-            "TABS\nCtrl+T   New tab at current folder\nCtrl+W / middle-click   Close tab\nCtrl+Shift+T   Reopen closed tab\nCtrl+Tab / Ctrl+Shift+Tab   Switch tabs\nRight-click tab   Duplicate, move, close others\n\n" +
+            "LAYOUT\nCtrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   Pane count\nCtrl+Shift+3   One left, two right\nF6   Next pane\nThe arrow beside 3 panes offers both 2:1 arrangements.\nDrag dividers to resize; Equal size resets them.\n\n" +
+            "TABS\nDrag a tab to a file-list edge to split; center to move.\nA blue preview shows the destination. Esc cancels.\nRight-click tab > Split tab is the keyboard alternative.\nSplitting a pane's only tab keeps a copy in the original pane.\nCtrl+T   New tab at current folder\nCtrl+W / middle-click   Close tab\nCtrl+Shift+T   Reopen closed tab\nCtrl+Tab / Ctrl+Shift+Tab   Switch tabs\n\n" +
             "NAVIGATION\nCtrl+L / Alt+D   Address bar\nAlt+Left / Right / Up   Back, forward, parent\nF5   Refresh\nCtrl+D   Pin current folder\n\n" +
             "FILES\nUse Windows context menus and drag files between panes.\nCtrl+C / Ctrl+X / Ctrl+V   Copy, cut, paste\nF2   Rename    |    Delete   Recycle\nCtrl+Shift+N   New folder\n\n" +
             "Tabs, favorites and layout are saved locally.\nPane options include view modes and Open in File Explorer.",

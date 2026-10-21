@@ -11,12 +11,13 @@
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <AssemblyName>FolderSplitter</AssemblyName>
     <RootNamespace>QuadExplorer</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Product>Folder Splitter</Product>
     <Description>A native Windows file manager with independent tabbed panes.</Description>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets/app.ico" LogicalName="QuadExplorer.AppIcon" />
+    <InternalsVisibleTo Include="QuadExplorer.UiTests" />
   </ItemGroup>
 </Project>

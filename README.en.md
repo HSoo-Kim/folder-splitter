@@ -24,7 +24,8 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 
 ## Features
 
-- **1 / 2 / 4 panes**: Switch from the top bar. Tabs in panes you hide are kept.
+- **1 / 2 / 3 / 4 panes**: Switch from the top bar. Hidden panes retain their tabs. The three-pane menu offers two-to-one arrangements horizontally or vertically.
+- **Drag tabs to split**: Drop a tab near a file-list edge to split, or in the center to move it into that pane. Up to four panes are supported. The tab context menu also offers `Split tab`.
 - **Independent tabs per pane**: New tab, duplicate tab, reopen closed tab, move a tab to another pane.
 - **Separate navigation**: Address input, path autocomplete, back/forward/up to parent folder.
 - **Resizable splits**: Drag the dividers, or use `Equal size` to even out the layout.
@@ -46,11 +47,13 @@ Column sorting and the right-click menu in the file list are handled by the Wind
 
 Shortcuts in the left sidebar open in the currently active pane. The active pane is marked with a blue line at the top. Right-click a favorite to remove it.
 
+Click the `FAVORITES` heading to collapse or expand its list without removing entries. The collapsed state is restored on the next launch.
+
 ### Keyboard shortcuts
 
 | Key | Action |
 |---|---|
-| `Ctrl+1`, `Ctrl+2`, `Ctrl+4` | Switch layout |
+| `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | Switch layout |
 | `F6` | Move to the next pane |
 | `Ctrl+T` | Open the current folder in a new tab |
 | `Ctrl+W`, tab ×, middle-click a tab | Close tab |

@@ -20,8 +20,10 @@ internal static class Program
             ("save failures propagate and clean temporary files", SaveFailure),
             ("inactive panes survive layout changes", InactivePanes),
             ("window sizes and ratios are bounded", Bounds),
-            ("normalization does not mutate caller lists", DoesNotMutate)
-        };
+            ("normalization does not mutate caller lists", DoesNotMutate),
+            ("split tree sessions preserve sparse pane IDs and ratios", SplitTreeRoundtrip),
+            ("legacy and malformed layouts normalize safely", LegacyLayouts)
+        }.Concat(PaneLayoutTests.Cases).ToArray();
 
         var failures = 0;
         Directory.CreateDirectory(TestDirectory);
@@ -122,7 +124,7 @@ internal static class Program
         var path = FilePath("invalid", "session.json");
         File.WriteAllText(path, """
             {
-              "Layout": 3,
+              "Layout": 5,
               "Panes": [
                 null,
                 { "Tabs": null, "SelectedTab": 50 },
@@ -255,9 +257,9 @@ internal static class Program
             ActivePane = 3
         };
         var path = FilePath("inactive", "session.json");
-        foreach (var layout in new[] { 1, 2, 4 })
+        foreach (var layout in new[] { 1, 2, 3, 4 })
         {
-            SessionStore.Save(path, original with { Layout = layout });
+            SessionStore.Save(path, original with { Layout = layout, LayoutTree = null });
             var state = SessionStore.Load(path, out var warning);
             Equal<string?>(null, warning);
             Equal(layout, state.Layout);
@@ -319,6 +321,51 @@ internal static class Program
         Equal(1, original.Panes[0].Tabs.Count);
         Equal(20, original.Panes[0].SelectedTab);
         Equal(2, original.Favorites.Count);
+    }
+
+    private static void SplitTreeRoundtrip()
+    {
+        var tree = PaneLayout.Leaf(0).Split(0, 1, SplitEdge.Right)
+            .Split(1, 3, SplitEdge.Bottom).SetRatio("", .35).SetRatio("1", .62);
+        var state = new SessionState
+        {
+            LayoutTree = tree,
+            ActivePane = 3,
+            Panes = Enumerable.Range(0, 4).Select(i => new PaneState { Tabs = [$"Z:\\pane-{i}"] }).ToList()
+        };
+        var path = FilePath("split-tree", "session.json");
+        SessionStore.Save(path, state);
+        var restored = SessionStore.Load(path, out var warning);
+        Equal<string?>(null, warning);
+        Equal(3, restored.Layout);
+        Equal(3, restored.ActivePane);
+        Equal(tree, restored.LayoutTree);
+        Equal("Z:\\pane-2", restored.Panes[2].Tabs[0]);
+        Equal(0, SessionStore.Normalize(state with { ActivePane = 2 }).ActivePane);
+        Equal(3, SessionStore.Normalize(state with { LayoutTree = PaneLayout.Leaf(3) }).ActivePane);
+    }
+
+    private static void LegacyLayouts()
+    {
+        var legacy = SessionStore.Normalize(new SessionState
+        {
+            Layout = 4, ColumnRatio = .3, LeftRowRatio = .4, RightRowRatio = .7
+        });
+        Equal(.3, legacy.LayoutTree!.Ratio);
+        Equal(.4, legacy.LayoutTree.First!.Ratio);
+        Equal(.7, legacy.LayoutTree.Second!.Ratio);
+        var three = SessionStore.Normalize(new SessionState { Layout = 3, ActivePane = 99 });
+        Equal(3, three.Layout);
+        Equal(2, three.ActivePane);
+        Equal(PaneLayout.Preset(3), three.LayoutTree);
+        var malformed = SessionStore.Normalize(new SessionState
+        {
+            Layout = 2, LayoutTree = new PaneLayout { First = PaneLayout.Leaf(0), Second = PaneLayout.Leaf(0) }
+        });
+        Equal(PaneLayout.Preset(2), malformed.LayoutTree);
+        var leaf = SessionStore.Normalize(new SessionState { LayoutTree = PaneLayout.Leaf(0) with { Ratio = double.NaN } });
+        Equal(.5, leaf.LayoutTree!.Ratio);
+        SessionStore.Save(FilePath("leaf-ratio", "session.json"), leaf);
     }
 
     private static string FilePath(string test, params string[] parts)

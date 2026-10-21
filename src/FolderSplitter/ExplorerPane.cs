@@ -27,6 +27,9 @@ public sealed class ExplorerPane : UserControl
     public event EventHandler? StateChanged;
     public event EventHandler<string>? FavoriteRequested;
     public event Action<ExplorerPane, string, int>? MoveTabRequested;
+    internal event Action<ExplorerPane, ShellViewHost>? TabDragRequested;
+    internal event Action<ExplorerPane, ShellViewHost, SplitEdge>? SplitTabRequested;
+    internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
 
     public ExplorerPane(int number, PaneState state)
     {
@@ -118,6 +121,7 @@ public sealed class ExplorerPane : UserControl
         };
         var tab = new FolderTab(host, button);
         button.CloseRequested += (_, _) => CloseTab(tabs.IndexOf(tab));
+        button.DragRequested += (_, _) => TabDragRequested?.Invoke(this, host);
         button.Click += (_, _) => SelectTab(tabs.IndexOf(tab));
         button.MouseDown += (_, e) =>
         {
@@ -195,6 +199,7 @@ public sealed class ExplorerPane : UserControl
     public void SetStatus(string text) { status.Text = text; tips.SetToolTip(status, text); }
     private void UpdateStatus() => SetStatus($"Pane {PaneNumber}  |  {tabs.Count} tab{(tabs.Count == 1 ? "" : "s")}  |  {ActiveView?.DisplayName}");
     public PaneState CaptureState() => new() { Tabs = tabs.Select(t => t.Host.LocationPath).ToList(), SelectedTab = selectedIndex };
+    internal int IndexOfTab(ShellViewHost host) => tabs.FindIndex(tab => tab.Host == host);
     private static string ShortTitle(string title) => title.Length <= 18 ? title : title[..16] + "\u2026";
 
     private void ShowTabMenu(int index)
@@ -213,6 +218,16 @@ public sealed class ExplorerPane : UserControl
             move.DropDownItems.Add($"Pane {target}", null, (_, _) => MoveTabRequested?.Invoke(this, CurrentPath, target));
         }
         tabMenu.Items.Add(move);
+        var split = new ToolStripMenuItem("Split tab");
+        foreach (SplitEdge edge in Enum.GetValues<SplitEdge>())
+        {
+            var side = edge;
+            split.DropDownItems.Add(side.ToString(), null, (_, _) =>
+            {
+                if (ActiveView is { } view) SplitTabRequested?.Invoke(this, view, side);
+            });
+        }
+        tabMenu.Items.Add(split);
         tabMenu.Items.Add(new ToolStripSeparator());
         tabMenu.Items.Add("Close tab    Ctrl+W", null, (_, _) => CloseTab());
         tabMenu.Items.Add("Close other tabs", null, (_, _) =>
