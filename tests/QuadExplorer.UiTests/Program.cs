@@ -188,6 +188,13 @@ internal static class Program
                 form.ApplyLayout(4);
                 Check(Enumerable.Range(1, 3).All(i => form.GetPane(i).TabCount == 0),
                     "new split panes stay empty");
+                Check(new[] { 2, 3 }.All(i =>
+                {
+                    var label = Descendants(form.GetPane(i)).OfType<Label>()
+                        .Single(l => l.AccessibleName == $"Pane {i + 1} status");
+                    return label.Visible && Screen.FromControl(form).WorkingArea.Contains(
+                        label.RectangleToScreen(label.ClientRectangle));
+                }), "bottom pane status labels remain inside the screen working area");
                 var source = form.GetPane(0);
                 form.ApplyLayout(1);
                 Check(form.DockTab(source, source.ActiveView!, 0, SplitEdge.Right)

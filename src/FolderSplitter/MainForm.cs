@@ -185,6 +185,14 @@ public sealed class MainForm : Form, IMessageFilter
         {
             if (initialState.Maximized) WindowState = FormWindowState.Maximized;
             UpdateMinimumSize();
+            if (WindowState == FormWindowState.Normal)
+            {
+                Rectangle work = Screen.FromControl(this).WorkingArea;
+                int width = Math.Min(Width, work.Width);
+                int height = Math.Min(Height, work.Height);
+                Bounds = new Rectangle(Math.Clamp(Left, work.Left, work.Right - width),
+                    Math.Clamp(Top, work.Top, work.Bottom - height), width, height);
+            }
             rebuilding = true;
             try { ApplySplitRatios(); }
             finally { rebuilding = false; }
