@@ -1,0 +1,68 @@
+{
+  "observedDate": "2026-10-21",
+  "decision": "independent",
+  "gate": {
+    "maximumP95Milliseconds": 100,
+    "relativeMaximum": "max(3 * Everything p95, Everything p95 + 25)",
+    "passed": true
+  },
+  "queryComparison": {
+    "sharedCorpusEntries": 3724094,
+    "queries": 37,
+    "seed": 42,
+    "priorityContexts": 6,
+    "limit": 100,
+    "warmupPasses": 3,
+    "measuredPasses": 5,
+    "order": "abba",
+    "samplesPerBackend": 370,
+    "orderedTypedPathParityEveryOperation": true,
+    "independentMilliseconds": { "p50": 21.101, "p95": 62.1292, "p99": 68.0844 },
+    "everythingAdapterMilliseconds": { "p50": 48.3796, "p95": 164.6187, "p99": 220.7866 },
+    "scope": "Everything candidates filtered to accessible independent corpus before ranking and limit; filtering/IPC costs included"
+  },
+  "coldBuild": {
+    "entries": 3724083,
+    "deniedDirectories": 524,
+    "milliseconds": 50440.9576,
+    "snapshotDecodeMilliseconds": 740.3326,
+    "buildProcessPrivateBytes": 499347456,
+    "decodeProcessPrivateBytesWithBuildGraphRetained": 839970816
+  },
+  "updatesMilliseconds": [
+    { "operation": "create", "independent": 6.9119, "everything": 690.8178 },
+    { "operation": "rename", "independent": 5.6293, "everything": 1268.7115 },
+    { "operation": "delete", "independent": 1.378, "everything": 851.2545 }
+  ],
+  "offlineRestartFixture": {
+    "snapshotLoaded": true,
+    "createRenameDeletePassed": true,
+    "entries": 3,
+    "reconcileMilliseconds": 9.9917
+  },
+  "frozenFullResultParity": {
+    "queries": 37,
+    "commonTypedEntries": 3721493,
+    "matchingDifferences": 0,
+    "independentCoverage": 3721509,
+    "everythingCoverage": 3721498,
+    "referenceOnly": 5,
+    "independentOnly": 16,
+    "deniedScopes": 524,
+    "excludedScopes": 2570
+  },
+  "strictLiveParity": {
+    "exitCode": 2,
+    "aggregateDifferences": 716,
+    "coverageReferenceOnly": 1,
+    "coverageIndependentOnly": 55,
+    "finding": "Active caches, repository, temporary and OS entries changed between snapshots and later broad queries; not a zero-error live parity claim"
+  },
+  "limitations": [
+    "Accessible folder traversal, not privileged NTFS coverage",
+    "Reference adapter latency, not intrinsic Everything matcher latency",
+    "Broad-only reference queries were faster",
+    "Private path inventories and raw research queries intentionally not retained in source",
+    "Initial sequential timing rejected because reference included excluded namespace aliases"
+  ]
+}
