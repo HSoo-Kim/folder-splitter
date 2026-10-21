@@ -10,6 +10,8 @@ internal static class Program
         var tests = new (string Name, Action Run)[]
         {
             ("default session and storage path", Defaults),
+            ("supported languages normalize with Korean default", LanguageNormalization),
+            ("all selected languages persist without altering session data", LanguageRetention),
             ("Unicode session roundtrip and atomic replacement", Roundtrip),
             ("invalid and null JSON normalization", InvalidJsonData),
             ("null lists and null session normalization", NullLists),
@@ -57,6 +59,7 @@ internal static class Program
     private static void Defaults()
     {
         var state = SessionStore.Normalize(new SessionState());
+        Equal("ko", state.Language);
         Equal(1, state.Layout);
         Equal(PaneLayout.Leaf(0), state.LayoutTree);
         Equal(4, state.Panes.Count);
@@ -77,6 +80,44 @@ internal static class Program
         Equal(false, state.Maximized);
         Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "QuadExplorer", "session.json"), SessionStore.DefaultPath);
+    }
+
+    private static void LanguageNormalization()
+    {
+        foreach (string? invalid in new string?[] { null, "", " ", "fr", "zh", "en-US", "../ja" })
+            Equal("ko", SessionStore.Normalize(new SessionState { Language = invalid! }).Language);
+        foreach (var (source, expected) in new[] { ("KO", "ko"), (" en ", "en"), ("ZH-cn", "zh-CN"), ("JA", "ja") })
+            Equal(expected, SessionStore.Normalize(new SessionState { Language = source }).Language);
+        var path = FilePath("language-default", "session.json");
+        File.WriteAllText(path, """{"Language":null}""");
+        Equal("ko", SessionStore.Load(path).Language);
+        File.WriteAllText(path, "{}");
+        Equal("ko", SessionStore.Load(path).Language);
+    }
+
+    private static void LanguageRetention()
+    {
+        var path = FilePath("languages", "session.json");
+        var original = new SessionState
+        {
+            Panes = [new PaneState { Tabs = ["C:\\한국어\\文件\\日本語", "Z:\\offline"], SelectedTab = 1 }],
+            Favorites = ["Z:\\favorite"], DeletedFavorites = ["Z:\\removed"], SidebarWidth = 315,
+            LayoutTree = PaneLayout.Leaf(0).Split(0, 3, SplitEdge.Bottom), ActivePane = 3
+        };
+        foreach (string language in new[] { "ko", "en", "zh-CN", "ja" })
+        {
+            SessionStore.Save(path, original with { Language = language });
+            var restored = SessionStore.Load(path, out var warning);
+            Equal<string?>(null, warning);
+            Equal(language, restored.Language);
+            Sequence(original.Panes[0].Tabs, restored.Panes[0].Tabs);
+            Equal(1, restored.Panes[0].SelectedTab);
+            Sequence(original.Favorites, restored.Favorites);
+            Sequence(original.DeletedFavorites, restored.DeletedFavorites);
+            Equal(original.LayoutTree, restored.LayoutTree);
+            Equal(315, restored.SidebarWidth);
+            Equal("ko", original.Language);
+        }
     }
 
     private static void Roundtrip()

@@ -7,6 +7,9 @@ public sealed class ExplorerPane : UserControl
 {
     private sealed record FolderTab(ShellViewHost Host, ToolStripButton Button);
     private readonly List<FolderTab> tabs = [];
+    private readonly UiText text;
+    private readonly List<Action> languageBindings = [];
+    private Func<string>? localizedStatus;
     private readonly Stack<string> closedTabs = [];
     private readonly ToolStrip tabStrip = Theme.Strip();
     private readonly Panel contents = new() { Dock = DockStyle.Fill, BackColor = Color.White };
@@ -19,7 +22,7 @@ public sealed class ExplorerPane : UserControl
     private readonly TextBox address;
     private readonly Label status;
     private readonly Panel activeLine;
-    private readonly ToolTip tips = new();
+    private readonly ToolTip tips = new() { ShowAlways = true, AutoPopDelay = 10000 };
     private readonly ContextMenuStrip tabMenu = new();
     private readonly Image folderIcon = Theme.FolderIcon();
     private int selectedIndex = -1;
@@ -37,8 +40,9 @@ public sealed class ExplorerPane : UserControl
     internal event Action<ExplorerPane, ShellViewHost, SplitEdge>? SplitTabRequested;
     internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
 
-    public ExplorerPane(int number, PaneState state)
+    public ExplorerPane(int number, PaneState state, UiText? text = null)
     {
+        this.text = text ?? new UiText();
         PaneNumber = number;
         Dock = DockStyle.Fill;
         BackColor = Theme.Border;
@@ -49,11 +53,12 @@ public sealed class ExplorerPane : UserControl
         var navigation = new TableLayoutPanel
         {
             Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 6, RowCount = 1,
+            ColumnCount = 7, RowCount = 1,
             Padding = new Padding(5, 4, 5, 4), BackColor = Color.White
         };
         for (int i = 0; i < 3; i++) navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         AddButton(navigation, 0, "\uE72B", "Back (Alt+Left)", () => ActiveView?.Travel(0x4000));
@@ -72,21 +77,24 @@ public sealed class ExplorerPane : UserControl
             else if (e.KeyCode == Keys.Escape) { address.Text = CurrentPath; FocusFiles(); e.SuppressKeyPress = true; }
         };
         navigation.Controls.Add(address, 3, 0);
+        BindTip(address, "Enter a folder path; Enter to navigate, Ctrl+L to select address");
         var go = Theme.Button("\uE8AD", $"Pane {number} go to address", () => Navigate(address.Text));
         go.Font = new Font("Segoe Fluent Icons", 10);
         go.AutoSize = true;
         go.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         go.Padding = new Padding(5);
-        tips.SetToolTip(go, "Go to this folder (Enter)");
+        BindTip(go, "Go to typed address (Enter)");
         navigation.Controls.Add(go, 4, 0);
-        AddButton(navigation, 5, "\uE713", "Pane options", ShowOptions);
+        AddButton(navigation, 5, "\uE838", "Choose folder", ChooseFolder);
+        AddButton(navigation, 6, "\uE713", "Pane options", ShowOptions);
 
         var newTab = new ToolStripButton("+")
         {
             Alignment = ToolStripItemAlignment.Right, AutoSize = false, Width = 30,
-            AccessibleName = $"Pane {number} new tab", ToolTipText = "New tab (Ctrl+T)",
+            AccessibleName = $"Pane {number} new tab", ToolTipText = this.text.T("New tab (Ctrl+T)"),
             Overflow = ToolStripItemOverflow.Never
         };
+        languageBindings.Add(() => newTab.ToolTipText = this.text.T("New tab (Ctrl+T)"));
         newTab.Click += (_, _) => AddTab(CurrentPath);
         tabStrip.Items.Add(newTab);
         tabStrip.AccessibleName = $"Pane {number} tabs";
@@ -110,6 +118,7 @@ public sealed class ExplorerPane : UserControl
         foreach (string path in state.Tabs) AddTab(path, select: false);
         if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
         else ShowEmptyState();
+        RefreshLanguage();
     }
 
     private void AddButton(TableLayoutPanel row, int column, string glyph, string name, Action action)
@@ -119,16 +128,43 @@ public sealed class ExplorerPane : UserControl
         button.AutoSize = true;
         button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         button.Padding = new Padding(5);
-        tips.SetToolTip(button, name);
+        BindTip(button, name switch
+        {
+            "Choose folder" => "Browse for a folder: open folder picker",
+            "Pane options" => "Pane options: view mode, refresh, favorites",
+            _ => name
+        });
         row.Controls.Add(button, column, 0);
+    }
+
+    private void BindTip(Control control, string key)
+    {
+        void Refresh() => tips.SetToolTip(control, text.T(key));
+        languageBindings.Add(Refresh);
+        Refresh();
+    }
+
+    internal string ToolTipFor(Control control) => tips.GetToolTip(control) ?? "";
+
+    internal void RefreshLanguage()
+    {
+        foreach (var refresh in languageBindings) refresh();
+        emptyHint.Text = text.T("Enter a folder path above or choose a folder from Pane options.");
+        foreach (var tab in tabs)
+        {
+            tab.Host.RefreshLanguage();
+            tab.Button.Text = ShortTitle(tab.Host.DisplayName);
+        }
+        tabMenu.Close();
+        if (localizedStatus is not null) RenderStatus(localizedStatus());
     }
 
     public void AddTab(string path, bool select = true)
     {
-        if (tabs.Count >= 32) { SetStatus("Maximum 32 tabs per pane. Close a tab first."); return; }
+        if (tabs.Count >= 32) { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return; }
         if (string.IsNullOrWhiteSpace(path))
             path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var host = new ShellViewHost(path) { Visible = false };
+        var host = new ShellViewHost(path, text) { Visible = false };
         var button = new FolderTabButton
         {
             Text = ShortTitle(host.DisplayName), Image = folderIcon, AutoSize = false,
@@ -155,7 +191,7 @@ public sealed class ExplorerPane : UserControl
             if (host == ActiveView) { address.Text = host.LocationPath; UpdateStatus(); }
             StateChanged?.Invoke(this, EventArgs.Empty);
         };
-        host.NavigationError += (_, message) => SetStatus(message);
+        host.NavigationError += (_, message) => SetLocalizedStatus(() => host.ErrorStatus ?? message);
         tabs.Add(tab);
         tabStrip.Items.Insert(tabStrip.Items.Count - 1, button);
         contents.Controls.Add(host);
@@ -221,8 +257,13 @@ public sealed class ExplorerPane : UserControl
         else FocusAddress();
     }
     public void SetActive(bool active) => activeLine.BackColor = active ? Theme.Accent : Theme.Border;
-    public void SetStatus(string text) { status.Text = text; tips.SetToolTip(status, text); }
-    private void UpdateStatus() => SetStatus($"Pane {PaneNumber}  |  {tabs.Count} tab{(tabs.Count == 1 ? "" : "s")}  |  {ActiveView?.DisplayName}");
+    public void SetStatus(string message) { localizedStatus = null; RenderStatus(message); }
+    private void RenderStatus(string message) { status.Text = message; tips.SetToolTip(status, message); }
+    internal void SetLocalizedStatus(string key, params object?[] args) => SetLocalizedStatus(() => text.T(key, args));
+    internal void SetLocalizedStatus(Func<string> message) { localizedStatus = message; RenderStatus(message()); }
+    private void UpdateStatus() => SetLocalizedStatus(() => tabs.Count == 1
+        ? text.T("Pane {0}  |  1 tab  |  {1}", PaneNumber, ActiveView?.DisplayName)
+        : text.T("Pane {0}  |  {1} tabs  |  {2}", PaneNumber, tabs.Count, ActiveView?.DisplayName));
     private void ShowEmptyState()
     {
         address.Clear();
@@ -238,30 +279,30 @@ public sealed class ExplorerPane : UserControl
         if (index < 0) return;
         SelectTab(index, focus: false);
         tabMenu.Items.Clear();
-        tabMenu.Items.Add("New tab", null, (_, _) => AddTab(CurrentPath));
-        tabMenu.Items.Add("Duplicate tab", null, (_, _) => AddTab(CurrentPath));
-        tabMenu.Items.Add("Reopen closed tab", null, (_, _) => ReopenTab()).Enabled = closedTabs.Count > 0;
-        var move = new ToolStripMenuItem("Move tab to pane");
+        tabMenu.Items.Add(text.T("New tab"), null, (_, _) => AddTab(CurrentPath));
+        tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => AddTab(CurrentPath));
+        tabMenu.Items.Add(text.T("Reopen closed tab"), null, (_, _) => ReopenTab()).Enabled = closedTabs.Count > 0;
+        var move = new ToolStripMenuItem(text.T("Move tab to pane"));
         for (int i = 1; i <= 4; i++)
         {
             int target = i;
             if (target == PaneNumber) continue;
-            move.DropDownItems.Add($"Pane {target}", null, (_, _) => MoveTabRequested?.Invoke(this, CurrentPath, target));
+            move.DropDownItems.Add(text.T("Pane {0}", target), null, (_, _) => MoveTabRequested?.Invoke(this, CurrentPath, target));
         }
         tabMenu.Items.Add(move);
-        var split = new ToolStripMenuItem("Split tab");
+        var split = new ToolStripMenuItem(text.T("Split tab"));
         foreach (SplitEdge edge in Enum.GetValues<SplitEdge>())
         {
             var side = edge;
-            split.DropDownItems.Add(side.ToString(), null, (_, _) =>
+            split.DropDownItems.Add(text.T(side.ToString()), null, (_, _) =>
             {
                 if (ActiveView is { } view) SplitTabRequested?.Invoke(this, view, side);
             });
         }
         tabMenu.Items.Add(split);
         tabMenu.Items.Add(new ToolStripSeparator());
-        tabMenu.Items.Add("Close tab    Ctrl+W", null, (_, _) => CloseTab());
-        tabMenu.Items.Add("Close other tabs", null, (_, _) =>
+        tabMenu.Items.Add(text.T("Close tab    Ctrl+W"), null, (_, _) => CloseTab());
+        tabMenu.Items.Add(text.T("Close other tabs"), null, (_, _) =>
         {
             var keep = tabs[selectedIndex];
             for (int i = tabs.Count - 1; i >= 0; i--) if (tabs[i] != keep) CloseTab(i);
@@ -272,27 +313,29 @@ public sealed class ExplorerPane : UserControl
     private void ShowOptions()
     {
         tabMenu.Items.Clear();
-        tabMenu.Items.Add("Refresh    F5", null, (_, _) => ActiveView?.RefreshFolder());
-        tabMenu.Items.Add("Add to favorites    Ctrl+D", null, (_, _) => FavoriteRequested?.Invoke(this, CurrentPath));
-        tabMenu.Items.Add("Copy folder path", null, (_, _) => CopyPath());
-        tabMenu.Items.Add("Open in File Explorer", null, (_, _) => OpenInExplorer());
-        tabMenu.Items.Add("Choose folder...", null, (_, _) =>
-        {
-            using var picker = new FolderBrowserDialog { Description = "Choose a folder", UseDescriptionForTitle = true };
-            if (Directory.Exists(CurrentPath)) picker.InitialDirectory = CurrentPath;
-            if (picker.ShowDialog(this) == DialogResult.OK) Navigate(picker.SelectedPath);
-        });
+        tabMenu.Items.Add(text.T("Refresh    F5"), null, (_, _) => ActiveView?.RefreshFolder());
+        tabMenu.Items.Add(text.T("Add to favorites    Ctrl+D"), null, (_, _) => FavoriteRequested?.Invoke(this, CurrentPath));
+        tabMenu.Items.Add(text.T("Copy folder path"), null, (_, _) => CopyPath());
+        tabMenu.Items.Add(text.T("Open in File Explorer"), null, (_, _) => OpenInExplorer());
+        tabMenu.Items.Add(text.T("Choose folder..."), null, (_, _) => ChooseFolder());
         tabMenu.Items.Add(new ToolStripSeparator());
-        tabMenu.Items.Add("Details view", null, (_, _) => ActiveView?.SetViewMode(4));
-        tabMenu.Items.Add("List view", null, (_, _) => ActiveView?.SetViewMode(3));
-        tabMenu.Items.Add("Icons view", null, (_, _) => ActiveView?.SetViewMode(1));
+        tabMenu.Items.Add(text.T("Details view"), null, (_, _) => ActiveView?.SetViewMode(4));
+        tabMenu.Items.Add(text.T("List view"), null, (_, _) => ActiveView?.SetViewMode(3));
+        tabMenu.Items.Add(text.T("Icons view"), null, (_, _) => ActiveView?.SetViewMode(1));
         tabMenu.Show(Cursor.Position);
+    }
+
+    private void ChooseFolder()
+    {
+        using var picker = new FolderBrowserDialog { Description = text.T("Choose folder"), UseDescriptionForTitle = true };
+        if (Directory.Exists(CurrentPath)) picker.InitialDirectory = CurrentPath;
+        if (picker.ShowDialog(this) == DialogResult.OK) Navigate(picker.SelectedPath);
     }
 
     public void CopyPath()
     {
         if (ActiveView is null) return;
-        try { Clipboard.SetText(CurrentPath); SetStatus("Folder path copied."); }
+        try { Clipboard.SetText(CurrentPath); SetLocalizedStatus("Folder path copied."); }
         catch (System.Runtime.InteropServices.ExternalException ex) { SetStatus(ex.Message); }
     }
 

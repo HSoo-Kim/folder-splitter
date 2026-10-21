@@ -9,13 +9,15 @@ internal sealed class TabDockOverlay : Form
     internal const string DragFormat = "FolderSplitter.Tab";
     private readonly Func<Point, TabDropPlan?> hitTest;
     private readonly Rectangle[] paneBounds;
+    private readonly UiText text;
     private TabDropPlan? preview;
 
     internal TabDropPlan? Result { get; private set; }
     protected override bool ShowWithoutActivation => true;
 
-    internal TabDockOverlay(Rectangle bounds, Rectangle[] panes, Func<Point, TabDropPlan?> hitTest)
+    internal TabDockOverlay(Rectangle bounds, Rectangle[] panes, Func<Point, TabDropPlan?> hitTest, UiText text)
     {
+        this.text = text;
         this.hitTest = hitTest;
         paneBounds = panes;
         FormBorderStyle = FormBorderStyle.None;
@@ -60,7 +62,7 @@ internal sealed class TabDockOverlay : Form
         }
         if (preview is null)
         {
-            TextRenderer.DrawText(e.Graphics, "Drop near a file-list edge to split, or in the center to move a tab.\nEsc cancels.",
+            TextRenderer.DrawText(e.Graphics, text.T("Drop near a file-list edge to split, or in the center to move a tab.\nEsc cancels."),
                 Font, ClientRectangle, Theme.Muted,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
             return;

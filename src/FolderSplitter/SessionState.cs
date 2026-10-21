@@ -14,6 +14,7 @@ public sealed record PaneState
 
 public sealed record SessionState
 {
+    public string Language { get; init; } = "ko";
     public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];
@@ -144,6 +145,7 @@ public static class SessionStore
             : Math.Clamp(state.ActivePane, 0, layout - 1);
         return state with
         {
+            Language = NormalizeLanguage(state.Language),
             Layout = layout,
             LayoutTree = layoutTree,
             Panes = panes,
@@ -158,6 +160,14 @@ public static class SessionStore
             RightRowRatio = NormalizeRatio(state.RightRowRatio)
         };
     }
+
+    public static string NormalizeLanguage(string? language) => language?.Trim().ToLowerInvariant() switch
+    {
+        "en" => "en",
+        "zh-cn" => "zh-CN",
+        "ja" => "ja",
+        _ => "ko"
+    };
 
     private static List<string> NormalizeFavorites(List<string>? source)
     {

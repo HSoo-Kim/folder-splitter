@@ -31,6 +31,11 @@ if ($Publish) {
         --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None -p:DebugSymbols=false -o "$root/artifacts/FolderSplitter"
     Compress-Archive -Path "$root/artifacts/FolderSplitter/FolderSplitter.exe", "$root/README.md", `
-        "$root/README.en.md", "$root/README.zh-CN.md" `
+        "$root/README.en.md", "$root/README.zh-CN.md", "$root/README.ja.md" `
         -DestinationPath "$root/artifacts/folder-splitter-win-x64.zip" -Force
+    Get-ChildItem "$root/artifacts" -Directory |
+        Where-Object { $_.Name -like "FolderSplitter-v*" -or $_.Name -eq "win-x64" } |
+        Remove-Item -Recurse -Force
+    $legacyArchive = Join-Path $root "artifacts/QuadExplorer-win-x64.zip"
+    if (Test-Path $legacyArchive) { Remove-Item $legacyArchive -Force }
 }

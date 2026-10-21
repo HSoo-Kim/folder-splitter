@@ -10,6 +10,7 @@ internal static class Program
     private static int Main()
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         string root = Path.Combine(Path.GetTempPath(), "QuadExplorer.UiTests-" + Guid.NewGuid().ToString("N"));
@@ -81,6 +82,7 @@ internal static class Program
             Check(restored.Panes.Skip(1).Select(p => p.Tabs[0]).SequenceEqual(folders.Skip(1)), "inactive pane paths persisted");
             RunDockingScenario(session, folders);
             RunEmptyPaneScenario(session, folders);
+            RunLanguageScenario(session, folders);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -209,6 +211,10 @@ internal static class Program
                 form.SetSidebarWidth(320);
                 form.SetSidebarVisible(false);
                 Check(!Descendants(form).OfType<ListBox>().Any(l => l.Visible), "quick access fully collapses");
+                var version = form.Controls.OfType<Label>().Single(l => l.AccessibleName == "Application version");
+                Check(version.Visible && version.Text == "v" + typeof(MainForm).Assembly.GetName().Version!.ToString(3)
+                    && version.Bounds.Bottom == form.ClientRectangle.Bottom && version.Height >= version.PreferredHeight,
+                    "lower-left version matches running assembly and remains visible with sidebar hidden");
                 form.SetSidebarVisible(true);
                 Check(form.SidebarWidth == 320, "quick access restores its resized width");
                 form.ClearFavorites();
@@ -247,6 +253,202 @@ internal static class Program
             foreach (var nested in Descendants(child)) yield return nested;
         }
     }
+
+    private static void RunLanguageScenario(string session, string[] folders)
+    {
+        SessionStore.Save(session, new SessionState
+        {
+            ExplorerFavoritesImported = true, Favorites = [folders[0]],
+            Panes = [new PaneState { Tabs = [folders[0], folders[1]], SelectedTab = 0 }]
+        });
+        using (var form = new MainForm(session, []))
+        {
+            var pane = form.GetPane(0);
+            var navigation = pane.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(pane.ActiveView);
+            form.Shown += async (_, _) =>
+            {
+                try
+                {
+                    await navigation.WaitAsync(TimeSpan.FromSeconds(20));
+                    await Navigate(pane.ActiveView!, () => pane.Navigate(Path.Combine(folders[0], "한글 폴더")));
+                    await Navigate(pane.ActiveView!, () => pane.ActiveView!.Travel(0x4000));
+                    var toolbar = form.Controls.OfType<ToolStrip>().Single();
+                    var selector = toolbar.Items.OfType<ToolStripComboBox>().Single();
+                    Check(selector.Items.Cast<string>().SequenceEqual(new[] { "한국어", "English", "简体中文", "日本語" })
+                        && form.Language == "ko", "four native language choices default to Korean");
+                    var hosts = Descendants(pane).OfType<ShellViewHost>().ToArray();
+                    var active = pane.ActiveView;
+                    nint activeHandle = active!.Handle;
+                    var state = pane.CaptureState();
+                    var tree = form.CurrentLayout;
+                    var address = Descendants(pane).OfType<TextBox>().Single();
+                    address.Text = "Z:\\typed but not navigated\\日本語";
+                    var favorites = Descendants(form).OfType<ListBox>().Single(l => l.AccessibleName == "Favorites");
+                    favorites.SelectedIndex = 0;
+                    var quickAccess = Descendants(form).OfType<ListBox>().Single(l => l.AccessibleName == "Quick access");
+                    quickAccess.SelectedIndex = 2;
+                    string favoriteName = favorites.Items[0]!.ToString()!;
+                    foreach (var (index, language) in new[] { (1, "en"), (2, "zh-CN"), (3, "ja"), (0, "ko"), (3, "ja") })
+                    {
+                        await SelectLanguageFromDropdown(selector, index);
+                        var text = new UiText(language);
+                        Check(form.Language == language
+                            && toolbar.Items.Cast<ToolStripItem>().Single(i => i.AccessibleName == "1 pane layout").Text == text.T("1 pane")
+                            && toolbar.Items.Cast<ToolStripItem>().Single(i => i.AccessibleName == "Sidebar").ToolTipText == text.T("Show / hide quick access sidebar"),
+                            language + " selector refreshes toolbar labels and hover text");
+                        var up = Descendants(pane).OfType<Button>().Single(b => b.AccessibleName == "Pane 1 Up (Alt+Up)");
+                        var go = Descendants(pane).OfType<Button>().Single(b => b.AccessibleName == "Pane 1 go to address");
+                        var choose = Descendants(pane).OfType<Button>().Single(b => b.AccessibleName == "Pane 1 Choose folder");
+                        Check(pane.ToolTipFor(up) == text.T("Up (Alt+Up)")
+                            && pane.ToolTipFor(go) == text.T("Go to typed address (Enter)")
+                            && pane.ToolTipFor(choose) == text.T("Browse for a folder: open folder picker"),
+                            language + " navigation tooltips retain parent, address and picker meanings");
+                        Check(quickAccess.Items[0]!.ToString() == text.T("Home")
+                            && favorites.Items[0]!.ToString() == favoriteName
+                            && quickAccess.SelectedIndex == 2 && favorites.SelectedIndex == 0
+                            && favorites.ContextMenuStrip!.Items[0].Text == text.T("Open in new tab"),
+                            language + " sidebar and favorite actions translate without changing folder names");
+                        Check(Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status").Text
+                                == text.T("Pane {0}  |  {1} tabs  |  {2}", 1, 2, active.DisplayName)
+                            && Descendants(form.GetPane(1)).OfType<Label>().Any(l =>
+                                l.Text == text.T("Enter a folder path above or choose a folder from Pane options.")),
+                            language + " pane status and empty hints translate");
+                        Check(ReferenceEquals(pane.ActiveView, active) && active.Handle == activeHandle
+                            && Descendants(pane).OfType<ShellViewHost>().SequenceEqual(hosts)
+                            && pane.CaptureState().Tabs.SequenceEqual(state.Tabs) && pane.SelectedIndex == state.SelectedTab
+                            && form.CurrentLayout == tree && address.Text == "Z:\\typed but not navigated\\日本語"
+                            && HasNativeDropTarget(active),
+                            language + " switch preserves native views, tabs, typed address and drop targets");
+                        Check(selector.GetCurrentParent() == toolbar && toolbar.ClientRectangle.Contains(selector.Bounds),
+                            language + " selector stays visible in toolbar");
+                        CheckLanguagePlacement(toolbar, selector, language);
+                        var options = Descendants(pane).OfType<Button>().Single(b => b.AccessibleName == "Pane 1 Pane options");
+                        options.PerformClick();
+                        var menu = (ContextMenuStrip)typeof(ExplorerPane)
+                            .GetField("tabMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(pane)!;
+                        Check(menu.Items[0].Text == text.T("Refresh    F5")
+                            && menu.Items[4].Text == text.T("Choose folder..."), language + " pane options translate");
+                        menu.Close();
+                        typeof(ExplorerPane).GetMethod("ShowTabMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                            .Invoke(pane, [0]);
+                        Check(menu.Items[0].Text == text.T("New tab")
+                            && ((ToolStripMenuItem)menu.Items[3]).DropDownItems[0].Text == text.T("Pane {0}", 2)
+                            && ((ToolStripMenuItem)menu.Items[4]).DropDownItems[0].Text == text.T("Left"),
+                            language + " tab and split context menus translate");
+                        menu.Close();
+                        // Opening a tab menu selects it; restore the unsubmitted address before the next switch.
+                        address.Text = "Z:\\typed but not navigated\\日本語";
+                        CaptureLanguage(form, language + "-desktop");
+                        form.Size = new Size(900, 600);
+                        Check(selector.GetCurrentParent() == toolbar && toolbar.ClientRectangle.Contains(selector.Bounds),
+                            language + " selector remains visible at minimum window size");
+                        CheckLanguagePlacement(toolbar, selector, language + " minimum");
+                        CaptureLanguage(form, language + "-minimum");
+                        form.Size = new Size(1400, 900);
+                    }
+                    pane.SetLocalizedStatus("Folder path copied.");
+                    selector.SelectedIndex = 2;
+                    Check(Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status").Text
+                        == new UiText("zh-CN").T("Folder path copied."), "existing action status refreshes on language switch");
+                    selector.SelectedIndex = 3;
+                    await Navigate(active, () => active.Travel(0x8000));
+                    Check(pane.CurrentPath == Path.Combine(folders[0], "한글 폴더"),
+                        "native forward history survives all language switches");
+                    ValidateTranslations();
+                }
+                catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+                finally { form.Close(); }
+            };
+            Application.Run(form);
+        }
+        Check(SessionStore.Load(session).Language == "ja", "selected Japanese language saves on close");
+        using var reopened = new MainForm(session, []);
+        Check(reopened.Language == "ja"
+            && reopened.Controls.OfType<ToolStrip>().Single().Items.OfType<ToolStripComboBox>().Single().SelectedIndex == 3
+            && reopened.GetPane(0).TabCount == 2, "reopened session retains language and tabs");
+    }
+
+    private static void ValidateTranslations()
+    {
+        var strings = (System.Collections.IDictionary)typeof(UiText)
+            .GetField("Strings", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.GetValue(null)!;
+        foreach (string language in new[] { "ko", "en", "zh-CN", "ja" })
+        {
+            var text = new UiText(language);
+            foreach (string key in strings.Keys)
+            {
+                string translated = text.T(key, 1, 2, 3);
+                if (string.IsNullOrWhiteSpace(translated) || (language != "en" && translated == key))
+                    throw new InvalidOperationException(language + " missing translation for " + key);
+            }
+            Check(!string.IsNullOrWhiteSpace(text.Help), language + " dictionary formats every app-owned message");
+        }
+    }
+
+    private static void CaptureLanguage(Form form, string name)
+    {
+        string? directory = Environment.GetEnvironmentVariable("FOLDERSPLITTER_UI_SCREENSHOTS");
+        if (string.IsNullOrWhiteSpace(directory)) return;
+        Directory.CreateDirectory(directory);
+        form.Refresh();
+        using var bitmap = new Bitmap(form.Width, form.Height);
+        using var graphics = Graphics.FromImage(bitmap);
+        nint context = graphics.GetHdc();
+        try
+        {
+            if (!PrintWindow(form.Handle, context, 2))
+                throw new InvalidOperationException("Could not capture app window.");
+        }
+        finally { graphics.ReleaseHdc(context); }
+        string path = Path.Combine(directory, name + ".png");
+        bitmap.Save(path);
+        Console.WriteLine("SCREENSHOT " + path);
+    }
+
+    private static void CheckLanguagePlacement(ToolStrip toolbar, ToolStripComboBox selector, string name)
+    {
+        var items = toolbar.Items.Cast<ToolStripItem>().ToArray();
+        var label = items.Single(i => i.AccessibleName == "Language");
+        var close = items.Single(i => i.AccessibleName == "Close tab");
+        var help = items.Single(i => i.AccessibleName == "Shortcuts");
+        Check(new[] { label, selector, close, help }.All(i =>
+                i.Alignment == ToolStripItemAlignment.Right && i.Placement == ToolStripItemPlacement.Main)
+            && label.Bounds.Right <= selector.Bounds.Left && selector.Bounds.Right <= close.Bounds.Left
+            && close.Bounds.Right <= help.Bounds.Left,
+            name + " right group orders language, close tab and shortcuts");
+        var visible = items.Where(i => i.Placement == ToolStripItemPlacement.Main && i.Available).ToArray();
+        Check(!visible.SelectMany((item, index) => visible.Skip(index + 1)
+                .Select(other => item.Bounds.IntersectsWith(other.Bounds))).Any(overlap => overlap)
+            && selector.Width >= selector.Items.Cast<string>().Max(s => TextRenderer.MeasureText(s, selector.Font).Width)
+                + SystemInformation.VerticalScrollBarWidth,
+            name + " toolbar has no overlaps and native language names fit");
+    }
+
+    private static async Task SelectLanguageFromDropdown(ToolStripComboBox selector, int index)
+    {
+        var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Selected(object? sender, EventArgs e)
+        {
+            if (selector.SelectedIndex == index) changed.TrySetResult();
+        }
+        selector.SelectedIndexChanged += Selected;
+        try
+        {
+            selector.ComboBox.Focus();
+            selector.ComboBox.DroppedDown = true;
+            int direction = index > selector.SelectedIndex ? 0x28 : 0x26;
+            int steps = Math.Abs(index - selector.SelectedIndex);
+            for (int step = 0; step < steps; step++)
+                PostMessage(selector.ComboBox.Handle, 0x100, direction, 0);
+            await changed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            selector.ComboBox.DroppedDown = false;
+        }
+        finally { selector.SelectedIndexChanged -= Selected; }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
 
     private static Task NavigationSignal(ShellViewHost host)
     {
@@ -293,6 +495,10 @@ internal static class Program
     }
 
     private delegate bool WindowCallback(nint window, nint parameter);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PrintWindow(nint window, nint context, uint flags);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

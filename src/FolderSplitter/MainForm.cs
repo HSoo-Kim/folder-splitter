@@ -5,6 +5,14 @@ namespace QuadExplorer;
 public sealed class MainForm : Form, IMessageFilter
 {
     private readonly string sessionPath;
+    private readonly UiText text;
+    private readonly List<Action> languageBindings = [];
+    private readonly ToolStripComboBox languageSelector = new()
+    {
+        AccessibleName = "UI language", DropDownStyle = ComboBoxStyle.DropDownList,
+        AutoSize = false, Width = 100, Overflow = ToolStripItemOverflow.Never,
+        Alignment = ToolStripItemAlignment.Right
+    };
     private readonly Icon appIcon;
     private readonly SessionState initialState;
     private readonly ExplorerPane[] panes;
@@ -14,7 +22,7 @@ public sealed class MainForm : Form, IMessageFilter
     private int[] visiblePanes;
     private readonly Panel sidebar;
     private readonly Splitter sidebarSplitter;
-    private readonly ToolStripButton sidebarButton = new("Sidebar");
+    private readonly ToolStripButton sidebarButton = new("Sidebar") { AccessibleName = "Sidebar" };
     private int sidebarWidth;
     private readonly List<string> deletedFavorites;
     private bool explorerFavoritesImported;
@@ -24,8 +32,15 @@ public sealed class MainForm : Form, IMessageFilter
     private bool favoritesExpanded;
     private readonly List<string> favorites;
     private readonly ToolStrip toolbar = Theme.Strip();
+    private readonly Label versionLabel = new()
+    {
+        Dock = DockStyle.Bottom, AutoSize = true, TextAlign = ContentAlignment.MiddleLeft,
+        ForeColor = Theme.Muted, BackColor = Theme.Canvas, Padding = new Padding(12, 4, 0, 4),
+        AccessibleName = "Application version"
+    };
     private readonly ToolStripButton[] layoutButtons = new ToolStripButton[4];
     private readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 800 };
+    private readonly ToolTip tips = new() { ShowAlways = true, AutoPopDelay = 10000 };
     private int activePane;
     private bool ready;
     private bool saving;
@@ -41,6 +56,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
+        text = new UiText(initialState.Language);
         layoutTree = initialState.LayoutTree!;
         visiblePanes = layoutTree.GetPanes().Order().ToArray();
         activePane = initialState.ActivePane;
@@ -58,12 +74,13 @@ public sealed class MainForm : Form, IMessageFilter
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 9.5f);
+        versionLabel.Text = "v" + typeof(MainForm).Assembly.GetName().Version!.ToString(3);
         using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("QuadExplorer.AppIcon")!)
         using (var sourceIcon = new Icon(iconStream))
             appIcon = (Icon)sourceIcon.Clone();
         Icon = appIcon;
 
-        panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i])).ToArray();
+        panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i], text)).ToArray();
         foreach (var pane in panes)
         {
             pane.Activated += (_, _) => ActivatePane(Array.IndexOf(panes, pane));
@@ -94,6 +111,7 @@ public sealed class MainForm : Form, IMessageFilter
             Font = new Font(Font.FontFamily, 8, FontStyle.Bold), ForeColor = Theme.Muted,
             Padding = new Padding(7, 0, 0, 0)
         };
+        BindText(sideTitle, "QUICK ACCESS");
         places = new ListBox
         {
             Dock = DockStyle.Top, Height = 216, BorderStyle = BorderStyle.None, BackColor = Theme.Canvas,
@@ -107,15 +125,15 @@ public sealed class MainForm : Form, IMessageFilter
             if (e.KeyCode == Keys.Enter) { OpenPlace(); e.Handled = true; }
         };
         var placeMenu = new ContextMenuStrip();
-        placeMenu.Items.Add("Open in new tab", null, (_, _) =>
+        BindText(placeMenu.Items.Add("Open in new tab", null, (_, _) =>
         {
             if (places.SelectedItem is Place place) Active.AddTab(place.Path);
-        });
-        placeMenu.Items.Add("Remove favorite", null, (_, _) =>
+        }), "Open in new tab");
+        BindText(placeMenu.Items.Add("Remove favorite", null, (_, _) =>
         {
             if (places.SelectedItem is Place { Favorite: true } place)
             RemoveFavorite(place.Path);
-        });
+        }), "Remove favorite");
         placeMenu.Opening += (_, _) => placeMenu.Items[1].Enabled = places.SelectedItem is Place { Favorite: true };
         places.MouseDown += (_, e) => { if (e.Button == MouseButtons.Right) places.SelectedIndex = places.IndexFromPoint(e.Location); };
         places.ContextMenuStrip = placeMenu;
@@ -133,17 +151,17 @@ public sealed class MainForm : Form, IMessageFilter
             { Active.Navigate(p.Path); e.Handled = true; }
         };
         var favoriteMenu = new ContextMenuStrip();
-        favoriteMenu.Items.Add("Open in new tab", null, (_, _) =>
-        { if (favoritePlaces.SelectedItem is Place p) Active.AddTab(p.Path); });
-        favoriteMenu.Items.Add("Remove favorite", null, (_, _) =>
+        BindText(favoriteMenu.Items.Add("Open in new tab", null, (_, _) =>
+        { if (favoritePlaces.SelectedItem is Place p) Active.AddTab(p.Path); }), "Open in new tab");
+        BindText(favoriteMenu.Items.Add("Remove favorite", null, (_, _) =>
         {
             if (favoritePlaces.SelectedItem is Place p)
             RemoveFavorite(p.Path);
-        });
+        }), "Remove favorite");
         favoriteMenu.Items.Add(new ToolStripSeparator());
-        favoriteMenu.Items.Add("Import from File Explorer", null, (_, _) => ImportExplorerFavorites());
-        favoriteMenu.Items.Add("Remove all favorites", null, (_, _) => ClearFavorites());
-        favoriteMenu.Items.Add("Restore favorites...", null, (_, _) => ShowRestoreFavorites());
+        BindText(favoriteMenu.Items.Add("Import from File Explorer", null, (_, _) => ImportExplorerFavorites()), "Import from File Explorer");
+        BindText(favoriteMenu.Items.Add("Remove all favorites", null, (_, _) => ClearFavorites()), "Remove all favorites");
+        BindText(favoriteMenu.Items.Add("Restore favorites...", null, (_, _) => ShowRestoreFavorites()), "Restore favorites...");
         favoritePlaces.ContextMenuStrip = favoriteMenu;
         favoritePlaces.MouseDown += (_, e) =>
         { if (e.Button == MouseButtons.Right) favoritePlaces.SelectedIndex = favoritePlaces.IndexFromPoint(e.Location); };
@@ -155,14 +173,20 @@ public sealed class MainForm : Form, IMessageFilter
         };
         favoritesHeader.FlatAppearance.BorderSize = 0;
         favoritesHeader.Click += (_, _) => ToggleFavorites();
+        BindTip(favoritesHeader, "Collapse / expand favorites");
+        BindTip(sidebarSplitter, "Drag to resize quick access; double-click to hide");
         favoritesHeader.ContextMenuStrip = favoriteMenu;
         var manage = Theme.Button("Manage...", "Manage favorites", () => favoriteMenu.Show(Cursor.Position));
         manage.Dock = DockStyle.Bottom;
         manage.AutoSize = true;
+        BindText(manage, "Manage...");
+        BindTip(manage, "Manage favorites: import, remove all, restore");
         var pin = Theme.Button("+  Pin folder", "Pin current folder to favorites", () => AddFavorite(Active.CurrentPath), 152);
         pin.Dock = DockStyle.Bottom;
         pin.Height = 36;
         pin.BackColor = Theme.Canvas;
+        BindText(pin, "+  Pin folder");
+        BindTip(pin, "Pin current folder to favorites (Ctrl+D)");
         sidebar.Controls.Add(favoritePlaces);
         sidebar.Controls.Add(favoritesHeader);
         sidebar.Controls.Add(places);
@@ -177,6 +201,7 @@ public sealed class MainForm : Form, IMessageFilter
         workspace.Controls.Add(sidebarSplitter);
         workspace.Controls.Add(sidebar);
         Controls.Add(workspace);
+        Controls.Add(versionLabel);
         Controls.Add(toolbar);
         sidebar.Visible = initialState.ShowSidebar;
         sidebarSplitter.Visible = initialState.ShowSidebar;
@@ -211,6 +236,43 @@ public sealed class MainForm : Form, IMessageFilter
     private ExplorerPane Active => panes[activePane];
     internal PaneLayout CurrentLayout => layoutTree;
     internal ExplorerPane GetPane(int id) => panes[id];
+    internal string Language => text.Language;
+
+    internal void SetLanguage(string language)
+    {
+        text.SetLanguage(language);
+        int index = Array.IndexOf(new[] { "ko", "en", "zh-CN", "ja" }, text.Language);
+        if (languageSelector.SelectedIndex != index) languageSelector.SelectedIndex = index;
+        foreach (var refresh in languageBindings) refresh();
+        foreach (var pane in panes) pane.RefreshLanguage();
+        ReloadPlaces();
+        ScheduleSave();
+    }
+
+    private void BindText(Control control, string key)
+    {
+        void Refresh() => control.Text = text.T(key);
+        languageBindings.Add(Refresh);
+        Refresh();
+    }
+
+    private void BindText(ToolStripItem item, string key, string? tip = null)
+    {
+        void Refresh()
+        {
+            item.Text = text.T(key);
+            if (tip is not null) item.ToolTipText = text.T(tip);
+        }
+        languageBindings.Add(Refresh);
+        Refresh();
+    }
+
+    private void BindTip(Control control, string key)
+    {
+        void Refresh() => tips.SetToolTip(control, text.T(key));
+        languageBindings.Add(Refresh);
+        Refresh();
+    }
 
     private void BuildToolbar()
     {
@@ -219,7 +281,7 @@ public sealed class MainForm : Form, IMessageFilter
         toolbar.Items.Add(brand);
         sidebarButton.CheckOnClick = true;
         sidebarButton.Checked = initialState.ShowSidebar;
-        sidebarButton.ToolTipText = "Show or hide quick access";
+        BindText(sidebarButton, "Sidebar", "Show / hide quick access sidebar");
         sidebarButton.Click += (_, _) => SetSidebarVisible(sidebarButton.Checked);
         toolbar.Items.Add(sidebarButton);
         toolbar.Items.Add(new ToolStripSeparator());
@@ -229,9 +291,16 @@ public sealed class MainForm : Form, IMessageFilter
             int count = counts[i];
             var button = new ToolStripButton($"{count} pane{(count == 1 ? "" : "s")}")
             {
-                ToolTipText = $"{count} pane layout (Ctrl+{count})", AutoSize = true,
+                AutoSize = true,
                 AccessibleName = $"{count} pane layout"
             };
+            void Refresh()
+            {
+                button.Text = count == 1 ? text.T("1 pane") : text.T("{0} panes", count);
+                button.ToolTipText = text.T("Split into {0} panes (Ctrl+{0})", count);
+            }
+            languageBindings.Add(Refresh);
+            Refresh();
             button.Click += (_, _) => ApplyLayout(count);
             layoutButtons[i] = button;
             toolbar.Items.Add(button);
@@ -240,41 +309,86 @@ public sealed class MainForm : Form, IMessageFilter
                 var arrangements = new ToolStripDropDownButton("\u25BE")
                 {
                     AccessibleName = "Three pane arrangements",
-                    ToolTipText = "Choose the three-pane arrangement",
+                    ToolTipText = text.T("Choose three-pane arrangement: left/right or top/bottom 2:1"),
                     AutoSize = false, Width = 22
                 };
-                arrangements.DropDownItems.Add("Two left, one right", null, (_, _) => ApplyLayout(3));
-                arrangements.DropDownItems.Add("One left, two right", null, (_, _) => ApplyLayout(3, false));
-                arrangements.DropDownItems.Add("Two above, one below", null, (_, _) => ApplyLayout(3, true, false));
-                arrangements.DropDownItems.Add("One above, two below", null, (_, _) => ApplyLayout(3, false, false));
+                languageBindings.Add(() => arrangements.ToolTipText = text.T("Choose three-pane arrangement: left/right or top/bottom 2:1"));
+                BindText(arrangements.DropDownItems.Add("Two left, one right", null, (_, _) => ApplyLayout(3)), "Two left, one right");
+                BindText(arrangements.DropDownItems.Add("One left, two right", null, (_, _) => ApplyLayout(3, false)), "One left, two right");
+                BindText(arrangements.DropDownItems.Add("Two above, one below", null, (_, _) => ApplyLayout(3, true, false)), "Two above, one below");
+                BindText(arrangements.DropDownItems.Add("One above, two below", null, (_, _) => ApplyLayout(3, false, false)), "One above, two below");
                 toolbar.Items.Add(arrangements);
             }
         }
         toolbar.Items.Add(new ToolStripSeparator());
-        var equalize = new ToolStripButton("Equal size") { ToolTipText = "Reset split dividers to equal size" };
+        var equalize = new ToolStripButton { AccessibleName = "Equal size" };
+        BindText(equalize, "Equal size", "Equalize pane sizes");
         equalize.Click += (_, _) => EqualizeSplits();
         toolbar.Items.Add(equalize);
-        var help = new ToolStripButton("Shortcuts") { Alignment = ToolStripItemAlignment.Right };
+        var help = new ToolStripButton
+        {
+            Alignment = ToolStripItemAlignment.Right, AccessibleName = "Shortcuts",
+            Overflow = ToolStripItemOverflow.Never
+        };
+        BindText(help, "Shortcuts", "Show shortcuts and help (F1)");
         help.Click += (_, _) => ShowHelp();
         toolbar.Items.Add(help);
-        var close = new ToolStripButton("Close tab") { Alignment = ToolStripItemAlignment.Right, ToolTipText = "Close active tab (Ctrl+W)" };
+        var close = new ToolStripButton
+        {
+            Alignment = ToolStripItemAlignment.Right, AccessibleName = "Close tab",
+            Overflow = ToolStripItemOverflow.Never
+        };
+        BindText(close, "Close tab", "Close current tab (Ctrl+W)");
         close.Click += (_, _) => Active.CloseTab();
         toolbar.Items.Add(close);
+        var languageLabel = new ToolStripLabel
+        {
+            Alignment = ToolStripItemAlignment.Right, AccessibleName = "Language",
+            Overflow = ToolStripItemOverflow.Never
+        };
+        BindText(languageLabel, "Language");
+        languageSelector.Items.AddRange(["한국어", "English", "简体中文", "日本語"]);
+        languageSelector.SelectedIndex = Array.IndexOf(new[] { "ko", "en", "zh-CN", "ja" }, text.Language);
+        languageSelector.SelectedIndexChanged += (_, _) =>
+        {
+            if (languageSelector.SelectedIndex >= 0)
+                SetLanguage(new[] { "ko", "en", "zh-CN", "ja" }[languageSelector.SelectedIndex]);
+        };
+        languageBindings.Add(() => languageSelector.ToolTipText = text.T("Choose UI language"));
+        languageSelector.ToolTipText = text.T("Choose UI language");
+        toolbar.Items.Add(languageSelector);
+        toolbar.Items.Add(languageLabel);
+        toolbar.Layout += (_, _) =>
+        {
+            int width = Math.Max(100, languageSelector.Items.Cast<string>()
+                .Max(name => TextRenderer.MeasureText(name, languageSelector.Font).Width)
+                + (int)Math.Ceiling(32 * toolbar.DeviceDpi / 96d));
+            if (languageSelector.Width != width) languageSelector.Width = width;
+            languageSelector.DropDownWidth = width;
+        };
     }
 
     private void ReloadPlaces()
     {
+        string? selectedPlace = (places.SelectedItem as Place?)?.Path;
+        string? selectedFavorite = (favoritePlaces.SelectedItem as Place?)?.Path;
         places.Items.Clear();
-        places.Items.Add(new Place("Home", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
-        places.Items.Add(new Place("Desktop", Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)));
-        places.Items.Add(new Place("Downloads", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")));
-        places.Items.Add(new Place("Documents", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)));
-        places.Items.Add(new Place("This PC", ShellNative.ThisPc));
-        places.Items.Add(new Place("Recycle Bin", ShellNative.RecycleBin));
+        places.Items.Add(new Place(text.T("Home"), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
+        places.Items.Add(new Place(text.T("Desktop"), Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)));
+        places.Items.Add(new Place(text.T("Downloads"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")));
+        places.Items.Add(new Place(text.T("Documents"), Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)));
+        places.Items.Add(new Place(text.T("This PC"), ShellNative.ThisPc));
+        places.Items.Add(new Place(text.T("Recycle Bin"), ShellNative.RecycleBin));
         favoritePlaces.Items.Clear();
-        foreach (string path in favorites) favoritePlaces.Items.Add(new Place(ShellViewHost.TitleFor(path), path, true));
+        foreach (string path in favorites) favoritePlaces.Items.Add(new Place(ShellViewHost.TitleFor(path, text), path, true));
         favoritePlaces.Visible = favoritesExpanded;
-        favoritesHeader.Text = $"{(favoritesExpanded ? "\u25BE" : "\u25B8")} Favorites";
+        for (int i = 0; i < places.Items.Count; i++)
+            if (((Place)places.Items[i]).Path == selectedPlace)
+            { places.SelectedIndex = i; break; }
+        for (int i = 0; i < favoritePlaces.Items.Count; i++)
+            if (((Place)favoritePlaces.Items[i]).Path == selectedFavorite)
+            { favoritePlaces.SelectedIndex = i; break; }
+        favoritesHeader.Text = $"{(favoritesExpanded ? "\u25BE" : "\u25B8")} {text.T("Favorites")}";
         favoritesHeader.AccessibleName = favoritesExpanded ? "Collapse favorites" : "Expand favorites";
     }
 
@@ -313,8 +427,8 @@ public sealed class MainForm : Form, IMessageFilter
         }
         explorerFavoritesImported = result.Warning is null || result.Paths.Count > 0;
         ReloadPlaces();
-        Active.SetStatus($"Imported {added} favorites from File Explorer."
-            + (result.Warning is { } warning ? " " + warning : ""));
+        Active.SetLocalizedStatus(() => text.T("Imported {0} favorites from File Explorer.", added)
+            + (result.Warnings.Count > 0 ? " " + string.Join(" ", result.Warnings.Select(w => text.T(w))) : ""));
         ScheduleSave();
     }
 
@@ -339,18 +453,18 @@ public sealed class MainForm : Form, IMessageFilter
     {
         using var dialog = new Form
         {
-            Text = "Restore favorites", StartPosition = FormStartPosition.CenterParent,
+            Text = text.T("Restore favorites"), StartPosition = FormStartPosition.CenterParent,
             Size = new Size(650, 430), MinimumSize = new Size(450, 300),
             Font = Font, ShowInTaskbar = false, MinimizeBox = false, MaximizeBox = false
         };
         var list = new ListBox { Dock = DockStyle.Fill, SelectionMode = SelectionMode.MultiExtended, HorizontalScrollbar = true };
         foreach (string path in deletedFavorites)
-            list.Items.Add(new Place($"{ShellViewHost.TitleFor(path)} — {path}", path));
+            list.Items.Add(new Place($"{ShellViewHost.TitleFor(path, text)} — {path}", path));
         foreach (Place place in places.Items)
             if (!favorites.Contains(place.Path, StringComparer.OrdinalIgnoreCase)
                 && !deletedFavorites.Contains(place.Path, StringComparer.OrdinalIgnoreCase))
                 list.Items.Add(place);
-        var restore = new Button { Text = "Restore selected", Dock = DockStyle.Bottom, AutoSize = true };
+        var restore = new Button { Text = text.T("Restore selected"), Dock = DockStyle.Bottom, AutoSize = true };
         restore.Click += (_, _) =>
         {
             foreach (Place item in list.SelectedItems.Cast<Place>().ToArray()) RestoreFavorite(item.Path);
@@ -358,7 +472,7 @@ public sealed class MainForm : Form, IMessageFilter
         };
         var label = new Label
         {
-            Text = "Removed favorites and standard locations (including Recycle Bin). Select items to restore.",
+            Text = text.T("Removed favorites and standard locations (including Recycle Bin). Select items to restore."),
             Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(600, 0)
         };
         dialog.Controls.Add(list);
@@ -395,12 +509,12 @@ public sealed class MainForm : Form, IMessageFilter
     private void AddFavorite(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        if (favorites.Contains(path, StringComparer.OrdinalIgnoreCase)) { Active.SetStatus("Already in favorites."); return; }
-        if (favorites.Count >= 100) { Active.SetStatus("Maximum 100 favorites."); return; }
+        if (favorites.Contains(path, StringComparer.OrdinalIgnoreCase)) { Active.SetLocalizedStatus("Already in favorites."); return; }
+        if (favorites.Count >= 100) { Active.SetLocalizedStatus("Maximum 100 favorites."); return; }
         favorites.Add(path);
         deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
         ReloadPlaces();
-        Active.SetStatus("Added to favorites.");
+        Active.SetLocalizedStatus("Added to favorites.");
         ScheduleSave();
     }
 
@@ -493,7 +607,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         Size minimum = MinimumContentSize(layoutTree);
         MinimumSize = new Size(Math.Max(900, minimum.Width + (sidebar.Visible ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
-            Math.Max(600, minimum.Height + toolbar.Height + 12 + Height - ClientSize.Height));
+            Math.Max(600, minimum.Height + toolbar.Height + versionLabel.Height + 12 + Height - ClientSize.Height));
     }
 
     private void ApplySplitRatios()
@@ -530,7 +644,7 @@ public sealed class MainForm : Form, IMessageFilter
         ActivatePane(source.PaneNumber - 1);
         Rectangle bounds = paneHost.RectangleToScreen(paneHost.ClientRectangle);
         Rectangle[] regions = visiblePanes.Select(i => panes[i].RectangleToScreen(panes[i].ClientRectangle)).ToArray();
-        using var overlay = new TabDockOverlay(bounds, regions, point => FindDropPlan(point, source, tab));
+        using var overlay = new TabDockOverlay(bounds, regions, point => FindDropPlan(point, source, tab), text);
         var data = new DataObject();
         data.SetData(TabDockOverlay.DragFormat, false, "tab");
         tabDragging = true;
@@ -579,7 +693,7 @@ public sealed class MainForm : Form, IMessageFilter
                 if (edge == SplitEdge.Bottom) preview.Y += full.Height - preview.Height;
             }
             bool allowed = CanDockTab(source, tab, target, edge, out string reason);
-            string label = allowed ? edge is { } side ? $"Split {side.ToString().ToLowerInvariant()}" : $"Move tab to pane {target + 1}" : reason;
+            string label = allowed ? edge is { } side ? text.T($"Split {side.ToString().ToLowerInvariant()}") : text.T("Move tab to pane {0}", target + 1) : text.T(reason);
             return new TabDropPlan(target, edge, preview, label, allowed);
         }
         return null;
@@ -605,7 +719,7 @@ public sealed class MainForm : Form, IMessageFilter
     internal bool DockTab(ExplorerPane source, ShellViewHost tab, int target, SplitEdge? edge)
     {
         if (!CanDockTab(source, tab, target, edge, out string reason))
-        { source.SetStatus(reason.Replace("\n", " ")); return false; }
+        { source.SetLocalizedStatus(() => text.T(reason).Replace("\n", " ")); return false; }
         int sourceId = source.PaneNumber - 1;
         if (edge is { } side && sourceId != target && source.TabCount == 1)
         {
@@ -719,6 +833,7 @@ public sealed class MainForm : Form, IMessageFilter
             SessionStore.Save(sessionPath, new SessionState
             {
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
+                Language = text.Language,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,
@@ -734,7 +849,7 @@ public sealed class MainForm : Form, IMessageFilter
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             saveError = ex.Message;
-            Active.SetStatus("Session could not be saved: " + ex.Message);
+            Active.SetLocalizedStatus("Session could not be saved: {0}", ex.Message);
         }
         finally { saving = false; }
     }
@@ -745,7 +860,7 @@ public sealed class MainForm : Form, IMessageFilter
         SaveSession();
         if (saveError is not null && e.CloseReason == CloseReason.UserClosing)
         {
-            e.Cancel = MessageBox.Show(this, "Your session could not be saved:\n\n" + saveError + "\n\nClose anyway?",
+            e.Cancel = MessageBox.Show(this, text.T("Your session could not be saved:\n\n{0}\n\nClose anyway?", saveError),
                 "Folder Splitter", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes;
         }
         base.OnFormClosing(e);
@@ -759,6 +874,7 @@ public sealed class MainForm : Form, IMessageFilter
             rebuilding = true;
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
+            tips.Dispose();
             places.ContextMenuStrip?.Dispose();
             favoritePlaces.ContextMenuStrip?.Dispose();
         }
@@ -773,11 +889,6 @@ public sealed class MainForm : Form, IMessageFilter
     private void ShowHelp()
     {
         MessageBox.Show(this,
-            "LAYOUT\nCtrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   Pane count\nCtrl+Shift+3   One left, two right\nF6   Next pane\nThe arrow beside 3 panes offers both 2:1 arrangements.\nDrag dividers to resize; Equal size resets them.\n\n" +
-            "TABS\nDrag a tab to a file-list edge to split; center to move.\nA blue preview shows the destination. Esc cancels.\nRight-click tab > Split tab is the keyboard alternative.\nUnused panes remain empty until you open a folder.\nCtrl+T   New tab at current folder\nCtrl+W / middle-click   Close tab\nCtrl+Shift+T   Reopen closed tab\nCtrl+Tab / Ctrl+Shift+Tab   Switch tabs\n\n" +
-            "NAVIGATION\nCtrl+L / Alt+D   Address bar\nAlt+Left / Right / Up   Back, forward, parent\nF5   Refresh\nCtrl+D   Pin current folder\n\n" +
-            "FILES\nUse Windows context menus and drag files between panes.\nCtrl+C / Ctrl+X / Ctrl+V   Copy, cut, paste\nF2   Rename    |    Delete   Recycle\nCtrl+Shift+N   New folder\n\n" +
-            "Tabs, favorites and layout are saved locally.\nPane options include view modes and Open in File Explorer.",
-            "Folder Splitter shortcuts", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            text.Help, text.T("Folder Splitter shortcuts"), MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 }

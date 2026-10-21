@@ -10,18 +10,22 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private uint cookie;
     private bool initialized;
     private readonly Label error;
+    private readonly UiText text;
+    private Func<string>? errorMessage;
     private string requestedLocation;
 
     public string LocationPath { get; private set; }
     public string DisplayName { get; private set; }
     public bool HasNavigated { get; private set; }
+    internal string? ErrorStatus => error.Visible && errorMessage is not null ? errorMessage().Replace("\n", " ") : null;
     public event EventHandler? Navigated;
     public event EventHandler<string>? NavigationError;
 
-    public ShellViewHost(string location)
+    public ShellViewHost(string location, UiText? text = null)
     {
+        this.text = text ?? new UiText();
         LocationPath = requestedLocation = location;
-        DisplayName = TitleFor(location);
+        DisplayName = TitleFor(location, this.text);
         Dock = DockStyle.Fill;
         BackColor = Color.White;
         TabStop = true;
@@ -60,17 +64,21 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         if (location.Length == 0) return;
         if (location == "~") location = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         requestedLocation = location;
-        if (browser is null) { LocationPath = location; DisplayName = TitleFor(location); return; }
+        if (browser is null) { LocationPath = location; DisplayName = TitleFor(location, text); return; }
         nint pidl = 0;
         try
         {
             Marshal.ThrowExceptionForHR(ShellNative.SHParseDisplayName(location, 0, out pidl, 0x20000000, out uint attributes));
-            if ((attributes & 0x20000000) == 0) throw new IOException("Enter a folder path, not a file.");
+            if ((attributes & 0x20000000) == 0)
+            {
+                ReportError(() => text.T("Could not open:\n{0}\n\n{1}", location, text.T("Enter a folder path, not a file.")));
+                return;
+            }
             browser.BrowseToIDList(pidl, 0);
         }
         catch (Exception ex) when (ex is COMException or IOException or ArgumentException)
         {
-            ReportError($"Could not open:\n{location}\n\n{ex.Message}");
+            ReportError(() => text.T("Could not open:\n{0}\n\n{1}", location, ex.Message));
         }
         finally { if (pidl != 0) Marshal.FreeCoTaskMem(pidl); }
     }
@@ -143,10 +151,23 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     private void ReportError(string message)
     {
-        error.Text = message + "\n\nUse the address bar to choose another folder, or retry with Go.";
+        ReportError(() => message);
+    }
+
+    private void ReportError(Func<string> message)
+    {
+        errorMessage = message;
+        RefreshLanguage();
         error.Visible = true;
         error.BringToFront();
-        NavigationError?.Invoke(this, message.Replace("\n", " "));
+        NavigationError?.Invoke(this, message().Replace("\n", " "));
+    }
+
+    internal void RefreshLanguage()
+    {
+        if (!HasNavigated) DisplayName = TitleFor(LocationPath, text);
+        if (errorMessage is not null)
+            error.Text = errorMessage() + "\n\n" + text.T("Use the address bar to choose another folder, or retry with Go.");
     }
 
     public int OnNavigationPending(nint pidlFolder)
@@ -166,7 +187,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     public int OnNavigationComplete(nint pidlFolder)
     {
         LocationPath = ShellNative.Name(pidlFolder, 0x80028000) ?? requestedLocation; // Desktop absolute parsing.
-        DisplayName = ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath);
+        DisplayName = ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath, text);
         requestedLocation = LocationPath;
         HasNavigated = true;
         error.Visible = false;
@@ -176,14 +197,14 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public int OnNavigationFailed(nint pidlFolder)
     {
-        ReportError($"Folder unavailable: {requestedLocation}");
+        ReportError(() => text.T("Folder unavailable: {0}", requestedLocation));
         return 0;
     }
 
-    internal static string TitleFor(string path)
+    internal static string TitleFor(string path, UiText? text = null)
     {
-        if (path == ShellNative.ThisPc) return "This PC";
-        if (path == ShellNative.RecycleBin) return "Recycle Bin";
+        if (path == ShellNative.ThisPc) return text?.T("This PC") ?? "This PC";
+        if (path == ShellNative.RecycleBin) return text?.T("Recycle Bin") ?? "Recycle Bin";
         string trimmed = path.TrimEnd('\\', '/');
         string name = Path.GetFileName(trimmed);
         return string.IsNullOrEmpty(name) ? path : name;

@@ -10,16 +10,20 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         string sessionPath = SessionStore.DefaultPath;
+        var text = new UiText(SessionStore.Load(sessionPath).Language);
         var folders = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--session" && i + 1 < args.Length)
+            {
                 sessionPath = Path.GetFullPath(args[++i]);
+                text.SetLanguage(SessionStore.Load(sessionPath).Language);
+            }
             else if (Directory.Exists(args[i]))
                 folders.Add(Path.GetFullPath(args[i]));
             else
             {
-                MessageBox.Show($"Not a folder or recognized argument:\n{args[i]}",
+                MessageBox.Show(text.T("Not a folder or recognized argument:\n{0}", args[i]),
                     "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -29,7 +33,7 @@ internal static class Program
         using var mutex = new Mutex(true, @"Local\QuadExplorer-" + key, out bool firstInstance);
         if (!firstInstance)
         {
-            MessageBox.Show("Folder Splitter is already running. Use its taskbar button to switch to it.",
+            MessageBox.Show(text.T("Folder Splitter is already running. Use its taskbar button to switch to it."),
                 "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }

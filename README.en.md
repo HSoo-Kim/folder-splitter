@@ -2,7 +2,7 @@
 
 # Folder Splitter
 
-[한국어](README.md) · **English** · [简体中文](README.zh-CN.md)
+[한국어](README.md) · **English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
 A **Windows file manager that shows up to 4 folders at once in a single window, with independent tabs in each pane**.
 
@@ -24,6 +24,9 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 
 ## Features
 
+- **Current version**: The lower-left corner shows the running version, even when the sidebar is hidden.
+- **Language selection**: Choose 한국어 / English / 简体中文 / 日本語 in the top bar. The selection is saved. Native file lists and folder dialogs follow your Windows language.
+- **Browse for a folder**: Click the folder icon beside an address bar. Hover over navigation icons and main buttons for descriptions in the selected language.
 - **1 / 2 / 3 / 4 panes**: Switch from the top bar. Hidden panes retain their tabs. The three-pane menu offers two-to-one arrangements horizontally or vertically.
 - **Drag tabs to split**: Drop a tab near a file-list edge to split, or in the center to move it into that pane. Up to four panes are supported. The tab context menu also offers `Split tab`.
 - **Independent tabs per pane**: New tab, duplicate tab, reopen closed tab, move a tab to another pane.

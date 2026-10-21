@@ -6,7 +6,10 @@ using Microsoft.CSharp.RuntimeBinder;
 namespace QuadExplorer;
 
 public sealed record ExplorerFavoritesResult(
-    IReadOnlyList<string> Paths, string? Warning, string Source);
+    IReadOnlyList<string> Paths, string? Warning, string Source)
+{
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+}
 
 public static class ExplorerFavorites
 {
@@ -43,7 +46,8 @@ public static class ExplorerFavorites
 
         return new ExplorerFavoritesResult(paths.AsReadOnly(),
             warnings.Count == 0 ? null : string.Join(" ", warnings.Distinct()),
-            "Windows Explorer pinned Quick Access folders and legacy Links folder shortcuts");
+            "Windows Explorer pinned Quick Access folders and legacy Links folder shortcuts")
+        { Warnings = warnings.Distinct().ToArray() };
     }
 
     private static void ReadFolder(object shell, string location, bool legacyLinks,
