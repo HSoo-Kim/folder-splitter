@@ -13,6 +13,11 @@ public sealed class MainForm : Form, IMessageFilter
     private PaneLayout layoutTree;
     private int[] visiblePanes;
     private readonly Panel sidebar;
+    private readonly Splitter sidebarSplitter;
+    private readonly ToolStripButton sidebarButton = new("Sidebar");
+    private int sidebarWidth;
+    private readonly List<string> deletedFavorites;
+    private bool explorerFavoritesImported;
     private readonly ListBox places;
     private readonly ListBox favoritePlaces;
     private readonly Button favoritesHeader;
@@ -40,6 +45,9 @@ public sealed class MainForm : Form, IMessageFilter
         visiblePanes = layoutTree.GetPanes().Order().ToArray();
         activePane = initialState.ActivePane;
         favorites = [.. initialState.Favorites];
+        deletedFavorites = [.. initialState.DeletedFavorites];
+        explorerFavoritesImported = initialState.ExplorerFavoritesImported;
+        sidebarWidth = initialState.SidebarWidth;
         favoritesExpanded = initialState.FavoritesExpanded;
         Text = "Folder Splitter";
         BackColor = Theme.Canvas;
@@ -66,7 +74,20 @@ public sealed class MainForm : Form, IMessageFilter
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
         }
 
-        sidebar = new Panel { Dock = DockStyle.Left, Width = 172, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
+        sidebar = new Panel { Dock = DockStyle.Left, Width = sidebarWidth, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
+        sidebarSplitter = new Splitter
+        {
+            Dock = DockStyle.Left, Width = 6, MinSize = 140, MinExtra = 300,
+            BackColor = Theme.Border, AccessibleName = "Resize quick access"
+        };
+        sidebarSplitter.SplitterMoved += (_, _) =>
+        {
+            sidebarWidth = Math.Clamp((int)Math.Round(sidebar.Width * 96d / DeviceDpi), 140, 480);
+            sidebar.Width = (int)Math.Round(sidebarWidth * DeviceDpi / 96d);
+            UpdateMinimumSize();
+            ScheduleSave();
+        };
+        sidebarSplitter.DoubleClick += (_, _) => SetSidebarVisible(false);
         var sideTitle = new Label
         {
             Text = "QUICK ACCESS", Dock = DockStyle.Top, Height = 28,
@@ -93,7 +114,7 @@ public sealed class MainForm : Form, IMessageFilter
         placeMenu.Items.Add("Remove favorite", null, (_, _) =>
         {
             if (places.SelectedItem is Place { Favorite: true } place)
-            { favorites.Remove(place.Path); ReloadPlaces(); ScheduleSave(); }
+            RemoveFavorite(place.Path);
         });
         placeMenu.Opening += (_, _) => placeMenu.Items[1].Enabled = places.SelectedItem is Place { Favorite: true };
         places.MouseDown += (_, e) => { if (e.Button == MouseButtons.Right) places.SelectedIndex = places.IndexFromPoint(e.Location); };
@@ -117,8 +138,12 @@ public sealed class MainForm : Form, IMessageFilter
         favoriteMenu.Items.Add("Remove favorite", null, (_, _) =>
         {
             if (favoritePlaces.SelectedItem is Place p)
-            { favorites.Remove(p.Path); ReloadPlaces(); ScheduleSave(); }
+            RemoveFavorite(p.Path);
         });
+        favoriteMenu.Items.Add(new ToolStripSeparator());
+        favoriteMenu.Items.Add("Import from File Explorer", null, (_, _) => ImportExplorerFavorites());
+        favoriteMenu.Items.Add("Remove all favorites", null, (_, _) => ClearFavorites());
+        favoriteMenu.Items.Add("Restore favorites...", null, (_, _) => ShowRestoreFavorites());
         favoritePlaces.ContextMenuStrip = favoriteMenu;
         favoritePlaces.MouseDown += (_, e) =>
         { if (e.Button == MouseButtons.Right) favoritePlaces.SelectedIndex = favoritePlaces.IndexFromPoint(e.Location); };
@@ -130,6 +155,10 @@ public sealed class MainForm : Form, IMessageFilter
         };
         favoritesHeader.FlatAppearance.BorderSize = 0;
         favoritesHeader.Click += (_, _) => ToggleFavorites();
+        favoritesHeader.ContextMenuStrip = favoriteMenu;
+        var manage = Theme.Button("Manage...", "Manage favorites", () => favoriteMenu.Show(Cursor.Position));
+        manage.Dock = DockStyle.Bottom;
+        manage.AutoSize = true;
         var pin = Theme.Button("+  Pin folder", "Pin current folder to favorites", () => AddFavorite(Active.CurrentPath), 152);
         pin.Dock = DockStyle.Bottom;
         pin.Height = 36;
@@ -138,16 +167,19 @@ public sealed class MainForm : Form, IMessageFilter
         sidebar.Controls.Add(favoritesHeader);
         sidebar.Controls.Add(places);
         sidebar.Controls.Add(pin);
+        sidebar.Controls.Add(manage);
         sidebar.Controls.Add(sideTitle);
         ReloadPlaces();
 
         BuildToolbar();
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
         workspace.Controls.Add(paneHost);
+        workspace.Controls.Add(sidebarSplitter);
         workspace.Controls.Add(sidebar);
         Controls.Add(workspace);
         Controls.Add(toolbar);
         sidebar.Visible = initialState.ShowSidebar;
+        sidebarSplitter.Visible = initialState.ShowSidebar;
         saveTimer.Tick += (_, _) => { saveTimer.Stop(); SaveSession(); };
         Shown += (_, _) =>
         {
@@ -157,7 +189,9 @@ public sealed class MainForm : Form, IMessageFilter
             try { ApplySplitRatios(); }
             finally { rebuilding = false; }
             ready = true;
+            if (!explorerFavoritesImported) ImportExplorerFavorites();
             ActivatePane(activePane);
+            if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab();
             foreach (string folder in folders) Active.AddTab(folder);
             Active.FocusFiles();
         };
@@ -172,12 +206,13 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void BuildToolbar()
     {
-        toolbar.Height = 48;
         toolbar.Padding = new Padding(10, 7, 10, 7);
         var brand = new ToolStripLabel("Folder Splitter") { Font = new Font(Font, FontStyle.Bold), Margin = new Padding(5, 0, 18, 0) };
         toolbar.Items.Add(brand);
-        var sidebarButton = new ToolStripButton("Sidebar") { CheckOnClick = true, Checked = initialState.ShowSidebar, ToolTipText = "Show or hide quick access" };
-        sidebarButton.Click += (_, _) => { sidebar.Visible = sidebarButton.Checked; UpdateMinimumSize(); ScheduleSave(); };
+        sidebarButton.CheckOnClick = true;
+        sidebarButton.Checked = initialState.ShowSidebar;
+        sidebarButton.ToolTipText = "Show or hide quick access";
+        sidebarButton.Click += (_, _) => SetSidebarVisible(sidebarButton.Checked);
         toolbar.Items.Add(sidebarButton);
         toolbar.Items.Add(new ToolStripSeparator());
         int[] counts = [1, 2, 3, 4];
@@ -236,6 +271,94 @@ public sealed class MainForm : Form, IMessageFilter
     }
 
     internal bool FavoritesExpanded => favoritesExpanded;
+    internal int SidebarWidth => sidebarWidth;
+    internal void SetSidebarWidth(int width)
+    {
+        sidebarWidth = Math.Clamp(width, 140, 480);
+        sidebar.Width = (int)Math.Round(sidebarWidth * DeviceDpi / 96d);
+        UpdateMinimumSize();
+        ScheduleSave();
+    }
+
+    internal void SetSidebarVisible(bool visible)
+    {
+        sidebar.Visible = visible;
+        sidebarSplitter.Visible = visible;
+        sidebarButton.Checked = visible;
+        UpdateMinimumSize();
+        ScheduleSave();
+    }
+
+    internal IReadOnlyList<string> FavoritePaths => favorites;
+    internal IReadOnlyList<string> DeletedFavoritePaths => deletedFavorites;
+    private void ImportExplorerFavorites()
+    {
+        var result = ExplorerFavorites.Read();
+        int added = 0;
+        foreach (string path in result.Paths)
+        {
+            if (favorites.Count >= 100) break;
+            if (favorites.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
+            favorites.Add(path);
+            deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
+            added++;
+        }
+        explorerFavoritesImported = result.Warning is null || result.Paths.Count > 0;
+        ReloadPlaces();
+        Active.SetStatus($"Imported {added} favorites from File Explorer."
+            + (result.Warning is { } warning ? " " + warning : ""));
+        ScheduleSave();
+    }
+
+    private void RemoveFavorite(string path)
+    {
+        if (!favorites.Remove(path)) return;
+        deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
+        deletedFavorites.Insert(0, path);
+        if (deletedFavorites.Count > 100) deletedFavorites.RemoveAt(100);
+        ReloadPlaces();
+        ScheduleSave();
+    }
+
+    internal void ClearFavorites()
+    {
+        foreach (string path in favorites.ToArray()) RemoveFavorite(path);
+    }
+
+    internal void RestoreFavorite(string path) => AddFavorite(path);
+
+    private void ShowRestoreFavorites()
+    {
+        using var dialog = new Form
+        {
+            Text = "Restore favorites", StartPosition = FormStartPosition.CenterParent,
+            Size = new Size(650, 430), MinimumSize = new Size(450, 300),
+            Font = Font, ShowInTaskbar = false, MinimizeBox = false, MaximizeBox = false
+        };
+        var list = new ListBox { Dock = DockStyle.Fill, SelectionMode = SelectionMode.MultiExtended, HorizontalScrollbar = true };
+        foreach (string path in deletedFavorites)
+            list.Items.Add(new Place($"{ShellViewHost.TitleFor(path)} — {path}", path));
+        foreach (Place place in places.Items)
+            if (!favorites.Contains(place.Path, StringComparer.OrdinalIgnoreCase)
+                && !deletedFavorites.Contains(place.Path, StringComparer.OrdinalIgnoreCase))
+                list.Items.Add(place);
+        var restore = new Button { Text = "Restore selected", Dock = DockStyle.Bottom, AutoSize = true };
+        restore.Click += (_, _) =>
+        {
+            foreach (Place item in list.SelectedItems.Cast<Place>().ToArray()) RestoreFavorite(item.Path);
+            dialog.Close();
+        };
+        var label = new Label
+        {
+            Text = "Removed favorites and standard locations (including Recycle Bin). Select items to restore.",
+            Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(600, 0)
+        };
+        dialog.Controls.Add(list);
+        dialog.Controls.Add(restore);
+        dialog.Controls.Add(label);
+        dialog.ShowDialog(this);
+    }
+
     internal void ToggleFavorites()
     {
         favoritesExpanded = !favoritesExpanded;
@@ -263,9 +386,11 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void AddFavorite(string path)
     {
+        if (string.IsNullOrWhiteSpace(path)) return;
         if (favorites.Contains(path, StringComparer.OrdinalIgnoreCase)) { Active.SetStatus("Already in favorites."); return; }
         if (favorites.Count >= 100) { Active.SetStatus("Maximum 100 favorites."); return; }
         favorites.Add(path);
+        deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
         ReloadPlaces();
         Active.SetStatus("Added to favorites.");
         ScheduleSave();
@@ -483,25 +608,17 @@ public sealed class MainForm : Form, IMessageFilter
         }
 
         string path = tab.LocationPath;
-        bool keepSource = edge is not null && source.TabCount == 1;
         int destination = target;
-        bool newPane = edge is not null;
         if (edge is { } splitEdge)
         {
             destination = Enumerable.Range(0, 4).First(i => !visiblePanes.Contains(i));
             RenderLayout(layoutTree.Split(target, destination, splitEdge));
         }
         var receiving = panes[destination];
-        bool replaceDefault = newPane && receiving.TabCount == 1 &&
-            receiving.CurrentPath == Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         receiving.AddTab(path);
-        if (replaceDefault) receiving.CloseTab(0);
-        if (!keepSource)
-        {
-            bool emptyPane = source.TabCount == 1;
-            source.CloseTab(source.IndexOfTab(tab));
-            if (emptyPane) RenderLayout(RemovePane(layoutTree, sourceId)!);
-        }
+        bool emptyPane = source.TabCount == 1;
+        source.CloseTab(source.IndexOfTab(tab));
+        if (emptyPane && edge is null) RenderLayout(RemovePane(layoutTree, sourceId)!);
         ActivatePane(destination);
         receiving.FocusFiles();
         ScheduleSave();
@@ -559,8 +676,8 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.L:
             case Keys.Alt | Keys.D: Active.FocusAddress(); break;
             case Keys.Control | Keys.D: AddFavorite(Active.CurrentPath); break;
-            case Keys.Control | Keys.Tab: Active.SelectTab((Active.SelectedIndex + 1) % Active.TabCount); break;
-            case Keys.Control | Keys.Shift | Keys.Tab: Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
+            case Keys.Control | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + 1) % Active.TabCount); break;
+            case Keys.Control | Keys.Shift | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
             case Keys.Control | Keys.D2: ApplyLayout(2); break;
             case Keys.Control | Keys.D3: ApplyLayout(3); break;
@@ -597,6 +714,8 @@ public sealed class MainForm : Form, IMessageFilter
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,
+                SidebarWidth = sidebarWidth, DeletedFavorites = [.. deletedFavorites],
+                ExplorerFavoritesImported = explorerFavoritesImported,
                 WindowWidth = bounds.Width, WindowHeight = bounds.Height,
                 Maximized = WindowState == FormWindowState.Maximized,
                 ColumnRatio = layoutTree.Ratio,
@@ -647,7 +766,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         MessageBox.Show(this,
             "LAYOUT\nCtrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   Pane count\nCtrl+Shift+3   One left, two right\nF6   Next pane\nThe arrow beside 3 panes offers both 2:1 arrangements.\nDrag dividers to resize; Equal size resets them.\n\n" +
-            "TABS\nDrag a tab to a file-list edge to split; center to move.\nA blue preview shows the destination. Esc cancels.\nRight-click tab > Split tab is the keyboard alternative.\nSplitting a pane's only tab keeps a copy in the original pane.\nCtrl+T   New tab at current folder\nCtrl+W / middle-click   Close tab\nCtrl+Shift+T   Reopen closed tab\nCtrl+Tab / Ctrl+Shift+Tab   Switch tabs\n\n" +
+            "TABS\nDrag a tab to a file-list edge to split; center to move.\nA blue preview shows the destination. Esc cancels.\nRight-click tab > Split tab is the keyboard alternative.\nUnused panes remain empty until you open a folder.\nCtrl+T   New tab at current folder\nCtrl+W / middle-click   Close tab\nCtrl+Shift+T   Reopen closed tab\nCtrl+Tab / Ctrl+Shift+Tab   Switch tabs\n\n" +
             "NAVIGATION\nCtrl+L / Alt+D   Address bar\nAlt+Left / Right / Up   Back, forward, parent\nF5   Refresh\nCtrl+D   Pin current folder\n\n" +
             "FILES\nUse Windows context menus and drag files between panes.\nCtrl+C / Ctrl+X / Ctrl+V   Copy, cut, paste\nF2   Rename    |    Delete   Recycle\nCtrl+Shift+N   New folder\n\n" +
             "Tabs, favorites and layout are saved locally.\nPane options include view modes and Open in File Explorer.",

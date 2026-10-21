@@ -14,15 +14,18 @@ public sealed record PaneState
 
 public sealed record SessionState
 {
-    public int Layout { get; init; } = 4;
+    public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];
     public List<string> Favorites { get; init; } = [];
+    public List<string> DeletedFavorites { get; init; } = [];
+    public bool ExplorerFavoritesImported { get; init; }
     public int ActivePane { get; init; }
     public int WindowWidth { get; init; } = 1400;
     public int WindowHeight { get; init; } = 900;
     public bool Maximized { get; init; }
     public bool ShowSidebar { get; init; } = true;
+    public int SidebarWidth { get; init; } = 220;
     public bool FavoritesExpanded { get; init; } = true;
     public double ColumnRatio { get; init; } = .5;
     public double LeftRowRatio { get; init; } = .5;
@@ -108,27 +111,13 @@ public static class SessionStore
                 }
             }
 
-            if (tabs.Count == 0)
+            if (pane is null && index == 0)
                 tabs.Add(defaultTab);
             panes.Add(new PaneState
             {
                 Tabs = tabs,
-                SelectedTab = Math.Clamp(pane?.SelectedTab ?? 0, 0, tabs.Count - 1)
+                SelectedTab = tabs.Count == 0 ? -1 : Math.Clamp(pane?.SelectedTab ?? 0, 0, tabs.Count - 1)
             });
-        }
-
-        var favorites = new List<string>();
-        var seenFavorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (state.Favorites is not null)
-        {
-            foreach (var favorite in state.Favorites)
-            {
-                if (string.IsNullOrWhiteSpace(favorite) || !seenFavorites.Add(favorite))
-                    continue;
-                favorites.Add(favorite);
-                if (favorites.Count == 100)
-                    break;
-            }
         }
 
         var layout = state.Layout is >= 1 and <= 4 ? state.Layout : 4;
@@ -158,14 +147,34 @@ public static class SessionStore
             Layout = layout,
             LayoutTree = layoutTree,
             Panes = panes,
-            Favorites = favorites,
+            Favorites = NormalizeFavorites(state.Favorites),
+            DeletedFavorites = NormalizeFavorites(state.DeletedFavorites),
             ActivePane = active,
             WindowWidth = Math.Clamp(state.WindowWidth, 900, 10000),
             WindowHeight = Math.Clamp(state.WindowHeight, 600, 10000),
+            SidebarWidth = Math.Clamp(state.SidebarWidth, 140, 480),
             ColumnRatio = NormalizeRatio(state.ColumnRatio),
             LeftRowRatio = NormalizeRatio(state.LeftRowRatio),
             RightRowRatio = NormalizeRatio(state.RightRowRatio)
         };
+    }
+
+    private static List<string> NormalizeFavorites(List<string>? source)
+    {
+        var favorites = new List<string>();
+        var seenFavorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (source is not null)
+        {
+            foreach (var favorite in source)
+            {
+                if (string.IsNullOrWhiteSpace(favorite) || !seenFavorites.Add(favorite))
+                    continue;
+                favorites.Add(favorite);
+                if (favorites.Count == 100)
+                    break;
+            }
+        }
+        return favorites;
     }
 
     private static double NormalizeRatio(double ratio) =>

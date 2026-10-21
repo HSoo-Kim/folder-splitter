@@ -30,7 +30,7 @@ internal static class Theme
     {
         GripStyle = ToolStripGripStyle.Hidden, BackColor = Canvas, ForeColor = Text,
         Renderer = new FlatRenderer(), Padding = new Padding(6, 3, 6, 3),
-        AutoSize = false, Height = 38, Stretch = true, CanOverflow = true
+        AutoSize = true, Stretch = true, CanOverflow = true
     };
 
     public static Image FolderIcon()

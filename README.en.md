@@ -47,7 +47,11 @@ Column sorting and the right-click menu in the file list are handled by the Wind
 
 Shortcuts in the left sidebar open in the currently active pane. The active pane is marked with a blue line at the top. Right-click a favorite to remove it.
 
-Click the `FAVORITES` heading to collapse or expand its list without removing entries. The collapsed state is restored on the next launch.
+Drag the right edge of Quick access to resize it. `Sidebar` hides or restores the entire section; its width and visibility are saved.
+
+Unused split panes remain blank. Enter an address or choose a shortcut to open a folder. Closing the last tab leaves the pane empty. Existing saved tabs are preserved.
+
+Click `Favorites` to collapse its list. Windows File Explorer pinned folders are imported by default on first launch. `Manage...` offers import, remove all, and a restore list. Removal only changes this app, not Explorer. The restore list includes removed entries and standard locations such as Recycle Bin and This PC.
 
 ### Keyboard shortcuts
 

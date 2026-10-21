@@ -23,6 +23,7 @@ internal static class Program
             SessionStore.Save(session, new SessionState
             {
                 Layout = 4,
+                ExplorerFavoritesImported = true,
                 Panes = folders.Select(path => new PaneState { Tabs = [path] }).ToList()
             });
             using var form = new MainForm(session, []);
@@ -79,6 +80,7 @@ internal static class Program
             Check(warning is null && restored.Layout == 4 && restored.Panes[0].Tabs.Count == 2, "session saved on close");
             Check(restored.Panes.Skip(1).Select(p => p.Tabs[0]).SequenceEqual(folders.Skip(1)), "inactive pane paths persisted");
             RunDockingScenario(session, folders);
+            RunEmptyPaneScenario(session, folders);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -169,6 +171,65 @@ internal static class Program
             await signal.Task.WaitAsync(TimeSpan.FromSeconds(20));
         }
         finally { pane.StateChanged -= Changed; }
+    }
+
+    private static void RunEmptyPaneScenario(string session, string[] folders)
+    {
+        SessionStore.Save(session, new SessionState
+        {
+            Layout = 1, ExplorerFavoritesImported = true, Favorites = [folders[0], folders[1]],
+            Panes = [new PaneState { Tabs = [folders[0]] }]
+        });
+        using var form = new MainForm(session, []);
+        form.Shown += async (_, _) =>
+        {
+            try
+            {
+                form.ApplyLayout(4);
+                Check(Enumerable.Range(1, 3).All(i => form.GetPane(i).TabCount == 0),
+                    "new split panes stay empty");
+                var source = form.GetPane(0);
+                form.ApplyLayout(1);
+                Check(form.DockTab(source, source.ActiveView!, 0, SplitEdge.Right)
+                    && source.TabCount == 0 && form.GetPane(1).TabCount == 1,
+                    "splitting the only tab moves it without duplicating");
+                var empty = form.GetPane(0);
+                await PaneChange(empty, () => empty.Navigate(folders[2]),
+                    () => empty.ActiveView is { HasNavigated: true });
+                Check(empty.CurrentPath == folders[2], "navigation opens a folder in an empty pane");
+                empty.CloseTab();
+                Check(empty.TabCount == 0 && empty.CurrentPath == "", "closing the last tab leaves a blank pane");
+                form.SetSidebarWidth(320);
+                form.SetSidebarVisible(false);
+                Check(!Descendants(form).OfType<ListBox>().Any(l => l.Visible), "quick access fully collapses");
+                form.SetSidebarVisible(true);
+                Check(form.SidebarWidth == 320, "quick access restores its resized width");
+                form.ClearFavorites();
+                Check(form.FavoritePaths.Count == 0 && form.DeletedFavoritePaths.Count == 2,
+                    "clear all favorites retains recoverable entries");
+                form.RestoreFavorite(folders[1]);
+                Check(form.FavoritePaths.SequenceEqual(new[] { folders[1] }) && form.DeletedFavoritePaths.SequenceEqual(new[] { folders[0] }),
+                    "restore selected favorite removes it from recovery list");
+                var toolbar = form.Controls.OfType<ToolStrip>().Single();
+                Check(toolbar.Items.Cast<ToolStripItem>().Where(i => i.Available).All(i =>
+                    i.Bounds.Height >= TextRenderer.MeasureText(i.Text, i.Font).Height),
+                    "toolbar item height fits its rendered text");
+                Check(Descendants(form).OfType<TextBox>().All(t => t.Height >= t.PreferredHeight),
+                    "address fields fit their preferred font height");
+                Check(Descendants(form).OfType<Label>().Where(l => l.AccessibleName?.EndsWith(" status") == true)
+                    .All(l => l.Height >= l.PreferredHeight), "status labels fit their preferred font height");
+                Check(Descendants(form).OfType<TableLayoutPanel>().SelectMany(t => t.Controls.OfType<Button>())
+                    .All(b => b.Width >= b.GetPreferredSize(Size.Empty).Width),
+                    "navigation icon columns fit their preferred glyph width");
+            }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+            finally { form.Close(); }
+        };
+        Application.Run(form);
+        var restored = SessionStore.Load(session);
+        Check(restored.SidebarWidth == 320 && restored.ShowSidebar && restored.Panes[0].Tabs.Count == 0
+            && restored.DeletedFavorites.SequenceEqual(new[] { folders[0] }),
+            "sidebar width, blank pane and recovery list persist");
     }
 
     private static IEnumerable<Control> Descendants(Control parent)

@@ -19,6 +19,8 @@ internal static class Program
             ("inaccessible session returns warning", InaccessibleFile),
             ("save failures propagate and clean temporary files", SaveFailure),
             ("inactive panes survive layout changes", InactivePanes),
+            ("explicitly empty panes survive normalization and storage", EmptyPanes),
+            ("deleted favorites normalize independently and preserve import state", DeletedFavorites),
             ("window sizes and ratios are bounded", Bounds),
             ("normalization does not mutate caller lists", DoesNotMutate),
             ("split tree sessions preserve sparse pane IDs and ratios", SplitTreeRoundtrip),
@@ -55,17 +57,23 @@ internal static class Program
     private static void Defaults()
     {
         var state = SessionStore.Normalize(new SessionState());
-        Equal(4, state.Layout);
+        Equal(1, state.Layout);
+        Equal(PaneLayout.Leaf(0), state.LayoutTree);
         Equal(4, state.Panes.Count);
-        foreach (var pane in state.Panes)
+        Equal(1, state.Panes[0].Tabs.Count);
+        Equal(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), state.Panes[0].Tabs[0]);
+        Equal(0, state.Panes[0].SelectedTab);
+        foreach (var pane in state.Panes.Skip(1))
         {
-            Equal(1, pane.Tabs.Count);
-            Equal(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), pane.Tabs[0]);
-            Equal(0, pane.SelectedTab);
+            Equal(0, pane.Tabs.Count);
+            Equal(-1, pane.SelectedTab);
         }
         Equal(1400, state.WindowWidth);
         Equal(900, state.WindowHeight);
         Equal(true, state.ShowSidebar);
+        Equal(220, state.SidebarWidth);
+        Equal(0, state.DeletedFavorites.Count);
+        Equal(false, state.ExplorerFavoritesImported);
         Equal(false, state.Maximized);
         Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "QuadExplorer", "session.json"), SessionStore.DefaultPath);
@@ -87,6 +95,9 @@ internal static class Program
                 new PaneState { Tabs = ["C:\\hidden-right"] }
             ],
             Favorites = [unicodePath, offlinePath],
+            DeletedFavorites = ["Z:\\removed", unicodePath],
+            ExplorerFavoritesImported = true,
+            SidebarWidth = 315,
             ActivePane = 1,
             WindowWidth = 1777,
             WindowHeight = 888,
@@ -106,10 +117,13 @@ internal static class Program
         Equal(expected.WindowHeight, actual.WindowHeight);
         Equal(expected.Maximized, actual.Maximized);
         Equal(expected.ShowSidebar, actual.ShowSidebar);
+        Equal(expected.SidebarWidth, actual.SidebarWidth);
+        Equal(expected.ExplorerFavoritesImported, actual.ExplorerFavoritesImported);
         Equal(expected.ColumnRatio, actual.ColumnRatio);
         Equal(expected.LeftRowRatio, actual.LeftRowRatio);
         Equal(expected.RightRowRatio, actual.RightRowRatio);
         Sequence(expected.Favorites, actual.Favorites);
+        Sequence(expected.DeletedFavorites, actual.DeletedFavorites);
         for (var index = 0; index < 4; index++)
         {
             Sequence(expected.Panes[index].Tabs, actual.Panes[index].Tabs);
@@ -143,8 +157,8 @@ internal static class Program
         Equal(4, state.Layout);
         Equal(4, state.Panes.Count);
         Equal(1, state.Panes[0].Tabs.Count);
-        Equal(1, state.Panes[1].Tabs.Count);
-        Equal(0, state.Panes[1].SelectedTab);
+        Equal(0, state.Panes[1].Tabs.Count);
+        Equal(-1, state.Panes[1].SelectedTab);
         Equal("Z:\\offline", state.Panes[2].Tabs[0]);
         Equal(0, state.Panes[2].SelectedTab);
         Equal(1, state.Panes[3].SelectedTab);
@@ -157,19 +171,24 @@ internal static class Program
     private static void NullLists()
     {
         var path = FilePath("null-lists", "session.json");
-        File.WriteAllText(path, """{"Panes":null,"Favorites":null}""");
+        File.WriteAllText(path, """{"Panes":null,"Favorites":null,"DeletedFavorites":null}""");
         var state = SessionStore.Load(path, out var warning);
         Equal<string?>(null, warning);
         Equal(4, state.Panes.Count);
         Equal(0, state.Favorites.Count);
+        Equal(0, state.DeletedFavorites.Count);
+        Equal(220, state.SidebarWidth);
+        Equal(false, state.ExplorerFavoritesImported);
         Equal(4, SessionStore.Normalize(null!).Panes.Count);
         var nullTabs = SessionStore.Normalize(new SessionState
         {
             Panes = [new PaneState { Tabs = null! }, null!],
             Favorites = null!
         });
-        Equal(1, nullTabs.Panes[0].Tabs.Count);
-        Equal(1, nullTabs.Panes[1].Tabs.Count);
+        Equal(0, nullTabs.Panes[0].Tabs.Count);
+        Equal(-1, nullTabs.Panes[0].SelectedTab);
+        Equal(0, nullTabs.Panes[1].Tabs.Count);
+        Equal(-1, nullTabs.Panes[1].SelectedTab);
     }
 
     private static void CollectionLimits()
@@ -281,18 +300,24 @@ internal static class Program
         {
             WindowWidth = int.MinValue,
             WindowHeight = int.MaxValue,
+            SidebarWidth = int.MinValue,
             ColumnRatio = -1,
             LeftRowRatio = 2,
             RightRowRatio = .6
         });
         Equal(900, state.WindowWidth);
         Equal(10000, state.WindowHeight);
+        Equal(140, state.SidebarWidth);
         Equal(.15, state.ColumnRatio);
         Equal(.85, state.LeftRowRatio);
         Equal(.6, state.RightRowRatio);
-        state = SessionStore.Normalize(state with { WindowWidth = int.MaxValue, WindowHeight = int.MinValue });
+        state = SessionStore.Normalize(state with
+        {
+            WindowWidth = int.MaxValue, WindowHeight = int.MinValue, SidebarWidth = int.MaxValue
+        });
         Equal(10000, state.WindowWidth);
         Equal(600, state.WindowHeight);
+        Equal(480, state.SidebarWidth);
         foreach (var invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
         {
             state = SessionStore.Normalize(state with
@@ -312,15 +337,80 @@ internal static class Program
         var original = new SessionState
         {
             Panes = [new PaneState { Tabs = ["C:\\one"], SelectedTab = 20 }],
-            Favorites = ["C:\\one", "c:\\ONE"]
+            Favorites = ["C:\\one", "c:\\ONE"],
+            DeletedFavorites = ["C:\\removed", "c:\\REMOVED"]
         };
         var normalized = SessionStore.Normalize(original);
         normalized.Panes[0].Tabs.Add("C:\\two");
         normalized.Favorites.Clear();
+        normalized.DeletedFavorites.Clear();
         Equal(1, original.Panes.Count);
         Equal(1, original.Panes[0].Tabs.Count);
         Equal(20, original.Panes[0].SelectedTab);
         Equal(2, original.Favorites.Count);
+        Equal(2, original.DeletedFavorites.Count);
+    }
+
+    private static void EmptyPanes()
+    {
+        var path = FilePath("empty-panes", "session.json");
+        foreach (var layout in new[] { 1, 2, 3, 4 })
+        {
+            var original = new SessionState
+            {
+                Layout = layout,
+                Panes =
+                [
+                    new PaneState { Tabs = [], SelectedTab = 99 },
+                    new PaneState { Tabs = [" ", "", null!], SelectedTab = int.MinValue },
+                    new PaneState { Tabs = ["Z:\\cached", "Z:\\cached\\second"], SelectedTab = 1 },
+                    new PaneState()
+                ]
+            };
+            SessionStore.Save(path, original);
+            var restored = SessionStore.Load(path, out var warning);
+            Equal<string?>(null, warning);
+            Equal(layout, restored.Layout);
+            foreach (var index in new[] { 0, 1, 3 })
+            {
+                Equal(0, restored.Panes[index].Tabs.Count);
+                Equal(-1, restored.Panes[index].SelectedTab);
+            }
+            Sequence(original.Panes[2].Tabs, restored.Panes[2].Tabs);
+            Equal(1, restored.Panes[2].SelectedTab);
+            var normalizedAgain = SessionStore.Normalize(restored);
+            for (var index = 0; index < 4; index++)
+            {
+                Sequence(restored.Panes[index].Tabs, normalizedAgain.Panes[index].Tabs);
+                Equal(restored.Panes[index].SelectedTab, normalizedAgain.Panes[index].SelectedTab);
+            }
+        }
+        SessionStore.Save(path, new SessionState { Panes = [new PaneState()] });
+        var allEmpty = SessionStore.Load(path);
+        Equal(4, allEmpty.Panes.Count);
+        foreach (var pane in allEmpty.Panes)
+        {
+            Equal(0, pane.Tabs.Count);
+            Equal(-1, pane.SelectedTab);
+        }
+    }
+
+    private static void DeletedFavorites()
+    {
+        var removed = new List<string> { null!, "", " ", "C:\\removed", "c:\\REMOVED" };
+        removed.AddRange(Enumerable.Range(0, 150).Select(index => $"Z:\\removed\\{index}"));
+        var normalized = SessionStore.Normalize(new SessionState
+        {
+            Favorites = ["C:\\removed"],
+            DeletedFavorites = removed,
+            ExplorerFavoritesImported = true
+        });
+        Equal(100, normalized.DeletedFavorites.Count);
+        Equal("C:\\removed", normalized.DeletedFavorites[0]);
+        Equal("Z:\\removed\\98", normalized.DeletedFavorites[99]);
+        Sequence(["C:\\removed"], normalized.Favorites);
+        Equal(true, normalized.ExplorerFavoritesImported);
+        Equal(0, SessionStore.Normalize(new SessionState { DeletedFavorites = null! }).DeletedFavorites.Count);
     }
 
     private static void SplitTreeRoundtrip()
