@@ -8,6 +8,12 @@ A **Windows file manager that shows up to 4 folders at once in a single window, 
 
 It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modify or replace the existing `explorer.exe` and runs as a separate app.
 
+## Screenshot
+
+![Folder Splitter showing four panes with independent tabs](docs/images/folder-splitter-overview.png)
+
+The actual app with sample folders open. Each pane has independent tabs and an address bar.
+
 ## Running
 
 [Download the latest Windows executable](https://github.com/HSoo-Kim/folder-splitter/releases/latest)

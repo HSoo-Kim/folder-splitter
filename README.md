@@ -8,6 +8,12 @@
 
 Windows 기본 파일 목록(Shell `IExplorerBrowser`)을 사용합니다. 기존 `explorer.exe`를 수정하거나 교체하지 않으며, 별도 앱으로 실행됩니다.
 
+## 예시 화면
+
+![Folder Splitter의 4분할 화면과 영역별 독립 탭](docs/images/folder-splitter-overview.png)
+
+실제 앱에서 샘플 폴더를 연 화면입니다. 각 영역의 탭과 주소창은 독립적으로 동작합니다.
+
 ## 실행
 
 [최신 Windows 실행 파일 다운로드](https://github.com/HSoo-Kim/folder-splitter/releases/latest)

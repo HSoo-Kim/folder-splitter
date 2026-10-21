@@ -8,6 +8,12 @@
 
 文件列表使用 Windows 原生组件（Shell `IExplorerBrowser`）。它不会修改或替换现有的 `explorer.exe`，而是作为独立应用运行。
 
+## 界面预览
+
+![Folder Splitter 的四分屏界面与各区域的独立标签页](docs/images/folder-splitter-overview.png)
+
+这是在实际应用中打开示例文件夹的画面。每个区域都有独立的标签页和地址栏。
+
 ## 运行
 
 [下载最新的 Windows 可执行文件](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
