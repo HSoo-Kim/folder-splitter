@@ -1,0 +1,149 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Security;
+using System.Text.Json;
+
+namespace QuadExplorer;
+
+public sealed record PaneState
+{
+    public List<string> Tabs { get; init; } = [];
+    public int SelectedTab { get; init; }
+}
+
+public sealed record SessionState
+{
+    public int Layout { get; init; } = 4;
+    public List<PaneState> Panes { get; init; } = [];
+    public List<string> Favorites { get; init; } = [];
+    public int ActivePane { get; init; }
+    public int WindowWidth { get; init; } = 1400;
+    public int WindowHeight { get; init; } = 900;
+    public bool Maximized { get; init; }
+    public bool ShowSidebar { get; init; } = true;
+    public double ColumnRatio { get; init; } = .5;
+    public double LeftRowRatio { get; init; } = .5;
+    public double RightRowRatio { get; init; } = .5;
+}
+
+public static class SessionStore
+{
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    public static string DefaultPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "QuadExplorer", "session.json");
+
+    public static SessionState Load(string path) => Load(path, out _);
+
+    public static SessionState Load(string path, out string? warning)
+    {
+        warning = null;
+        try
+        {
+            var state = JsonSerializer.Deserialize<SessionState>(File.ReadAllText(path), JsonOptions);
+            if (state is null)
+            {
+                warning = "Session file contained no session data. Default session loaded.";
+                return Normalize(new SessionState());
+            }
+
+            return Normalize(state);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or SecurityException or JsonException)
+        {
+            warning = $"Could not load session: {exception.Message}";
+            return Normalize(new SessionState());
+        }
+    }
+
+    public static void Save(string path, SessionState state)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath)!;
+        Directory.CreateDirectory(directory);
+        var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(stream, Normalize(state), JsonOptions);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporaryPath, fullPath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+    }
+
+    public static SessionState Normalize(SessionState state)
+    {
+        state ??= new SessionState();
+        var defaultTab = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(defaultTab))
+            defaultTab = Environment.CurrentDirectory;
+
+        var panes = new List<PaneState>(4);
+        for (var index = 0; index < 4; index++)
+        {
+            var pane = state.Panes is not null && index < state.Panes.Count ? state.Panes[index] : null;
+            var tabs = new List<string>();
+            if (pane?.Tabs is not null)
+            {
+                foreach (var tab in pane.Tabs)
+                {
+                    if (string.IsNullOrWhiteSpace(tab))
+                        continue;
+                    tabs.Add(tab);
+                    if (tabs.Count == 32)
+                        break;
+                }
+            }
+
+            if (tabs.Count == 0)
+                tabs.Add(defaultTab);
+            panes.Add(new PaneState
+            {
+                Tabs = tabs,
+                SelectedTab = Math.Clamp(pane?.SelectedTab ?? 0, 0, tabs.Count - 1)
+            });
+        }
+
+        var favorites = new List<string>();
+        var seenFavorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (state.Favorites is not null)
+        {
+            foreach (var favorite in state.Favorites)
+            {
+                if (string.IsNullOrWhiteSpace(favorite) || !seenFavorites.Add(favorite))
+                    continue;
+                favorites.Add(favorite);
+                if (favorites.Count == 100)
+                    break;
+            }
+        }
+
+        var layout = state.Layout is 1 or 2 or 4 ? state.Layout : 4;
+        return state with
+        {
+            Layout = layout,
+            Panes = panes,
+            Favorites = favorites,
+            ActivePane = Math.Clamp(state.ActivePane, 0, layout - 1),
+            WindowWidth = Math.Clamp(state.WindowWidth, 900, 10000),
+            WindowHeight = Math.Clamp(state.WindowHeight, 600, 10000),
+            ColumnRatio = NormalizeRatio(state.ColumnRatio),
+            LeftRowRatio = NormalizeRatio(state.LeftRowRatio),
+            RightRowRatio = NormalizeRatio(state.RightRowRatio)
+        };
+    }
+
+    private static double NormalizeRatio(double ratio) =>
+        double.IsFinite(ratio) ? Math.Clamp(ratio, .15, .85) : .5;
+}
