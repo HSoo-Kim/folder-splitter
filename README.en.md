@@ -12,7 +12,7 @@ It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modi
 
 You don't need the full path. Type **any fragment you remember** into the address bar and matching folders and files appear as you type. Join folder and file name fragments with `/`, such as `공유용/월별연구계획`, to narrow the results.
 
-![Typing '공유용/월별연구계획' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search.png)
+![Typing '공유용/월별연구계획' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-v0.7.2.png)
 
 - Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
 - Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
@@ -33,7 +33,7 @@ Measured on October 21, 2026: about 3.72 million common candidates, identical ra
 
 ## Screenshot
 
-![Folder Splitter showing four panes with independent tabs](docs/images/folder-splitter-overview.png)
+![Folder Splitter showing four panes with independent tabs](docs/images/folder-splitter-overview-v0.7.2.png)
 
 The actual app with sample folders open. Each pane has independent tabs and an address bar.
 
