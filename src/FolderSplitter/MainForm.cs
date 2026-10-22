@@ -26,6 +26,10 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolStripMenuItem winEItem = new() { CheckOnClick = true };
     private readonly WinEShortcut winE = WinEShortcut.ForCurrentUser();
     private bool globalHotkey;
+    private readonly NotifyIcon trayIcon = new() { Text = "Folder Splitter" };
+    private readonly ToolStripMenuItem trayItem = new() { CheckOnClick = true };
+    private bool closeToTray;
+    private bool exiting;
     private readonly ToolStripButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
     private bool showFolderTree;
@@ -85,6 +89,7 @@ public sealed class MainForm : Form, IMessageFilter
         showFolderTree = initialState.ShowFolderTree;
         folderTreeHeight = initialState.FolderTreeHeight;
         globalHotkey = initialState.GlobalHotkey;
+        closeToTray = initialState.CloseToTray;
         activationMessage = Program.ActivationMessage(sessionPath);
         Theme.Set(colorTheme);
         text = new UiText(initialState.Language);
@@ -110,6 +115,13 @@ public sealed class MainForm : Form, IMessageFilter
         using (var sourceIcon = new Icon(iconStream))
             appIcon = (Icon)sourceIcon.Clone();
         Icon = appIcon;
+        var trayMenu = new ContextMenuStrip();
+        BindText(trayMenu.Items.Add("", null, (_, _) => Summon()), "Open Folder Splitter");
+        BindText(trayMenu.Items.Add("", null, (_, _) => ExitApplication()), "Exit");
+        trayIcon.Icon = appIcon;
+        trayIcon.ContextMenuStrip = trayMenu;
+        trayIcon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) Summon(); };
+        trayIcon.Visible = closeToTray;
 
         panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i], text,
             search, SearchRoots)).ToArray();
@@ -452,6 +464,10 @@ public sealed class MainForm : Form, IMessageFilter
         settings.DropDownOpening += (_, _) => winEItem.Checked = winE.IsEnabled;
         settings.DropDownItems.Add(hotkeyItem);
         settings.DropDownItems.Add(winEItem);
+        BindText(trayItem, "Keep running in the notification area when closed");
+        trayItem.Checked = closeToTray;
+        trayItem.CheckedChanged += (_, _) => SetCloseToTray(trayItem.Checked);
+        settings.DropDownItems.Add(trayItem);
         toolbar.Items.Add(settings);
         toolbar.Layout += (_, _) =>
         {
@@ -543,6 +559,22 @@ public sealed class MainForm : Form, IMessageFilter
         ScheduleSave();
     }
 
+    internal bool TrayIconVisible => trayIcon.Visible;
+
+    internal void SetCloseToTray(bool enabled)
+    {
+        closeToTray = enabled;
+        trayItem.Checked = enabled;
+        trayIcon.Visible = enabled;
+        ScheduleSave();
+    }
+
+    internal void ExitApplication()
+    {
+        exiting = true;
+        Close();
+    }
+
     private void SetWinEShortcut(bool enabled)
     {
         try
@@ -560,12 +592,13 @@ public sealed class MainForm : Form, IMessageFilter
     // Win+Alt+E and a second launch both bring this window forward; the hotkey minimizes it when it is already in front.
     internal void ToggleFromHotkey()
     {
-        if (WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) WindowState = FormWindowState.Minimized;
+        if (Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) WindowState = FormWindowState.Minimized;
         else Summon();
     }
 
     internal void Summon()
     {
+        if (!Visible) Show();
         if (WindowState == FormWindowState.Minimized) ShowWindow(Handle, 9); // SW_RESTORE keeps a maximized window maximized
         Activate();
         SetForegroundWindow(Handle);
@@ -1124,7 +1157,7 @@ public sealed class MainForm : Form, IMessageFilter
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
-                GlobalHotkey = globalHotkey,
+                GlobalHotkey = globalHotkey, CloseToTray = closeToTray,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,
@@ -1149,6 +1182,14 @@ public sealed class MainForm : Form, IMessageFilter
     {
         saveTimer.Stop();
         SaveSession();
+        // Closing the window keeps the app (and Win+Alt+E) alive in the notification area when enabled.
+        if (closeToTray && !exiting && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            Hide();
+            base.OnFormClosing(e);
+            return;
+        }
         if (saveError is not null && e.CloseReason == CloseReason.UserClosing)
         {
             e.Cancel = MessageBox.Show(this, text.T("Your session could not be saved:\n\n{0}\n\nClose anyway?", saveError),
@@ -1166,6 +1207,9 @@ public sealed class MainForm : Form, IMessageFilter
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
             tips.Dispose();
+            trayIcon.Visible = false;
+            trayIcon.ContextMenuStrip?.Dispose();
+            trayIcon.Dispose();
             places.ContextMenuStrip?.Dispose();
             favoritePlaces.ContextMenuStrip?.Dispose();
         }

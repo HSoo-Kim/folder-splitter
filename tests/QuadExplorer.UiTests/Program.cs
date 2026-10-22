@@ -126,6 +126,7 @@ internal static class Program
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
             RunAppearanceScenario(root);
+            RunTrayScenario(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -470,6 +471,45 @@ internal static class Program
         bool matches = opaque is not null && first.ToArgb() == opaque.BackColor.ToArgb() && last.ToArgb() == opaque.BackColor.ToArgb();
         if (!matches) Console.Error.WriteLine($"CORNER {first} {last} expected {opaque?.BackColor} from {opaque?.GetType().Name}; parent {button.Parent?.BackColor}");
         return matches;
+    }
+
+    private static void RunTrayScenario(string root)
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(root, "Tray")).FullName;
+        string session = Path.Combine(root, "tray.json");
+        SessionStore.Save(session, new SessionState
+        {
+            Layout = 1, Language = "en", ExplorerFavoritesImported = true, CloseToTray = true,
+            Panes = [new PaneState { Tabs = [folder] }]
+        });
+        using var form = new MainForm(session, []);
+        bool closedToTray = false;
+        form.Shown += async (_, _) =>
+        {
+            try
+            {
+                Check(form.TrayIconVisible, "notification-area icon is shown when close-to-tray is on");
+                var hidden = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void Changed(object? sender, EventArgs e) { if (form.Visible) return; hidden.TrySetResult(); }
+                form.VisibleChanged += Changed;
+                form.Close();
+                await hidden.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                form.VisibleChanged -= Changed;
+                closedToTray = !form.Visible && !form.IsDisposed;
+                Check(closedToTray, "closing the window hides it to the notification area");
+                var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void Shown(object? sender, EventArgs e) { if (form.Visible) shown.TrySetResult(); }
+                form.VisibleChanged += Shown;
+                PostMessage(form.Handle, QuadExplorer.Program.ActivationMessage(session), 0, 0);
+                await shown.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                form.VisibleChanged -= Shown;
+                Check(form.Visible, "Win+E or a second launch shows the hidden window again");
+            }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+            finally { form.ExitApplication(); }
+        };
+        Application.Run(form);
+        Check(closedToTray && form.IsDisposed && SessionStore.Load(session).CloseToTray, "Exit closes the app and close-to-tray persists");
     }
 
     private static async Task WindowRestored(Form form, Action trigger)
