@@ -74,7 +74,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Light/dark theme**: Toggle at the top right; the file lists follow too.
 - **Languages**: 한국어, English, 简体中文, 日本語.
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
-- **Version and update notice**: The lower left shows the current version and, when a new release is out, a download link beside it. Nothing installs automatically.
+- **Version and updates**: The lower left shows the current version and, when a new release is out, `Update` beside it. Clicking it downloads the new version, swaps it in and restarts, keeping your tabs and settings. Nothing is installed until you click.
 
 File lists are native Windows lists, so column sorting and right-click menus are handled by the Windows Shell. The Windows 11 Explorer command bar and tab UI are not embedded.
 
@@ -88,7 +88,7 @@ File lists are native Windows lists, so column sorting and right-click menus are
 | Launching it again | Brings the existing window back instead of opening another. |
 
 - **Quit completely**: Right-click the notification-area icon → `Exit`.
-- **In `Settings`**: Win+Alt+E, keeping running in the notification area, Win+E replacement and update checks.
+- **In `Settings`**: Win+Alt+E, keeping running in the notification area, Win+E replacement, update checks and automatic update install.
 - With the notification-area option off, X quits and a second Win+Alt+E minimizes.
 - The Win+E setting only creates and removes one entry in your user registry (HKCU) and needs no administrator rights.
 
@@ -139,7 +139,8 @@ The two apps find files in different ways.
 
 ## Data and compatibility
 
-- Update check: on launch and once a day while running, the app reads only the latest release version from GitHub (`api.github.com`). No file or user information is sent, and the app makes no other network connections. Turn it off under `Settings` → `Check for new versions`.
+- Update check: On launch and once a day while running, the app reads only the latest release information from GitHub (`api.github.com`). No file or user information is sent. Turn it off under `Settings` → `Check for new versions`.
+- Updating: Only when you click `Update`, the app downloads the ZIP from the GitHub release, checks it against the SHA-256 GitHub reports, then replaces the executable; the previous file is deleted on the next start. If the check fails, nothing changes. If the executable sits where you can't write, or `Settings` → `Install automatically when Update is clicked` is off, the release page opens instead. The app makes no other network connections.
 - Settings location: `%LOCALAPPDATA%\QuadExplorer\session.json`
 - The settings path is unchanged so tabs and favorites from earlier QuadExplorer versions carry over.
 - Run only one app instance at a time against the same settings file.

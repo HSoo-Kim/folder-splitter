@@ -459,6 +459,7 @@ internal static class Program
         Check(Math.Abs(restored.FolderTreeHeight - 200) <= 1, "resized folder tree height persists");
         Check(!restored.GlobalHotkey, "Win+Alt+E setting persists");
         RunWinEScenario();
+        Task.Run(RunUpdateInstallScenario).GetAwaiter().GetResult();
     }
 
     private static bool ButtonCornersMatchBackground(ExplorerPane pane)
@@ -551,6 +552,8 @@ internal static class Program
                 Check(form.UpdateLinkShown && form.VersionText.StartsWith("v" + current.ToString(3) + " ", StringComparison.Ordinal)
                     && form.VersionText.Contains("New version v99.0.0 available", StringComparison.Ordinal),
                     "a newer release shows a download link next to the version");
+                Check(form.AutoUpdateEnabled, "automatic update install is on by default");
+                form.SetAutoUpdate(false);
                 form.SetCheckUpdates(false);
                 int before = requests;
                 await form.CheckForUpdateAsync();
@@ -560,7 +563,7 @@ internal static class Program
             finally { form.ExitApplication(); }
         };
         Application.Run(form);
-        Check(!SessionStore.Load(session).CheckUpdates, "update check setting persists");
+        Check(!SessionStore.Load(session).CheckUpdates && !SessionStore.Load(session).AutoUpdate, "update settings persist");
     }
 
     private static async Task WindowRestored(Form form, Action trigger)
@@ -575,6 +578,72 @@ internal static class Program
             await restored.Task.WaitAsync(TimeSpan.FromSeconds(10));
         }
         finally { form.Resize -= Resized; }
+    }
+
+    private static async Task RunUpdateInstallScenario()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "FolderSplitter.UpdateTest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            using (var json = System.Text.Json.JsonDocument.Parse("""
+                {"tag_name":"v9.9.9","html_url":"https://github.com/HSoo-Kim/folder-splitter/releases/tag/v9.9.9","assets":[
+                 {"name":"other.zip","browser_download_url":"https://github.com/x/other.zip","digest":"sha256:00"},
+                 {"name":"folder-splitter-win-x64.zip","browser_download_url":"https://github.com/HSoo-Kim/folder-splitter/releases/download/v9.9.9/folder-splitter-win-x64.zip",
+                  "digest":"sha256:2b1a10366592c46e296ad97e621adc0cde413c24983dae86e3af275bbb2689d7"}]}
+                """))
+            {
+                var parsed = UpdateChecker.Parse(json.RootElement)!;
+                Check(parsed.Version == new Version(9, 9, 9) && parsed.PackageSha256 == "2b1a10366592c46e296ad97e621adc0cde413c24983dae86e3af275bbb2689d7"
+                    && parsed.PackageUrl?.AbsoluteUri.EndsWith("/v9.9.9/folder-splitter-win-x64.zip", StringComparison.Ordinal) == true,
+                    "release package URL and SHA-256 are read from the GitHub release");
+            }
+            using (var json = System.Text.Json.JsonDocument.Parse("""
+                {"tag_name":"v9.9.9","html_url":"https://github.com/HSoo-Kim/folder-splitter/releases/tag/v9.9.9","assets":[
+                 {"name":"folder-splitter-win-x64.zip","browser_download_url":"https://example.com/folder-splitter-win-x64.zip","digest":"sha256:2b1a10366592c46e296ad97e621adc0cde413c24983dae86e3af275bbb2689d7"}]}
+                """))
+                Check(UpdateChecker.Parse(json.RootElement)!.PackageUrl is null, "packages outside github.com are not installed");
+
+            string exe = Path.Combine(root, "FolderSplitter.exe");
+            byte[] Package(string? entryName, string content)
+            {
+                using var memory = new MemoryStream();
+                using (var zip = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, true))
+                {
+                    if (entryName is not null)
+                        using (var writer = new StreamWriter(zip.CreateEntry(entryName).Open())) writer.Write(content);
+                    using (var writer = new StreamWriter(zip.CreateEntry("README.md").Open())) writer.Write("readme");
+                }
+                return memory.ToArray();
+            }
+            ReleaseInfo Release(byte[] package, string? sha = null) => new(new Version(9, 9, 9), "v9.9.9", "https://github.com/x",
+                new Uri("https://github.com/x/folder-splitter-win-x64.zip"), sha ?? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(package)));
+            Func<Uri, CancellationToken, Task<Stream>> Serve(byte[] package) => (_, _) => Task.FromResult<Stream>(new MemoryStream(package));
+            bool Leftovers() => File.Exists(exe + ".new") || File.Exists(exe + ".download");
+
+            File.WriteAllText(exe, "old");
+            var good = Package("FolderSplitter.exe", "new");
+            await UpdateInstaller.InstallAsync(Release(good), exe, Serve(good), CancellationToken.None);
+            Check(File.ReadAllText(exe) == "new" && File.ReadAllText(exe + ".old") == "old" && !Leftovers(),
+                "update replaces the executable and keeps the previous one aside");
+            UpdateInstaller.RemovePrevious(exe);
+            Check(!File.Exists(exe + ".old"), "the previous executable is removed on the next start");
+
+            File.WriteAllText(exe, "old");
+            bool rejected = false;
+            try { await UpdateInstaller.InstallAsync(Release(good, new string('0', 64)), exe, Serve(good), CancellationToken.None); }
+            catch (InvalidDataException) { rejected = true; }
+            Check(rejected && File.ReadAllText(exe) == "old" && !File.Exists(exe + ".old") && !Leftovers(),
+                "a package with the wrong SHA-256 is rejected and nothing changes");
+
+            var empty = Package(null, "");
+            rejected = false;
+            try { await UpdateInstaller.InstallAsync(Release(empty), exe, Serve(empty), CancellationToken.None); }
+            catch (InvalidDataException) { rejected = true; }
+            Check(rejected && File.ReadAllText(exe) == "old" && !File.Exists(exe + ".old") && !Leftovers(),
+                "a package without FolderSplitter.exe is rejected and nothing changes");
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     // Uses a throwaway registry root so the user's real Win+E setting is never touched.

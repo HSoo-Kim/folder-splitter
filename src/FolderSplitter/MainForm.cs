@@ -72,6 +72,9 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolStripMenuItem updateItem = new() { CheckOnClick = true };
     private ReleaseInfo? availableUpdate;
     private bool checkUpdates;
+    private readonly ToolStripMenuItem autoUpdateItem = new() { CheckOnClick = true };
+    private bool autoUpdate;
+    private bool updating;
     private readonly ToolStripButton[] layoutButtons = new ToolStripButton[4];
     private readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 800 };
     private readonly ToolTip tips = new() { ShowAlways = true, AutoPopDelay = 10000 };
@@ -100,6 +103,7 @@ public sealed class MainForm : Form, IMessageFilter
         closeToTray = initialState.KeepInTray;
         trayNoticeShown = initialState.TrayNoticeShown;
         checkUpdates = initialState.CheckUpdates;
+        autoUpdate = initialState.AutoUpdate;
         activationMessage = Program.ActivationMessage(sessionPath);
         Theme.Set(colorTheme);
         text = new UiText(initialState.Language);
@@ -122,11 +126,11 @@ public sealed class MainForm : Form, IMessageFilter
         Font = new Font("Segoe UI", 9.5f);
         UpdateVersionText();
         languageBindings.Add(UpdateVersionText);
-        versionLabel.LinkClicked += (_, _) =>
+        versionLabel.LinkClicked += async (_, _) =>
         {
-            if (availableUpdate is null) return;
-            try { Process.Start(new ProcessStartInfo(availableUpdate.Url) { UseShellExecute = true }); }
-            catch (Win32Exception error) { Active.SetStatus(error.Message); }
+            if (availableUpdate is not { } update || updating) return;
+            if (CanInstallUpdate(update) && UpdateInstaller.InstallablePath() is { } exe) await InstallUpdateAsync(update, exe);
+            else OpenReleasePage(update);
         };
         using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("QuadExplorer.AppIcon")!)
         using (var sourceIcon = new Icon(iconStream))
@@ -492,6 +496,10 @@ public sealed class MainForm : Form, IMessageFilter
         updateItem.Checked = checkUpdates;
         updateItem.CheckedChanged += (_, _) => SetCheckUpdates(updateItem.Checked);
         settings.DropDownItems.Add(updateItem);
+        BindText(autoUpdateItem, "Install automatically when Update is clicked");
+        autoUpdateItem.Checked = autoUpdate;
+        autoUpdateItem.CheckedChanged += (_, _) => SetAutoUpdate(autoUpdateItem.Checked);
+        settings.DropDownItems.Add(autoUpdateItem);
         toolbar.Items.Add(settings);
         toolbar.Layout += (_, _) =>
         {
@@ -587,6 +595,61 @@ public sealed class MainForm : Form, IMessageFilter
     internal string VersionText => versionLabel.Text;
     internal bool UpdateLinkShown => versionLabel.LinkArea.Length > 0;
 
+    internal bool AutoUpdateEnabled => autoUpdate;
+
+    internal void SetAutoUpdate(bool enabled)
+    {
+        autoUpdate = enabled;
+        autoUpdateItem.Checked = enabled;
+        UpdateVersionText();
+        ScheduleSave();
+    }
+
+    private bool CanInstallUpdate(ReleaseInfo update) => autoUpdate && update.PackageUrl is not null && update.PackageSha256 is not null;
+
+    private void OpenReleasePage(ReleaseInfo update)
+    {
+        try { Process.Start(new ProcessStartInfo(update.Url) { UseShellExecute = true }); }
+        catch (Win32Exception error) { Active.SetStatus(error.Message); }
+    }
+
+    // The new process waits for this one to exit before it takes the single-instance lock and the search index.
+    private async Task InstallUpdateAsync(ReleaseInfo update, string exe)
+    {
+        updating = true;
+        UpdateVersionText();
+        try { await UpdateInstaller.InstallAsync(update, exe, UpdateInstaller.DownloadAsync, updateCancellation.Token); }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or IOException
+            or UnauthorizedAccessException or InvalidDataException)
+        {
+            updating = false;
+            UpdateVersionText();
+            Active.SetLocalizedStatus("Automatic update failed: {0}", error.Message);
+            OpenReleasePage(update);
+            return;
+        }
+        saveTimer.Stop();
+        SaveSession();
+        var restart = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! };
+        restart.ArgumentList.Add("--wait-pid");
+        restart.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (!sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase))
+        {
+            restart.ArgumentList.Add("--session");
+            restart.ArgumentList.Add(sessionPath);
+        }
+        try { Process.Start(restart); }
+        catch (Win32Exception)
+        {
+            updating = false;
+            availableUpdate = null;
+            UpdateVersionText();
+            Active.SetLocalizedStatus("Updated. Restart Folder Splitter to finish.");
+            return;
+        }
+        ExitApplication();
+    }
+
     internal void SetCheckUpdates(bool enabled)
     {
         checkUpdates = enabled;
@@ -620,7 +683,9 @@ public sealed class MainForm : Form, IMessageFilter
             versionLabel.LinkArea = new LinkArea(0, 0);
             return;
         }
-        string notice = text.T("New version {0} available · Download", availableUpdate.Tag);
+        string notice = updating ? text.T("Updating to {0}…", availableUpdate.Tag)
+            : CanInstallUpdate(availableUpdate) ? text.T("New version {0} available · Update", availableUpdate.Tag)
+            : text.T("New version {0} available · Download", availableUpdate.Tag);
         versionLabel.Text = current + "   " + notice;
         versionLabel.LinkArea = new LinkArea(current.Length + 3, notice.Length);
         versionLabel.LinkColor = versionLabel.ActiveLinkColor = versionLabel.VisitedLinkColor = Theme.Accent;
@@ -1236,7 +1301,7 @@ public sealed class MainForm : Form, IMessageFilter
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, TrayNoticeShown = trayNoticeShown,
-                CheckUpdates = checkUpdates,
+                CheckUpdates = checkUpdates, AutoUpdate = autoUpdate,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,

@@ -16,7 +16,9 @@ internal static class Program
         var folders = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
-            if (args[i] == "--session" && i + 1 < args.Length)
+            if (args[i] == "--wait-pid" && i + 1 < args.Length)
+                WaitForExit(args[++i]);
+            else if (args[i] == "--session" && i + 1 < args.Length)
             {
                 sessionPath = Path.GetFullPath(args[++i]);
                 text.SetLanguage(SessionStore.Load(sessionPath).Language);
@@ -40,6 +42,7 @@ internal static class Program
             PostMessage(0xFFFF, ActivationMessage(sessionPath), 0, 0);
             return;
         }
+        UpdateInstaller.RemovePrevious(Environment.ProcessPath);
         var roots = DriveInfo.GetDrives().Where(drive => drive.DriveType == DriveType.Fixed && drive.IsReady)
             .Select(drive => drive.RootDirectory.FullName).ToArray();
         string storePath = sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase)
@@ -48,6 +51,18 @@ internal static class Program
         _ = search.BuildOrLoadAsync().ContinueWith(task => System.Diagnostics.Debug.WriteLine(task.Exception),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
         Application.Run(new MainForm(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync));
+    }
+
+    // After an update the new executable starts before the old one has exited.
+    private static void WaitForExit(string processId)
+    {
+        if (!int.TryParse(processId, out int id)) return;
+        try
+        {
+            using var previous = System.Diagnostics.Process.GetProcessById(id);
+            previous.WaitForExit(TimeSpan.FromSeconds(30));
+        }
+        catch (ArgumentException) { }
     }
 
     internal static string InstanceKey(string sessionPath) =>
