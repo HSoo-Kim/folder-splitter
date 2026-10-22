@@ -172,3 +172,7 @@ When you replace the source icon, regenerate the Windows ICO with the command be
 ```powershell
 .\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
 ```
+
+## License
+
+[MIT License](LICENSE). Free for personal and commercial use, modification and distribution; keep the copyright and license notice in copies you distribute.

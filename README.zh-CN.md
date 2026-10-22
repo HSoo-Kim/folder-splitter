@@ -172,3 +172,7 @@ tools/
 ```powershell
 .\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
 ```
+
+## 许可证
+
+采用 [MIT 许可证](LICENSE)。个人和公司均可免费使用、修改和分发；分发时请保留版权和许可声明。
