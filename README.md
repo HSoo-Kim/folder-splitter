@@ -94,25 +94,18 @@ Windows 11 x64용입니다. 릴리스의 `folder-splitter-win-x64.zip`을 풀고
 
 ## Q-Dir과 비교
 
-Q-Dir은 오래 쓰여 온 무료 4분할 탐색기입니다. 두 프로그램 모두 Windows 탐색기 파일 목록을 쓰지만, 중점을 둔 부분이 다릅니다.
+두 프로그램은 파일을 찾는 방식이 다릅니다.
 
-| 항목 | Q-Dir 12.81 | Folder Splitter 0.7.8 |
+| | Q-Dir | Folder Splitter |
 |---|---|---|
-| 배포 형태 | 무료 프리웨어, 설치판·포터블판 | MIT 오픈소스, 설치 없는 단일 실행 파일 |
-| 지원 환경 | Windows 7~11, Windows Server, x86·x64 | Windows 11 x64 |
-| 크기 | 다운로드 1MB 미만 | ZIP 약 44MB, 실행 파일 약 111MB (.NET 런타임 포함) |
-| 파일 목록 | Windows 탐색기 목록 기반 | Windows 탐색기 목록 기반 |
-| 분할과 탭 | 최대 4개 영역, 여러 배치, 탭 | 최대 4개 영역, 2:1 배치, 영역별 탭, 탭을 끌어 분할·이동 |
-| 파일 검색 | Windows 탐색기 검색(`F3`, `Ctrl+F`)으로 현재 폴더 범위 검색. 자체 검색은 개발 중이라고 안내 | 주소창에 이름 일부를 입력해 로컬 드라이브 전체 검색. 자체 파일 이름 색인 사용(첫 색인 약 50초) |
-| 부가 기능 | 색상 필터, 목록 내보내기(XLS·CSV·TXT·HTML), 빠른 미리보기, 화면 확대 등 | 해당 기능 없음 |
-| 언어 | 여러 언어, 번역 기능 내장 | 한국어, English, 简体中文, 日本語 |
-| 설정 저장 | 실행 파일 옆 `Q-Dir.ini` | `%LOCALAPPDATA%` |
+| 검색 위치 | 별도 검색창 (Windows 탐색기 검색, `F3`·`Ctrl+F`) | 주소창에 바로 입력 |
+| 검색 범위 | 현재 폴더와 그 하위 | 모든 로컬 드라이브 |
+| 속도 | Windows 검색 색인 여부에 따라 다르고, 색인되지 않은 위치는 느릴 수 있음 | 자체 파일 이름 색인으로 입력 즉시 결과 표시 (첫 색인 약 50초) |
+| 외부 도구 | 기본 Everything 연동 없음 | 필요 없음 |
 
-오래된 Windows, 작은 실행 파일, 다양한 부가 기능이 필요하면 Q-Dir이 맞고, 주소창 검색과 탭 끌어 배치를 주로 쓴다면 Folder Splitter가 맞을 수 있습니다.
-
-> **기준**: 2026-10-22에 정리했습니다. Q-Dir은 12.81(2026-10-18 공개) 기준으로 공식 사이트, 공식 FAQ(검색 항목은 2024-04-29 갱신), 공식 도움말, PortableApps 소개 글을 참고했고, 직접 설치해 확인하지는 않았습니다. 이후 버전에서 달라질 수 있으며, 틀린 내용은 이슈로 알려 주세요.
+> **기준**: 2026-10-22에 Q-Dir 12.81(2026-10-18 공개)을 대상으로 정리했습니다. 공식 FAQ(검색 항목은 2024-04-29 갱신)와 공식 도움말을 참고했고, Q-Dir을 직접 설치해 확인하지는 않았습니다. 공식 문서에는 자체 검색 기능을 개발 중이라고 적혀 있어 이후 버전에서 달라질 수 있습니다. 틀린 내용은 이슈로 알려 주세요.
 >
-> 출처: [Q-Dir 공식 사이트](https://www.softwareok.com/?seite=Freeware/Q-Dir) · [다운로드 안내](http://q-dir.com/) · [검색 기능 FAQ](https://www.softwareok.com/?seite=faq-Q-DIR&faq=37) · [도움말](http://www.q-dir.com/?en-us-q-q-dir-file-explorer-help.-for-windows-10-11-12-7) · [PortableApps 소개](https://portableapps.com/news/2026-07-05--q-dir-portable-12.69-released)
+> 출처: [Q-Dir 공식 사이트](https://www.softwareok.com/?seite=Freeware/Q-Dir) · [검색 기능 FAQ](https://www.softwareok.com/?seite=faq-Q-DIR&faq=37) · [도움말](http://www.q-dir.com/?en-us-q-q-dir-file-explorer-help.-for-windows-10-11-12-7)
 
 ## 사용법
 

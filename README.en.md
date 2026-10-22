@@ -94,25 +94,18 @@ File lists are native Windows lists, so column sorting and right-click menus are
 
 ## Compared with Q-Dir
 
-Q-Dir is a long-standing free quad-pane file manager. Both apps use the native Windows Explorer file list but focus on different things.
+The two apps find files in different ways.
 
-| | Q-Dir 12.81 | Folder Splitter 0.7.8 |
+| | Q-Dir | Folder Splitter |
 |---|---|---|
-| Distribution | Freeware, installer or portable | MIT open source, single executable with no installer |
-| Supported systems | Windows 7–11, Windows Server, x86/x64 | Windows 11 x64 |
-| Size | Download under 1 MB | ZIP about 44 MB, executable about 111 MB (includes the .NET runtime) |
-| File list | Based on the Windows Explorer list | Based on the Windows Explorer list |
-| Panes and tabs | Up to 4 panes, several layouts, tabs | Up to 4 panes, 2:1 layouts, tabs per pane, drag tabs to split or move |
-| File search | Windows Explorer search (`F3`, `Ctrl+F`) within the current folder; its own search is described as in development | Type part of a name in the address bar to search all local drives; uses its own file-name index (first indexing about 50 s) |
-| Extras | Color filters, list export (XLS/CSV/TXT/HTML), quick preview, magnifier and more | None of these |
-| Languages | Many, with a built-in translation option | 한국어, English, 简体中文, 日本語 |
-| Settings | `Q-Dir.ini` next to the executable | `%LOCALAPPDATA%` |
+| Where you search | A separate search box (Windows Explorer search, `F3`/`Ctrl+F`) | Directly in the address bar |
+| Scope | The current folder and its subfolders | All local drives |
+| Speed | Depends on Windows Search indexing; unindexed locations can be slow | Results as you type from its own file-name index (first indexing about 50 s) |
+| External tools | No built-in Everything integration | None needed |
 
-Q-Dir suits older Windows versions, a small executable and a wide range of extras; Folder Splitter may suit you if you mainly use address-bar search and dragging tabs into place.
-
-> **Basis**: Compiled on 2026-10-22. Q-Dir details are for version 12.81 (released 2026-10-18), taken from the official site, the official FAQ (search entry updated 2024-04-29), the official help and the PortableApps description, without installing Q-Dir. Later versions may differ; please open an issue if something is wrong.
+> **Basis**: Compiled on 2026-10-22 for Q-Dir 12.81 (released 2026-10-18) from the official FAQ (search entry updated 2024-04-29) and the official help, without installing Q-Dir. The official documents say a search function of its own is in development, so later versions may differ. Please open an issue if something is wrong.
 >
-> Sources: [Q-Dir official site](https://www.softwareok.com/?seite=Freeware/Q-Dir) · [download page](http://q-dir.com/) · [search FAQ](https://www.softwareok.com/?seite=faq-Q-DIR&faq=37) · [help](http://www.q-dir.com/?en-us-q-q-dir-file-explorer-help.-for-windows-10-11-12-7) · [PortableApps](https://portableapps.com/news/2026-07-05--q-dir-portable-12.69-released)
+> Sources: [Q-Dir official site](https://www.softwareok.com/?seite=Freeware/Q-Dir) · [search FAQ](https://www.softwareok.com/?seite=faq-Q-DIR&faq=37) · [help](http://www.q-dir.com/?en-us-q-q-dir-file-explorer-help.-for-windows-10-11-12-7)
 
 ## Usage
 
