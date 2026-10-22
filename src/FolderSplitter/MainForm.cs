@@ -620,8 +620,9 @@ public sealed class MainForm : Form, IMessageFilter
         using var background = new SolidBrush(selected ? Theme.Selected : Theme.Canvas);
         e.Graphics.FillRectangle(background, e.Bounds);
         var place = (Place)((ListBox)sender!).Items[e.Index];
-        int iconSize = (int)Math.Round(20 * DeviceDpi / 96d);
-        int gap = (int)Math.Round(8 * DeviceDpi / 96d);
+        int iconSize = (int)Math.Round(16 * DeviceDpi / 96d);
+        int gap = (int)Math.Round(10 * DeviceDpi / 96d);
+        e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
         e.Graphics.DrawImage(placeIcons.Get(place.Path),
             new Rectangle(e.Bounds.Left + gap, e.Bounds.Top + (e.Bounds.Height - iconSize) / 2, iconSize, iconSize));
         var rect = new Rectangle(e.Bounds.Left + iconSize + gap * 2, e.Bounds.Top,

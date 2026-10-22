@@ -148,6 +148,18 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         SetItemCount(count);
     }
 
+    // VPCF_TEXT, BACKGROUND, SORTCOLUMN, SUBTEXT, TEXTBACKGROUND: list colors the folder view keeps
+    // through its own redraws, unlike colors sent directly to its list window.
+    internal void ApplyThemeColors()
+    {
+        if (view is not IVisualProperties visual) return;
+        visual.SetColor(1, ColorTranslator.ToWin32(Theme.Text));
+        visual.SetColor(2, ColorTranslator.ToWin32(Theme.Surface));
+        visual.SetColor(3, ColorTranslator.ToWin32(Theme.Canvas));
+        visual.SetColor(4, ColorTranslator.ToWin32(Theme.Muted));
+        visual.SetColor(5, ColorTranslator.ToWin32(Theme.Surface));
+    }
+
     private void SetItemCount(int? count)
     {
         if (ItemCount == count) return;
@@ -291,6 +303,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             finally { Marshal.Release(pointer); }
             ComEventsHelper.Combine(enumerationSource, FolderViewEvents, 201, enumerationDone);
         }
+        ApplyThemeColors();
         UpdateItemCountMonitoring();
         RefreshItemCount();
         return 0;

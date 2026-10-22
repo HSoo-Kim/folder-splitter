@@ -12,9 +12,12 @@ internal static class Program
     {
         string? expectedDesktop = Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_DESKTOP");
         var actualDesktop = new System.Text.StringBuilder(256);
-        if (expectedDesktop is null || !expectedDesktop.StartsWith("FolderSplitter-QA-", StringComparison.Ordinal) ||
+        // Demo capture runs on the user's desktop only with their consent: Shell views paint only in a visible,
+        // DWM-composed window. It never takes activation and captures the window's own content.
+        bool demoCapture = args is ["--demo-capture", _, _];
+        if (!demoCapture && (expectedDesktop is null || !expectedDesktop.StartsWith("FolderSplitter-QA-", StringComparison.Ordinal) ||
             !GetUserObjectInformation(GetThreadDesktop(GetCurrentThreadId()), 2, actualDesktop, 512, out _) ||
-            actualDesktop.ToString() != expectedDesktop)
+            actualDesktop.ToString() != expectedDesktop))
         {
             Console.Error.WriteLine("Refusing visible GUI tests. Run through tools/PrivateDesktopQa or build.ps1 -UiTests.");
             return 2;
@@ -233,6 +236,8 @@ internal static class Program
             });
             using var search = new IndependentSearchBackend(new[] { demoRoot }, Path.Combine(output, "demo-index.fsix"));
             using var form = new MainForm(session, [], search, [demoRoot]);
+            foreach (var window in CandidatePopups(form).Prepend<Form>(form))
+                SetWindowLongPtr(window.Handle, -20, GetWindowLongPtr(window.Handle, -20) | 0x08000000); // WS_EX_NOACTIVATE: keep the user's focus
             var panes = Enumerable.Range(0, 4).Select(form.GetPane).ToArray();
             var navigation = panes.Select(p => p.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(p.ActiveView)).ToArray();
             form.Shown += async (_, _) =>
@@ -243,23 +248,23 @@ internal static class Program
                     foreach (var pane in panes) pane.ActiveView!.SetViewMode(4);
                     foreach (var pane in panes) await ItemCountKnown(pane.ActiveView!);
                     await form.FolderTree.FollowPathAsync(launch);
-                    CaptureDemo(form, output, "01-light-panes");
+                    await CaptureDemo(form, output, "01-light-panes");
                     form.SetColorTheme("dark");
-                    CaptureDemo(form, output, "02-dark-panes");
+                    await CaptureDemo(form, output, "02-dark-panes");
                     await form.FolderTree.FollowPathAsync(web);
                     await PaneChange(panes[0], () => form.FolderTree.RequestOpen(FolderTreeTarget.NewTab),
                         () => panes[0].TabCount == 3 && panes[0].ActiveView is { HasNavigated: true } && panes[0].CurrentPath == web);
                     panes[0].ActiveView!.SetViewMode(4);
                     await ItemCountKnown(panes[0].ActiveView!);
-                    CaptureDemo(form, output, "03-dark-tree-tab");
+                    await CaptureDemo(form, output, "03-dark-tree-tab");
                     form.SetColorTheme("light");
                     await search.BuildOrLoadAsync(CancellationToken.None);
-                    var address = Descendants(panes[3]).OfType<TextBox>().Single();
-                    var results = SearchSignal(panes[3], predicate: () => panes[3].SearchCandidates.Count > 0);
+                    var address = Descendants(panes[1]).OfType<TextBox>().Single();
+                    var results = SearchSignal(panes[1], predicate: () => panes[1].SearchCandidates.Count > 0);
                     address.Focus();
                     address.Text = "공유용/월별연구계획";
                     await results.WaitAsync(TimeSpan.FromSeconds(15));
-                    CaptureDemo(form, output, "04-light-search");
+                    await CaptureDemo(form, output, "04-light-search", address);
                 }
                 catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
                 finally { form.Close(); }
@@ -275,6 +280,17 @@ internal static class Program
     private static string CountSuffix(UiText text, ShellViewHost host) => "  |  " + (host.ItemCount is int count
         ? text.T("{0} items", count) : text.T("Counting items..."));
 
+    private static IEnumerable<Form> CandidatePopups(MainForm form) => Enumerable.Range(0, 4).Select(i => (Form)typeof(ExplorerPane)
+        .GetField("candidates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .GetValue(form.GetPane(i))!);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(nint window, int attribute, out int value, int size);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern nint GetWindowLongPtr(nint window, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern nint SetWindowLongPtr(nint window, int index, nint value);
+
     private static async Task ItemCountKnown(ShellViewHost host)
     {
         var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -288,23 +304,37 @@ internal static class Program
         finally { host.ItemCountChanged -= Changed; }
     }
 
-    private static void CaptureDemo(Form form, string output, string name)
+    private static async Task CaptureDemo(MainForm form, string output, string name, TextBox? anchor = null)
     {
-        using var frame = PrintForm(form);
-        using (var graphics = Graphics.FromImage(frame))
+        form.Refresh();
+        string path = Path.Combine(output, name + ".png");
+        await WindowCapture.SavePngAsync(form.Handle, path);
+        var popup = CandidatePopups(form).SingleOrDefault(f => f.Visible);
+        if (popup is not null && anchor is not null)
         {
-            foreach (var popup in form.OwnedForms.Where(f => f.Visible))
+            // WM_PRINT renders the WinForms candidate list itself without reading the screen.
+            using var list = PrintForm(popup, 0);
+            Marshal.ThrowExceptionForHR(DwmGetWindowAttribute(form.Handle, 9, out NativeRect frameBounds, Marshal.SizeOf<NativeRect>()));
+            Rectangle field = anchor.RectangleToScreen(anchor.ClientRectangle);
+            Bitmap frame;
+            using (var file = new Bitmap(path)) frame = new Bitmap(file);
+            using (frame)
             {
-                using var image = PrintForm(popup);
-                graphics.DrawImage(image, popup.Left - form.Left, popup.Top - form.Top);
+                using (var graphics = Graphics.FromImage(frame))
+                    graphics.DrawImage(list, field.Left - frameBounds.Left, field.Bottom + 2 - frameBounds.Top);
+                frame.Save(path);
             }
         }
-        string path = Path.Combine(output, name + ".png");
-        frame.Save(path);
         Console.WriteLine("SCREENSHOT " + path);
     }
 
-    private static Bitmap PrintForm(Form form)
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(nint window, int attribute, out NativeRect value, int size);
+
+    private static Bitmap PrintForm(Form form, uint flags)
     {
         form.Refresh();
         var bitmap = new Bitmap(form.Width, form.Height);
@@ -312,7 +342,7 @@ internal static class Program
         nint context = graphics.GetHdc();
         try
         {
-            if (!PrintWindow(form.Handle, context, 2)) throw new InvalidOperationException("Could not capture app window.");
+            if (!PrintWindow(form.Handle, context, flags)) throw new InvalidOperationException("Could not capture app window.");
         }
         finally { graphics.ReleaseHdc(context); }
         return bitmap;
@@ -352,6 +382,7 @@ internal static class Program
                 Check(status.Text.EndsWith("3 items", StringComparison.Ordinal), "item count follows created and deleted files");
                 Check(Descendants(form).OfType<Button>().All(b => b.GetType().Name == "RoundedButton"),
                     "app buttons use rounded rendering");
+                Check(ButtonCornersMatchBackground(pane), "light rounded button corners use the opaque background");
 
                 await form.FolderTree.FollowPathAsync(alpha);
                 Check(form.FolderTree.Tree.SelectedNode?.Name == alpha, "folder tree follows a nested path");
@@ -374,6 +405,14 @@ internal static class Program
                 form.SetColorTheme("dark");
                 Check(Theme.IsDark && form.BackColor == Theme.Canvas && status.BackColor != Color.White
                     && form.FolderTree.Tree.BackColor == Theme.Canvas, "dark theme recolors app surfaces");
+                Check(ButtonCornersMatchBackground(pane), "dark rounded button corners use the opaque background");
+                var visual = (IVisualProperties)typeof(ShellViewHost)
+                    .GetField("view", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                    .GetValue(pane.ActiveView!)!;
+                Check(visual.GetColor(2, out int listBack) == 0 && listBack == ColorTranslator.ToWin32(Theme.Surface)
+                    && visual.GetColor(3, out int sortColumn) == 0 && sortColumn == ColorTranslator.ToWin32(Theme.Canvas)
+                    && visual.GetColor(1, out int listText) == 0 && listText == ColorTranslator.ToWin32(Theme.Text),
+                    "dark theme sets the Shell folder view's own text, background and sorted-column colors");
                 CaptureLanguage(form, "theme-dark");
                 form.SetFolderTreeVisible(false);
                 Check(!form.FolderTree.Visible, "folder tree can be hidden");
@@ -384,6 +423,19 @@ internal static class Program
         Application.Run(form);
         var restored = SessionStore.Load(session);
         Check(restored.ColorTheme == "dark" && !restored.ShowFolderTree, "theme and folder tree visibility persist");
+    }
+
+    private static bool ButtonCornersMatchBackground(ExplorerPane pane)
+    {
+        var button = Descendants(pane).OfType<Button>().First(b => b.Parent is TableLayoutPanel);
+        Control? opaque = button.Parent;
+        while (opaque is not null && opaque.BackColor.A < 255) opaque = opaque.Parent;
+        using var image = new Bitmap(button.Width, button.Height);
+        button.DrawToBitmap(image, new Rectangle(Point.Empty, button.Size));
+        Color first = image.GetPixel(0, 0), last = image.GetPixel(button.Width - 1, button.Height - 1);
+        bool matches = opaque is not null && first.ToArgb() == opaque.BackColor.ToArgb() && last.ToArgb() == opaque.BackColor.ToArgb();
+        if (!matches) Console.Error.WriteLine($"CORNER {first} {last} expected {opaque?.BackColor} from {opaque?.GetType().Name}; parent {button.Parent?.BackColor}");
+        return matches;
     }
 
     private static async Task ItemCount(ShellViewHost host, Action trigger, int expected)
@@ -685,8 +737,9 @@ internal static class Program
             // same CBN_SELCHANGE a keyboard user triggers.
             int direction = index > selector.SelectedIndex ? 0x28 : 0x26;
             int steps = Math.Abs(index - selector.SelectedIndex);
+            // SendMessage runs the native combo's key handling, and the CBN_SELCHANGE it raises, before returning.
             for (int step = 0; step < steps; step++)
-                PostMessage(selector.ComboBox.Handle, 0x100, direction, 0);
+                SendMessage(selector.ComboBox.Handle, 0x100, direction, 0);
             try { await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
             catch (TimeoutException ex)
             {
@@ -697,6 +750,9 @@ internal static class Program
         }
         finally { selector.SelectedIndexChanged -= Selected; }
     }
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint window, uint message, nint wParam, nint lParam);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

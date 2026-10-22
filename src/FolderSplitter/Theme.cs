@@ -165,7 +165,10 @@ internal static class Theme
         Native.GetClassName(window, name, name.Capacity);
         string className = name.ToString();
         string theme = IsDark ? "DarkMode_Explorer" : "Explorer";
-        if (className.Equals("SysHeader32", StringComparison.OrdinalIgnoreCase))
+        // Shell folder lists and their headers use the ItemsView class, whose dark variant also
+        // darkens the sorted-column highlight; DarkMode_Explorer leaves that column white.
+        if (className.Equals("SysHeader32", StringComparison.OrdinalIgnoreCase) ||
+            className.Equals("SysListView32", StringComparison.OrdinalIgnoreCase))
             theme = IsDark ? "DarkMode_ItemsView" : "ItemsView";
         Native.SetWindowTheme(window, theme, null);
         if (className.Equals("SysListView32", StringComparison.OrdinalIgnoreCase))
@@ -283,14 +286,19 @@ internal static class Theme
         protected override void OnEnabledChanged(EventArgs e)
         { base.OnEnabledChanged(e); pressed = false; Invalidate(); }
 
-        protected override void OnPaintBackground(PaintEventArgs e)
+        // ButtonBase is an opaque control, so WinForms skips OnPaintBackground; OnPaint fills the
+        // corners outside the rounded shape itself, using the nearest opaque ancestor's color.
+        private Color CornerColor()
         {
-            e.Graphics.Clear(Parent?.BackColor ?? Canvas);
+            for (Control? parent = Parent; parent is not null; parent = parent.Parent)
+                if (parent.BackColor.A == 255) return parent.BackColor;
+            return Canvas;
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             if (ClientSize.Width < 2 || ClientSize.Height < 2) return;
+            e.Graphics.Clear(CornerColor());
             int inset = Theme.Scale(PaintInset, DeviceDpi);
             var bounds = new Rectangle(0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
             using var shape = Rounded(bounds, Theme.Scale(CornerRadius, DeviceDpi));

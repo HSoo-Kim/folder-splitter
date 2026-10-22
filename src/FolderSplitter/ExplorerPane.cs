@@ -326,6 +326,7 @@ public sealed class ExplorerPane : UserControl
         {
             tab.Button.ForeColor = tab == tabs.ElementAtOrDefault(selectedIndex) ? Theme.Accent : Theme.Text;
             if (tab.Host.IsHandleCreated) Theme.ApplyNative(tab.Host.Handle);
+            tab.Host.ApplyThemeColors();
         }
         candidates.RefreshTheme();
     }

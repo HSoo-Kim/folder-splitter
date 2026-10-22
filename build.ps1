@@ -36,7 +36,7 @@ if ($UiTests) {
     try {
         & $dotnet "$root/tools/PrivateDesktopQa/bin/Release/net10.0-windows/PrivateDesktopQa.dll" `
             --log $log --timeout 600 -- $dotnet `
-            "$root/tests/QuadExplorer.UiTests/bin/Release/net10.0-windows/QuadExplorer.UiTests.dll"
+            "$root/tests/QuadExplorer.UiTests/bin/Release/net10.0-windows10.0.19041.0/QuadExplorer.UiTests.dll"
         $nativeExit = $LASTEXITCODE
         if (Test-Path -LiteralPath $log) {
             Get-Content -LiteralPath $log

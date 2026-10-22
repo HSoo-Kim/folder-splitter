@@ -121,14 +121,22 @@ internal sealed class FolderTree : UserControl
         AccessibleName = Tree.AccessibleName = text.T("Folder tree");
         heading.Text = text.T("Folder tree");
         foreach (var (item, key) in menuLabels) item.Text = text.T(key);
-        foreach (TreeNode node in Tree.Nodes) LocalizeNode(node);
+        // Every unloaded folder holds a "Loading" notice; batch them so a large expanded folder
+        // does not update the scrollbars once per node.
+        Tree.BeginUpdate();
+        try { foreach (TreeNode node in Tree.Nodes) LocalizeNode(node); }
+        finally { Tree.EndUpdate(); }
     }
 
     private void LocalizeNode(TreeNode node)
     {
-        if (node.Tag is Notice notice)
-            node.Text = notice.Detail is null ? text.T(notice.Key) : text.T(notice.Key, notice.Detail);
-        else if (node.Tag is Folder { Home: true }) node.Text = text.T("Home");
+        string? localized = node.Tag switch
+        {
+            Notice notice => notice.Detail is null ? text.T(notice.Key) : text.T(notice.Key, notice.Detail),
+            Folder { Home: true } => text.T("Home"),
+            _ => null
+        };
+        if (localized is not null && node.Text != localized) node.Text = localized;
         foreach (TreeNode child in node.Nodes) LocalizeNode(child);
     }
 

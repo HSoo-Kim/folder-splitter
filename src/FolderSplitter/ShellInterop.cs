@@ -111,6 +111,22 @@ public interface IShellView
     [PreserveSig] int GetItemObject(uint item, ref Guid interfaceId, out nint result);
 }
 
+// Windows SDK shobjidl_core.h: the folder view's own colors, including the sorted-column tint.
+// https://learn.microsoft.com/windows/win32/api/shobjidl_core/nn-shobjidl_core-ivisualproperties
+[ComImport, Guid("E693CF68-D967-4112-8763-99172AEE5E5A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IVisualProperties
+{
+    [PreserveSig] int SetWatermark(nint bitmap, uint flags);
+    [PreserveSig] int SetColor(uint flags, int color);
+    [PreserveSig] int GetColor(uint flags, out int color);
+    [PreserveSig] int SetItemHeight(int height);
+    [PreserveSig] int GetItemHeight(out int height);
+    [PreserveSig] int SetFont(nint logFont, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+    [PreserveSig] int GetFont(nint logFont);
+    [PreserveSig] int SetTheme([MarshalAs(UnmanagedType.LPWStr)] string? subAppName,
+        [MarshalAs(UnmanagedType.LPWStr)] string? subIdList);
+}
+
 // Windows SDK shobjidl_core.h, IUnknown followed by these fourteen methods:
 // https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/ShObjIdl_core.h
 // ItemCount counts the displayed files and folders, not filesystem entries:
