@@ -92,6 +92,28 @@
 - 关闭通知区域选项后，X 会直接退出，再按 Win+Alt+E 则改为最小化。
 - Win+E 设置只会在当前用户注册表（HKCU）中创建和删除一项，无需管理员权限。
 
+## 与 Q-Dir 的比较
+
+Q-Dir 是一款历史悠久的免费四分屏文件管理器。两者都使用 Windows 资源管理器的文件列表，但侧重点不同。
+
+| 项目 | Q-Dir 12.81 | Folder Splitter 0.7.8 |
+|---|---|---|
+| 发布形式 | 免费软件，安装版或便携版 | MIT 开源，无需安装的单个可执行文件 |
+| 支持环境 | Windows 7~11、Windows Server，x86/x64 | Windows 11 x64 |
+| 大小 | 下载不足 1MB | ZIP 约 44MB，可执行文件约 111MB（含 .NET 运行时） |
+| 文件列表 | 基于 Windows 资源管理器列表 | 基于 Windows 资源管理器列表 |
+| 分屏与标签页 | 最多 4 个区域，多种布局，标签页 | 最多 4 个区域，2:1 布局，各区域独立标签页，拖动标签页分屏或移动 |
+| 文件搜索 | 使用 Windows 资源管理器搜索（`F3`、`Ctrl+F`），范围为当前文件夹；官方称自有搜索仍在开发中 | 在地址栏输入名称的一部分即可搜索所有本地驱动器；使用自有文件名索引（首次索引约 50 秒） |
+| 附加功能 | 颜色过滤、列表导出（XLS/CSV/TXT/HTML）、快速预览、放大镜等 | 无 |
+| 语言 | 多种语言，内置翻译功能 | 한국어、English、简体中文、日本語 |
+| 设置保存 | 可执行文件旁的 `Q-Dir.ini` | `%LOCALAPPDATA%` |
+
+如需支持旧版 Windows、小巧的程序或丰富的附加功能，Q-Dir 更合适；如主要使用地址栏搜索和拖动标签页布局，Folder Splitter 可能更合适。
+
+> **依据**：整理于 2026-10-22。Q-Dir 以 12.81（2026-10-18 发布）为准，参考了官方网站、官方 FAQ（搜索条目更新于 2024-04-29）、官方帮助和 PortableApps 介绍，未实际安装验证。后续版本可能有所变化，如有错误请提交 Issue。
+>
+> 来源：[Q-Dir 官方网站](https://www.softwareok.com/?seite=Freeware/Q-Dir) · [下载页面](http://q-dir.com/) · [搜索 FAQ](https://www.softwareok.com/?seite=faq-Q-DIR&faq=37) · [帮助](http://www.q-dir.com/?en-us-q-q-dir-file-explorer-help.-for-windows-10-11-12-7) · [PortableApps](https://portableapps.com/news/2026-07-05--q-dir-portable-12.69-released)
+
 ## 使用方法
 
 1. 在顶部选择分屏数量。
