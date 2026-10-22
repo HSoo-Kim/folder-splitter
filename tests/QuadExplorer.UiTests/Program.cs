@@ -8,8 +8,32 @@ internal static class Program
     private static int checks;
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        string? expectedDesktop = Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_DESKTOP");
+        var actualDesktop = new System.Text.StringBuilder(256);
+        if (expectedDesktop is null || !expectedDesktop.StartsWith("FolderSplitter-QA-", StringComparison.Ordinal) ||
+            !GetUserObjectInformation(GetThreadDesktop(GetCurrentThreadId()), 2, actualDesktop, 512, out _) ||
+            actualDesktop.ToString() != expectedDesktop)
+        {
+            Console.Error.WriteLine("Refusing visible GUI tests. Run through tools/PrivateDesktopQa or build.ps1 -UiTests.");
+            return 2;
+        }
+        Console.WriteLine("PRIVATE_DESKTOP " + actualDesktop);
+        // GDI+ cannot draw through a window DC on a desktop that is not the input desktop.
+        // WinForms main ignores this in SplitContainer.RepaintSplitterRect (dotnet/winforms
+        // SplitContainer.cs); apply the same catch until the shipped 10.0 runtime has it.
+        new HarmonyLib.Harmony("FolderSplitter.UiTests").Patch(
+            HarmonyLib.AccessTools.Method(typeof(SplitContainer), "RepaintSplitterRect"),
+            finalizer: new HarmonyLib.HarmonyMethod(typeof(Program), nameof(IgnoreSplitterRepaintFailure)));
+        if (args is ["--demo-capture", var demoOutput, var demoRoot])
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            return RunDemoCapture(demoOutput, demoRoot);
+        }
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Application.EnableVisualStyles();
@@ -90,6 +114,7 @@ internal static class Program
             RunEmptyPaneScenario(session, folders);
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
+            RunAppearanceScenario(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -166,6 +191,213 @@ internal static class Program
             "moved and cached tabs survive session save");
         Check(panes.All(p => p.IsDisposed), "closing the form disposes hidden pane views");
         Check(!restored.FavoritesExpanded, "collapsed favorites survive session save");
+    }
+
+    // README/video stills: real app windows over a synthetic folder tree, captured on the private desktop.
+    private static int RunDemoCapture(string output, string demoRoot)
+    {
+        if (Directory.Exists(demoRoot)) throw new IOException("Demo root already exists: " + demoRoot);
+        Directory.CreateDirectory(output);
+        try
+        {
+            string Folder(params string[] parts) => Directory.CreateDirectory(Path.Combine([demoRoot, .. parts])).FullName;
+            void Files(string folder, params string[] names)
+            {
+                foreach (string name in names) File.WriteAllText(Path.Combine(folder, name), "Folder Splitter demo file");
+            }
+            string projects = Folder("프로젝트"), launch = Folder("프로젝트", "2026 신제품 출시"), web = Folder("프로젝트", "웹사이트 개편");
+            Folder("프로젝트", "고객 리서치"); Folder("프로젝트", "디자인 시안");
+            Files(projects, "프로젝트 개요.txt", "연간 일정.csv");
+            Folder("프로젝트", "2026 신제품 출시", "보도 사진"); Folder("프로젝트", "2026 신제품 출시", "참고 자료");
+            Files(launch, "출시 계획.txt", "예산표.csv", "회의록 10월.txt", "보도자료 초안.txt");
+            Files(web, "사이트맵.txt", "화면 설계.txt");
+            string photos = Folder("사진");
+            Folder("사진", "제주 여행"); Folder("사진", "가족"); Folder("사진", "2026 워크숍"); Folder("사진", "스크린샷");
+            Files(photos, "앨범 목록.txt");
+            string documents = Folder("문서");
+            Folder("문서", "계약서"); Folder("문서", "세금"); Folder("문서", "보고서");
+            Files(documents, "이력서.txt", "업무 메모.txt", "주간 보고.txt");
+            string downloads = Folder("다운로드");
+            Folder("다운로드", "설치 파일");
+            Files(downloads, "매뉴얼.txt", "데이터 샘플.csv");
+            string shared = Folder("공유용");
+            Folder("공유용", "월별연구계획_20261019");
+            Files(shared, "월별연구계획_20261019_v2.txt");
+            string session = Path.Combine(output, "demo-session.json");
+            SessionStore.Save(session, new SessionState
+            {
+                Layout = 4, Language = "ko", ExplorerFavoritesImported = true, WindowWidth = 1600, WindowHeight = 900,
+                Favorites = [projects, photos, documents],
+                Panes = [new PaneState { Tabs = [projects, launch], SelectedTab = 1 }, new PaneState { Tabs = [photos] },
+                    new PaneState { Tabs = [documents] }, new PaneState { Tabs = [downloads] }]
+            });
+            using var search = new IndependentSearchBackend(new[] { demoRoot }, Path.Combine(output, "demo-index.fsix"));
+            using var form = new MainForm(session, [], search, [demoRoot]);
+            var panes = Enumerable.Range(0, 4).Select(form.GetPane).ToArray();
+            var navigation = panes.Select(p => p.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(p.ActiveView)).ToArray();
+            form.Shown += async (_, _) =>
+            {
+                try
+                {
+                    await Task.WhenAll(navigation).WaitAsync(TimeSpan.FromSeconds(20));
+                    foreach (var pane in panes) pane.ActiveView!.SetViewMode(4);
+                    foreach (var pane in panes) await ItemCountKnown(pane.ActiveView!);
+                    await form.FolderTree.FollowPathAsync(launch);
+                    CaptureDemo(form, output, "01-light-panes");
+                    form.SetColorTheme("dark");
+                    CaptureDemo(form, output, "02-dark-panes");
+                    await form.FolderTree.FollowPathAsync(web);
+                    await PaneChange(panes[0], () => form.FolderTree.RequestOpen(FolderTreeTarget.NewTab),
+                        () => panes[0].TabCount == 3 && panes[0].ActiveView is { HasNavigated: true } && panes[0].CurrentPath == web);
+                    panes[0].ActiveView!.SetViewMode(4);
+                    await ItemCountKnown(panes[0].ActiveView!);
+                    CaptureDemo(form, output, "03-dark-tree-tab");
+                    form.SetColorTheme("light");
+                    await search.BuildOrLoadAsync(CancellationToken.None);
+                    var address = Descendants(panes[3]).OfType<TextBox>().Single();
+                    var results = SearchSignal(panes[3], predicate: () => panes[3].SearchCandidates.Count > 0);
+                    address.Focus();
+                    address.Text = "공유용/월별연구계획";
+                    await results.WaitAsync(TimeSpan.FromSeconds(15));
+                    CaptureDemo(form, output, "04-light-search");
+                }
+                catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+                finally { form.Close(); }
+            };
+            Application.Run(form);
+        }
+        catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+        finally { if (Directory.Exists(demoRoot)) Directory.Delete(demoRoot, recursive: true); }
+        Console.WriteLine(failures == 0 ? "DEMO_CAPTURE_DONE" : "DEMO_CAPTURE_FAILED");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static string CountSuffix(UiText text, ShellViewHost host) => "  |  " + (host.ItemCount is int count
+        ? text.T("{0} items", count) : text.T("Counting items..."));
+
+    private static async Task ItemCountKnown(ShellViewHost host)
+    {
+        var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Changed(object? sender, EventArgs e) { if (host.ItemCount is not null) signal.TrySetResult(); }
+        host.ItemCountChanged += Changed;
+        try
+        {
+            Changed(host, EventArgs.Empty);
+            await signal.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        finally { host.ItemCountChanged -= Changed; }
+    }
+
+    private static void CaptureDemo(Form form, string output, string name)
+    {
+        using var frame = PrintForm(form);
+        using (var graphics = Graphics.FromImage(frame))
+        {
+            foreach (var popup in form.OwnedForms.Where(f => f.Visible))
+            {
+                using var image = PrintForm(popup);
+                graphics.DrawImage(image, popup.Left - form.Left, popup.Top - form.Top);
+            }
+        }
+        string path = Path.Combine(output, name + ".png");
+        frame.Save(path);
+        Console.WriteLine("SCREENSHOT " + path);
+    }
+
+    private static Bitmap PrintForm(Form form)
+    {
+        form.Refresh();
+        var bitmap = new Bitmap(form.Width, form.Height);
+        using var graphics = Graphics.FromImage(bitmap);
+        nint context = graphics.GetHdc();
+        try
+        {
+            if (!PrintWindow(form.Handle, context, 2)) throw new InvalidOperationException("Could not capture app window.");
+        }
+        finally { graphics.ReleaseHdc(context); }
+        return bitmap;
+    }
+
+    private static Exception? IgnoreSplitterRepaintFailure(Exception? __exception) =>
+        __exception is ExternalException ? null : __exception;
+
+    private static void RunAppearanceScenario(string root)
+    {
+        string treeRoot = Directory.CreateDirectory(Path.Combine(root, "Tree")).FullName;
+        string alpha = Directory.CreateDirectory(Path.Combine(treeRoot, "Alpha")).FullName;
+        string beta = Directory.CreateDirectory(Path.Combine(treeRoot, "Beta")).FullName;
+        File.WriteAllText(Path.Combine(treeRoot, "a.txt"), "a");
+        string session = Path.Combine(root, "appearance.json");
+        SessionStore.Save(session, new SessionState
+        {
+            Layout = 1, Language = "en", ExplorerFavoritesImported = true, Favorites = [treeRoot],
+            Panes = [new PaneState { Tabs = [treeRoot] }]
+        });
+        using var form = new MainForm(session, [], null, [treeRoot]);
+        var pane = form.GetPane(0);
+        var navigation = pane.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(pane.ActiveView);
+        form.Shown += async (_, _) =>
+        {
+            try
+            {
+                await navigation.WaitAsync(TimeSpan.FromSeconds(20));
+                Check(form.ColorTheme == "light" && !Theme.IsDark && form.FolderTreeVisible && form.FolderTree.Visible,
+                    "light theme and folder tree are the defaults");
+                var status = Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status");
+                var host = pane.ActiveView!;
+                await ItemCount(host, () => { }, 3);
+                Check(status.Text.EndsWith("3 items", StringComparison.Ordinal), "bottom status shows the native item count");
+                await ItemCount(host, () => File.WriteAllText(Path.Combine(treeRoot, "b.txt"), "b"), 4);
+                await ItemCount(host, () => File.Delete(Path.Combine(treeRoot, "a.txt")), 3);
+                Check(status.Text.EndsWith("3 items", StringComparison.Ordinal), "item count follows created and deleted files");
+                Check(Descendants(form).OfType<Button>().All(b => b.GetType().Name == "RoundedButton"),
+                    "app buttons use rounded rendering");
+
+                await form.FolderTree.FollowPathAsync(alpha);
+                Check(form.FolderTree.Tree.SelectedNode?.Name == alpha, "folder tree follows a nested path");
+                await Navigate(host, () => form.FolderTree.RequestOpen(FolderTreeTarget.CurrentPane));
+                Check(pane.CurrentPath == alpha && pane.TabCount == 1, "folder tree opens in the current pane");
+
+                await form.FolderTree.FollowPathAsync(beta);
+                await PaneChange(pane, () => form.FolderTree.RequestOpen(FolderTreeTarget.NewTab),
+                    () => pane.TabCount == 2 && pane.ActiveView is { HasNavigated: true } && pane.CurrentPath == beta);
+                Check(pane.TabCount == 2 && pane.CurrentPath == beta, "folder tree opens a new tab");
+
+                await form.FolderTree.FollowPathAsync(alpha);
+                var second = form.GetPane(1);
+                await PaneChange(second, () => form.FolderTree.RequestOpen(FolderTreeTarget.NewPane),
+                    () => second.ActiveView is { HasNavigated: true } && second.CurrentPath == alpha);
+                Check(form.CurrentLayout.GetPanes().Length == 2 && second.Visible && pane.TabCount == 2,
+                    "folder tree opens a new pane");
+                CaptureLanguage(form, "theme-light");
+
+                form.SetColorTheme("dark");
+                Check(Theme.IsDark && form.BackColor == Theme.Canvas && status.BackColor != Color.White
+                    && form.FolderTree.Tree.BackColor == Theme.Canvas, "dark theme recolors app surfaces");
+                CaptureLanguage(form, "theme-dark");
+                form.SetFolderTreeVisible(false);
+                Check(!form.FolderTree.Visible, "folder tree can be hidden");
+            }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+            finally { form.Close(); }
+        };
+        Application.Run(form);
+        var restored = SessionStore.Load(session);
+        Check(restored.ColorTheme == "dark" && !restored.ShowFolderTree, "theme and folder tree visibility persist");
+    }
+
+    private static async Task ItemCount(ShellViewHost host, Action trigger, int expected)
+    {
+        var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Changed(object? sender, EventArgs e) { if (host.ItemCount == expected) signal.TrySetResult(); }
+        host.ItemCountChanged += Changed;
+        try
+        {
+            trigger();
+            Changed(host, EventArgs.Empty);
+            await signal.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        finally { host.ItemCountChanged -= Changed; }
     }
 
     private static async Task PaneChange(ExplorerPane pane, Action trigger, Func<bool> complete)
@@ -315,8 +547,10 @@ internal static class Program
                             && quickAccess.SelectedIndex == 2 && favorites.SelectedIndex == 0
                             && favorites.ContextMenuStrip!.Items[0].Text == text.T("Open in new tab"),
                             language + " sidebar and favorite actions translate without changing folder names");
-                        Check(Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status").Text
-                                == text.T("Pane {0}  |  {1} tabs  |  {2}", 1, 2, active.DisplayName)
+                        string paneStatus = Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status").Text;
+                        string expectedStatus = text.T("Pane {0}  |  {1} tabs  |  {2}", 1, 2, active.DisplayName) + CountSuffix(text, active);
+                        if (paneStatus != expectedStatus) Console.Error.WriteLine($"STATUS actual='{paneStatus}' expected='{expectedStatus}'");
+                        Check(paneStatus == expectedStatus
                             && Descendants(form.GetPane(1)).OfType<Label>().Any(l =>
                                 l.Text == text.T("Enter a folder path above or choose a folder from Pane options.")),
                             language + " pane status and empty hints translate");
@@ -356,7 +590,8 @@ internal static class Program
                     pane.SetLocalizedStatus("Folder path copied.");
                     selector.SelectedIndex = 2;
                     Check(Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status").Text
-                        == new UiText("zh-CN").T("Folder path copied."), "existing action status refreshes on language switch");
+                        == new UiText("zh-CN").T("Folder path copied.") + CountSuffix(new UiText("zh-CN"), active),
+                        "existing action status refreshes on language switch");
                     selector.SelectedIndex = 3;
                     await Navigate(active, () => active.Travel(0x8000));
                     Check(pane.CurrentPath == Path.Combine(folders[0], "한글 폴더"),
@@ -443,12 +678,22 @@ internal static class Program
         {
             selector.ComboBox.Focus();
             selector.ComboBox.DroppedDown = true;
+            Check(selector.ComboBox.DroppedDown, "language dropdown opens");
+            selector.ComboBox.DroppedDown = false;
+            // The private QA desktop never gives this window foreground activation, and a dropped list
+            // then commits keyboard moves inconsistently. Arrow keys on the closed native combo send the
+            // same CBN_SELCHANGE a keyboard user triggers.
             int direction = index > selector.SelectedIndex ? 0x28 : 0x26;
             int steps = Math.Abs(index - selector.SelectedIndex);
             for (int step = 0; step < steps; step++)
                 PostMessage(selector.ComboBox.Handle, 0x100, direction, 0);
-            await changed.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            selector.ComboBox.DroppedDown = false;
+            try { await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException($"Language {index} not selected: selected={selector.SelectedIndex} " +
+                    $"dropped={selector.ComboBox.DroppedDown} focused={selector.ComboBox.Focused} " +
+                    $"activeForm={Form.ActiveForm?.Text ?? "none"}", ex);
+            }
         }
         finally { selector.SelectedIndexChanged -= Selected; }
     }
@@ -456,6 +701,15 @@ internal static class Program
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")]
+    private static extern nint GetThreadDesktop(uint thread);
+    [DllImport("user32.dll", EntryPoint = "GetUserObjectInformationW", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetUserObjectInformation(nint handle, int index,
+        System.Text.StringBuilder value, uint length, out uint needed);
 
     private static void RunSearchScenario(string root)
     {

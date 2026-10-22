@@ -43,6 +43,15 @@ internal sealed class AddressCandidates : Form
             hoveredPath = path;
             tips.SetToolTip(rows, path);
         };
+        RefreshTheme();
+    }
+
+    internal void RefreshTheme()
+    {
+        BackColor = Theme.Border;
+        rows.BackColor = Theme.Surface;
+        rows.ForeColor = Theme.Text;
+        rows.Invalidate();
     }
 
     protected override bool ShowWithoutActivation => true;

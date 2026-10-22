@@ -8,6 +8,7 @@ internal static class ShellNative
     public static readonly Guid BrowserClass = new("71F96385-DDD6-48D3-A0C1-AE06E8B055FB");
     public const string ThisPc = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
     public const string RecycleBin = "::{645FF040-5081-101B-9F08-00AA002F954E}";
+    public const uint SvgioAllView = 0x2;
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
     public static extern int SHParseDisplayName(string name, nint bindingContext,
@@ -108,4 +109,27 @@ public interface IShellView
     [PreserveSig] int SaveViewState();
     [PreserveSig] int SelectItem(nint pidl, uint flags);
     [PreserveSig] int GetItemObject(uint item, ref Guid interfaceId, out nint result);
+}
+
+// Windows SDK shobjidl_core.h, IUnknown followed by these fourteen methods:
+// https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/ShObjIdl_core.h
+// ItemCount counts the displayed files and folders, not filesystem entries:
+// https://learn.microsoft.com/windows/win32/api/shobjidl_core/nf-shobjidl_core-ifolderview-itemcount
+[ComImport, Guid("CDE725B0-CCC9-4519-917E-325D72FAB4CE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IFolderView
+{
+    [PreserveSig] int GetCurrentViewMode(out uint viewMode);
+    [PreserveSig] int SetCurrentViewMode(uint viewMode);
+    [PreserveSig] int GetFolder(ref Guid interfaceId, out nint folder);
+    [PreserveSig] int Item(int itemIndex, out nint pidl);
+    [PreserveSig] int ItemCount(uint flags, out int count);
+    [PreserveSig] int Items(uint flags, ref Guid interfaceId, out nint items);
+    [PreserveSig] int GetSelectionMarkedItem(out int item);
+    [PreserveSig] int GetFocusedItem(out int item);
+    [PreserveSig] int GetItemPosition(nint pidl, out Point position);
+    [PreserveSig] int GetSpacing(ref Point spacing);
+    [PreserveSig] int GetDefaultSpacing(out Point spacing);
+    [PreserveSig] int GetAutoArrange();
+    [PreserveSig] int SelectItem(int item, uint flags);
+    [PreserveSig] int SelectAndPositionItems(uint count, nint pidls, nint positions, uint flags);
 }

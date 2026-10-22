@@ -18,18 +18,22 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private readonly Action enumerationDone;
     private bool enumerationReady;
     private bool navigationReady;
+    private readonly System.Windows.Forms.Timer itemCountTimer = new() { Interval = 250 };
     private static readonly Guid FolderViewEvents = new("62112AA2-EBE4-11CF-A5FB-0020AFE7292D");
 
     public string LocationPath { get; private set; }
     public string DisplayName { get; private set; }
     public bool HasNavigated { get; private set; }
+    public int? ItemCount { get; private set; }
     internal string? ErrorStatus => error.Visible && errorMessage is not null ? errorMessage().Replace("\n", " ") : null;
     public event EventHandler? Navigated;
     public event EventHandler<string>? NavigationError;
+    public event EventHandler? ItemCountChanged;
 
     public ShellViewHost(string location, UiText? text = null)
     {
         enumerationDone = OnEnumerationDone;
+        itemCountTimer.Tick += OnItemCountTick;
         this.text = text ?? new UiText();
         LocationPath = requestedLocation = location;
         DisplayName = TitleFor(location, this.text);
@@ -115,7 +119,57 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         catch (COMException ex) { NavigationError?.Invoke(this, ex.Message); }
     }
 
-    public void RefreshFolder() => view?.Refresh();
+    public void RefreshFolder()
+    {
+        view?.Refresh();
+        RefreshItemCount();
+    }
+
+    public void RefreshItemCount()
+    {
+        if (IsDisposed || Disposing || !initialized || !navigationReady || !enumerationReady ||
+            view is not IFolderView folderView)
+        {
+            SetItemCount(null);
+            return;
+        }
+
+        int result = folderView.ItemCount(ShellNative.SvgioAllView, out int count);
+        if (result == unchecked((int)0x8000000A) || result == unchecked((int)0x80070015))
+        {
+            // E_PENDING or HRESULT_FROM_WIN32(ERROR_NOT_READY): enumeration is not ready.
+            SetItemCount(null);
+            return;
+        }
+        Marshal.ThrowExceptionForHR(result);
+        if (result != 0)
+            throw new InvalidOperationException($"The native folder view returned unexpected item-count status 0x{result:X8}.");
+        if (count < 0) throw new InvalidOperationException("The native folder view returned a negative item count.");
+        SetItemCount(count);
+    }
+
+    private void SetItemCount(int? count)
+    {
+        if (ItemCount == count) return;
+        ItemCount = count;
+        ItemCountChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnItemCountTick(object? sender, EventArgs e) => RefreshItemCount();
+
+    private void UpdateItemCountMonitoring()
+    {
+        // Query the view's existing item list on its STA; no filesystem enumeration or worker thread.
+        itemCountTimer.Enabled = Visible && IsHandleCreated && initialized && navigationReady &&
+            view is not null && !IsDisposed && !Disposing;
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        UpdateItemCountMonitoring();
+        if (Visible) RefreshItemCount();
+    }
 
     public void SetViewMode(uint mode)
     {
@@ -167,8 +221,21 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         base.OnHandleDestroyed(e);
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            itemCountTimer.Stop();
+            itemCountTimer.Tick -= OnItemCountTick;
+            itemCountTimer.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
     private void ReleaseView()
     {
+        itemCountTimer.Stop();
+        SetItemCount(null);
         if (enumerationSource is not null)
         {
             ComEventsHelper.Remove(enumerationSource, FolderViewEvents, 201, enumerationDone);
@@ -204,6 +271,8 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     public int OnNavigationPending(nint pidlFolder)
     {
         navigationReady = false;
+        itemCountTimer.Stop();
+        SetItemCount(null);
         HasNavigated = false;
         error.Visible = false;
         return 0;
@@ -222,6 +291,8 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             finally { Marshal.Release(pointer); }
             ComEventsHelper.Combine(enumerationSource, FolderViewEvents, 201, enumerationDone);
         }
+        UpdateItemCountMonitoring();
+        RefreshItemCount();
         return 0;
     }
 
@@ -231,6 +302,8 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         DisplayName = ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath, text);
         requestedLocation = LocationPath;
         navigationReady = true;
+        UpdateItemCountMonitoring();
+        RefreshItemCount();
         error.Visible = false;
         if (pendingSelection is not null && !enumerationReady) return 0;
         CompleteNavigation();
@@ -240,6 +313,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private void OnEnumerationDone()
     {
         enumerationReady = true;
+        RefreshItemCount();
         if (pendingSelection is not null && navigationReady) CompleteNavigation();
     }
 
@@ -269,6 +343,8 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     public int OnNavigationFailed(nint pidlFolder)
     {
         navigationReady = false;
+        itemCountTimer.Stop();
+        SetItemCount(null);
         pendingSelection = null;
         ReportError(() => text.T("Folder unavailable: {0}", requestedLocation));
         return 0;

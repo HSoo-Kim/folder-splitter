@@ -17,6 +17,22 @@ public sealed class UiText
 
     private static readonly Dictionary<string, (string Korean, string Chinese, string Japanese)> Strings = new()
     {
+        ["Folder tree"] = ("폴더 트리", "文件夹树", "フォルダーツリー"),
+        ["Show / hide folder tree (Ctrl+Shift+E)"] = ("폴더 트리 표시 / 숨기기 (Ctrl+Shift+E)", "显示 / 隐藏文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを表示 / 非表示 (Ctrl+Shift+E)"),
+        ["Open in current pane"] = ("현재 영역에서 열기", "在当前窗格中打开", "現在のペインで開く"),
+        ["Open in new pane"] = ("새 영역에서 열기", "在新窗格中打开", "新しいペインで開く"),
+        ["Loading folders..."] = ("하위 폴더 읽는 중...", "正在读取子文件夹...", "サブフォルダーを読み込み中..."),
+        ["Folder link (expand disabled)"] = ("폴더 링크 — 펼치기는 지원하지 않습니다", "文件夹链接（不展开）", "フォルダーリンク（展開しません）"),
+        ["Access denied"] = ("접근 권한이 없습니다", "没有访问权限", "アクセスできません"),
+        ["Folder no longer exists"] = ("폴더가 더 이상 존재하지 않습니다", "文件夹已不存在", "フォルダーは存在しません"),
+        ["Cannot read folders: {0}"] = ("폴더를 읽을 수 없습니다: {0}", "无法读取文件夹：{0}", "フォルダーを読み込めません: {0}"),
+        ["Maximum 4 panes. Close a pane first."] = ("최대 4영역입니다. 먼저 영역을 닫으세요.", "最多 4 个窗格，请先关闭一个窗格。", "最大4ペインです。先にペインを閉じてください。"),
+        ["Dark mode"] = ("밤", "深色", "ダーク"),
+        ["Light mode"] = ("낮", "浅色", "ライト"),
+        ["Switch to light mode"] = ("낮 테마로 전환", "切换到浅色主题", "ライトテーマに切り替え"),
+        ["Switch to dark mode"] = ("밤 테마로 전환", "切换到深色主题", "ダークテーマに切り替え"),
+        ["{0} items"] = ("항목 {0}개", "{0} 个项目", "{0} 項目"),
+        ["Counting items..."] = ("항목 수 확인 중...", "正在统计项目...", "項目数を確認中..."),
         ["Building search index..."] = ("검색 색인 만드는 중...", "正在建立搜索索引...", "検索インデックスを作成中..."),
         ["Enter a folder path, or type part of a file/folder name to search; Ctrl+L to select address"] =
             ("폴더 경로로 이동하거나 파일·폴더 이름 일부로 검색 — 주소 선택 Ctrl+L",

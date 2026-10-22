@@ -15,6 +15,8 @@ public sealed record PaneState
 public sealed record SessionState
 {
     public string Language { get; init; } = "ko";
+    public string ColorTheme { get; init; } = "light";
+    public bool ShowFolderTree { get; init; } = true;
     public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];
@@ -146,6 +148,7 @@ public static class SessionStore
         return state with
         {
             Language = NormalizeLanguage(state.Language),
+            ColorTheme = NormalizeColorTheme(state.ColorTheme),
             Layout = layout,
             LayoutTree = layoutTree,
             Panes = panes,
@@ -168,6 +171,9 @@ public static class SessionStore
         "ja" => "ja",
         _ => "ko"
     };
+
+    public static string NormalizeColorTheme(string? theme) =>
+        string.Equals(theme?.Trim(), "dark", StringComparison.OrdinalIgnoreCase) ? "dark" : "light";
 
     private static List<string> NormalizeFavorites(List<string>? source)
     {

@@ -11,6 +11,7 @@ internal static class Program
         {
             ("default session and storage path", Defaults),
             ("supported languages normalize with Korean default", LanguageNormalization),
+            ("theme and tree preferences normalize and persist", AppearancePreferences),
             ("all selected languages persist without altering session data", LanguageRetention),
             ("Unicode session roundtrip and atomic replacement", Roundtrip),
             ("invalid and null JSON normalization", InvalidJsonData),
@@ -60,6 +61,8 @@ internal static class Program
     {
         var state = SessionStore.Normalize(new SessionState());
         Equal("ko", state.Language);
+        Equal("light", state.ColorTheme);
+        Equal(true, state.ShowFolderTree);
         Equal(1, state.Layout);
         Equal(PaneLayout.Leaf(0), state.LayoutTree);
         Equal(4, state.Panes.Count);
@@ -93,6 +96,26 @@ internal static class Program
         Equal("ko", SessionStore.Load(path).Language);
         File.WriteAllText(path, "{}");
         Equal("ko", SessionStore.Load(path).Language);
+    }
+
+    private static void AppearancePreferences()
+    {
+        foreach (string? invalid in new string?[] { null, "", " ", "unsupported", "system" })
+            Equal("light", SessionStore.Normalize(new SessionState { ColorTheme = invalid! }).ColorTheme);
+        Equal("dark", SessionStore.Normalize(new SessionState { ColorTheme = " DARK " }).ColorTheme);
+        var path = FilePath("appearance", "session.json");
+        File.WriteAllText(path, "{}");
+        var legacy = SessionStore.Load(path);
+        Equal("light", legacy.ColorTheme);
+        Equal(true, legacy.ShowFolderTree);
+        SessionStore.Save(path, legacy with { ColorTheme = "dark", ShowFolderTree = false });
+        var restored = SessionStore.Load(path);
+        Equal("dark", restored.ColorTheme);
+        Equal(false, restored.ShowFolderTree);
+        Sequence(legacy.Panes[0].Tabs, restored.Panes[0].Tabs);
+        Equal(legacy.LayoutTree, restored.LayoutTree);
+        Equal("light", legacy.ColorTheme);
+        Equal(true, legacy.ShowFolderTree);
     }
 
     private static void LanguageRetention()

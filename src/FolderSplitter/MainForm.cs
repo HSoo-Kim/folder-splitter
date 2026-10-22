@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.ComponentModel;
+using System.Diagnostics;
 using QuadExplorer.Search;
 
 namespace QuadExplorer;
@@ -8,6 +10,12 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly string sessionPath;
     private readonly UiText text;
     private readonly IPathSearchBackend? search;
+    private readonly ShellIconCache placeIcons = new();
+    private readonly FolderTree folderTree;
+    private readonly ToolStripButton treeButton = new() { AccessibleName = "Folder tree", CheckOnClick = true };
+    private readonly ToolStripButton themeButton = new() { AccessibleName = "Color theme" };
+    private string colorTheme;
+    private bool showFolderTree;
     private readonly List<Action> languageBindings = [];
     private readonly ToolStripComboBox languageSelector = new()
     {
@@ -54,11 +62,15 @@ public sealed class MainForm : Form, IMessageFilter
         public override string ToString() => Label;
     }
 
-    public MainForm(string sessionPath, IReadOnlyList<string> folders, IPathSearchBackend? search = null)
+    public MainForm(string sessionPath, IReadOnlyList<string> folders, IPathSearchBackend? search = null,
+        IReadOnlyList<string>? treeRoots = null)
     {
         this.search = search;
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
+        colorTheme = initialState.ColorTheme;
+        showFolderTree = initialState.ShowFolderTree;
+        Theme.Set(colorTheme);
         text = new UiText(initialState.Language);
         layoutTree = initialState.LayoutTree!;
         visiblePanes = layoutTree.GetPanes().Order().ToArray();
@@ -88,7 +100,11 @@ public sealed class MainForm : Form, IMessageFilter
         foreach (var pane in panes)
         {
             pane.Activated += (_, _) => ActivatePane(Array.IndexOf(panes, pane));
-            pane.StateChanged += (_, _) => ScheduleSave();
+            pane.StateChanged += (_, _) =>
+            {
+                ScheduleSave();
+                if (ready && ReferenceEquals(pane, Active)) SyncTree();
+            };
             pane.FavoriteRequested += (_, path) => AddFavorite(path);
             pane.MoveTabRequested += MoveTab;
             pane.TabDragRequested += StartTabDrag;
@@ -169,14 +185,13 @@ public sealed class MainForm : Form, IMessageFilter
         favoritePlaces.ContextMenuStrip = favoriteMenu;
         favoritePlaces.MouseDown += (_, e) =>
         { if (e.Button == MouseButtons.Right) favoritePlaces.SelectedIndex = favoritePlaces.IndexFromPoint(e.Location); };
-        favoritesHeader = new Button
-        {
-            Dock = DockStyle.Top, Height = 32, FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 8, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Muted
-        };
+        favoritesHeader = Theme.Button("", "Collapse favorites", ToggleFavorites);
+        favoritesHeader.Dock = DockStyle.Top;
+        favoritesHeader.Height = 32;
+        favoritesHeader.Font = new Font("Segoe UI", 8, FontStyle.Bold);
+        favoritesHeader.TextAlign = ContentAlignment.MiddleLeft;
+        favoritesHeader.ForeColor = Theme.Muted;
         favoritesHeader.FlatAppearance.BorderSize = 0;
-        favoritesHeader.Click += (_, _) => ToggleFavorites();
         BindTip(favoritesHeader, "Collapse / expand favorites");
         BindTip(sidebarSplitter, "Drag to resize quick access; double-click to hide");
         favoritesHeader.ContextMenuStrip = favoriteMenu;
@@ -198,6 +213,14 @@ public sealed class MainForm : Form, IMessageFilter
         sidebar.Controls.Add(manage);
         sidebar.Controls.Add(sideTitle);
         ReloadPlaces();
+        folderTree = new FolderTree(text, treeRoots)
+        {
+            Dock = DockStyle.Bottom, AccessibleName = "Folder tree", Visible = showFolderTree
+        };
+        folderTree.OpenRequested += OpenTreeFolder;
+        sidebar.Controls.Add(folderTree);
+        sidebar.SizeChanged += (_, _) => UpdateSidebarContent();
+        UpdateSidebarContent();
 
         BuildToolbar();
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
@@ -226,6 +249,7 @@ public sealed class MainForm : Form, IMessageFilter
             try { ApplySplitRatios(); }
             finally { rebuilding = false; }
             ready = true;
+            ApplyAppearance();
             if (!explorerFavoritesImported) ImportExplorerFavorites();
             ActivatePane(activePane);
             if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab();
@@ -235,6 +259,7 @@ public sealed class MainForm : Form, IMessageFilter
         ResizeEnd += (_, _) => ScheduleSave();
         RenderLayout(layoutTree);
         Application.AddMessageFilter(this);
+        ApplyAppearance();
     }
 
     private ExplorerPane Active => panes[activePane];
@@ -253,6 +278,7 @@ public sealed class MainForm : Form, IMessageFilter
         if (languageSelector.SelectedIndex != index) languageSelector.SelectedIndex = index;
         foreach (var refresh in languageBindings) refresh();
         foreach (var pane in panes) pane.RefreshLanguage();
+        folderTree.RefreshLanguage();
         ReloadPlaces();
         ScheduleSave();
     }
@@ -292,6 +318,10 @@ public sealed class MainForm : Form, IMessageFilter
         BindText(sidebarButton, "Sidebar", "Show / hide quick access sidebar");
         sidebarButton.Click += (_, _) => SetSidebarVisible(sidebarButton.Checked);
         toolbar.Items.Add(sidebarButton);
+        treeButton.Checked = showFolderTree;
+        BindText(treeButton, "Folder tree", "Show / hide folder tree (Ctrl+Shift+E)");
+        treeButton.Click += (_, _) => SetFolderTreeVisible(treeButton.Checked);
+        toolbar.Items.Add(treeButton);
         toolbar.Items.Add(new ToolStripSeparator());
         int[] counts = [1, 2, 3, 4];
         for (int i = 0; i < counts.Length; i++)
@@ -333,6 +363,10 @@ public sealed class MainForm : Form, IMessageFilter
         BindText(equalize, "Equal size", "Equalize pane sizes");
         equalize.Click += (_, _) => EqualizeSplits();
         toolbar.Items.Add(equalize);
+        languageBindings.Add(RefreshThemeButton);
+        RefreshThemeButton();
+        themeButton.Click += (_, _) => SetColorTheme(colorTheme == "dark" ? "light" : "dark");
+        toolbar.Items.Add(themeButton);
         var help = new ToolStripButton
         {
             Alignment = ToolStripItemAlignment.Right, AccessibleName = "Shortcuts",
@@ -401,6 +435,87 @@ public sealed class MainForm : Form, IMessageFilter
     }
 
     internal bool FavoritesExpanded => favoritesExpanded;
+    internal string ColorTheme => colorTheme;
+    internal bool FolderTreeVisible => showFolderTree;
+    internal FolderTree FolderTree => folderTree;
+
+    internal void SetColorTheme(string mode)
+    {
+        colorTheme = SessionStore.NormalizeColorTheme(mode);
+        Theme.Set(colorTheme);
+        ApplyAppearance();
+        ScheduleSave();
+    }
+
+    private void RefreshThemeButton()
+    {
+        themeButton.Text = text.T(colorTheme == "dark" ? "Dark mode" : "Light mode");
+        themeButton.ToolTipText = text.T(colorTheme == "dark" ? "Switch to light mode" : "Switch to dark mode");
+        themeButton.Checked = colorTheme == "dark";
+    }
+
+    private void ApplyAppearance()
+    {
+        Theme.Apply(this);
+        foreach (var pane in panes) pane.RefreshTheme();
+        folderTree.RefreshTheme();
+        RefreshThemeButton();
+        for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
+    }
+
+    internal void SetFolderTreeVisible(bool visible)
+    {
+        showFolderTree = visible;
+        folderTree.Visible = visible;
+        treeButton.Checked = visible;
+        if (visible && !sidebar.Visible) SetSidebarVisible(true);
+        UpdateSidebarContent();
+        if (visible && ready) SyncTree();
+        ScheduleSave();
+    }
+
+    private void UpdateSidebarContent()
+    {
+        double scale = DeviceDpi / 96d;
+        double height = sidebar.ClientSize.Height / scale;
+        places.Height = (int)Math.Round(Math.Clamp(height / 4, 108, 216) * scale);
+        folderTree.Height = (int)Math.Round(Math.Clamp(height / 3, 120, 280) * scale);
+    }
+
+    private async void SyncTree()
+    {
+        if (!IsDisposed && showFolderTree && folderTree.Visible)
+            await folderTree.FollowPathAsync(Active.CurrentPath);
+    }
+
+    private void OpenTreeFolder(string path, FolderTreeTarget target)
+    {
+        if (!Directory.Exists(path)) { Active.SetLocalizedStatus("No longer available: {0}", path); return; }
+        switch (target)
+        {
+            case FolderTreeTarget.CurrentPane: Active.Navigate(path); break;
+            case FolderTreeTarget.NewTab: Active.AddTab(path); break;
+            case FolderTreeTarget.NewPane:
+                if (visiblePanes.Length == 4)
+                { Active.SetLocalizedStatus("Maximum 4 panes. Close a pane first."); return; }
+                int destination = Enumerable.Range(0, 4).First(id => !visiblePanes.Contains(id));
+                if (panes[destination].TabCount == 32)
+                { Active.SetLocalizedStatus("Destination has 32 tabs.\nClose a tab first."); return; }
+                RenderLayout(layoutTree.Split(activePane, destination, SplitEdge.Right));
+                panes[destination].AddTab(path);
+                ActivatePane(destination);
+                break;
+            case FolderTreeTarget.ExplorerWindow:
+                try
+                {
+                    var start = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+                    start.ArgumentList.Add(path);
+                    Process.Start(start);
+                }
+                catch (Win32Exception error) { Active.SetStatus(error.Message); }
+                break;
+        }
+    }
     internal int SidebarWidth => sidebarWidth;
     internal void SetSidebarWidth(int width)
     {
@@ -472,12 +587,13 @@ public sealed class MainForm : Form, IMessageFilter
             if (!favorites.Contains(place.Path, StringComparer.OrdinalIgnoreCase)
                 && !deletedFavorites.Contains(place.Path, StringComparer.OrdinalIgnoreCase))
                 list.Items.Add(place);
-        var restore = new Button { Text = text.T("Restore selected"), Dock = DockStyle.Bottom, AutoSize = true };
-        restore.Click += (_, _) =>
+        var restore = Theme.Button(text.T("Restore selected"), "Restore selected favorites", () =>
         {
             foreach (Place item in list.SelectedItems.Cast<Place>().ToArray()) RestoreFavorite(item.Path);
             dialog.Close();
-        };
+        });
+        restore.Dock = DockStyle.Bottom;
+        restore.AutoSize = true;
         var label = new Label
         {
             Text = text.T("Removed favorites and standard locations (including Recycle Bin). Select items to restore."),
@@ -486,6 +602,7 @@ public sealed class MainForm : Form, IMessageFilter
         dialog.Controls.Add(list);
         dialog.Controls.Add(restore);
         dialog.Controls.Add(label);
+        Theme.Apply(dialog);
         dialog.ShowDialog(this);
     }
 
@@ -503,9 +620,15 @@ public sealed class MainForm : Form, IMessageFilter
         using var background = new SolidBrush(selected ? Theme.Selected : Theme.Canvas);
         e.Graphics.FillRectangle(background, e.Bounds);
         var place = (Place)((ListBox)sender!).Items[e.Index];
-        var rect = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 16, e.Bounds.Height);
-        TextRenderer.DrawText(e.Graphics, (place.Favorite ? "\u2606  " : "") + place.Label, Font, rect,
-            selected ? Theme.Accent : Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        int iconSize = (int)Math.Round(20 * DeviceDpi / 96d);
+        int gap = (int)Math.Round(8 * DeviceDpi / 96d);
+        e.Graphics.DrawImage(placeIcons.Get(place.Path),
+            new Rectangle(e.Bounds.Left + gap, e.Bounds.Top + (e.Bounds.Height - iconSize) / 2, iconSize, iconSize));
+        var rect = new Rectangle(e.Bounds.Left + iconSize + gap * 2, e.Bounds.Top,
+            Math.Max(0, e.Bounds.Width - iconSize - gap * 3), e.Bounds.Height);
+        TextRenderer.DrawText(e.Graphics, place.Label, Font, rect,
+            selected ? Theme.Accent : Theme.Text,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         e.DrawFocusRectangle();
     }
 
@@ -633,6 +756,7 @@ public sealed class MainForm : Form, IMessageFilter
         if (!visiblePanes.Contains(index)) return;
         activePane = index;
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == index);
+        if (ready) SyncTree();
         ScheduleSave();
     }
 
@@ -806,6 +930,7 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.L:
             case Keys.Alt | Keys.D: Active.FocusAddress(); break;
             case Keys.Control | Keys.D: AddFavorite(Active.CurrentPath); break;
+            case Keys.Control | Keys.Shift | Keys.E: SetFolderTreeVisible(!showFolderTree); break;
             case Keys.Control | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + 1) % Active.TabCount); break;
             case Keys.Control | Keys.Shift | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
@@ -842,6 +967,7 @@ public sealed class MainForm : Form, IMessageFilter
             {
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
+                ColorTheme = colorTheme, ShowFolderTree = showFolderTree,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,
@@ -891,6 +1017,7 @@ public sealed class MainForm : Form, IMessageFilter
         {
             foreach (var pane in panes) if (!pane.IsDisposed) pane.Dispose();
             search?.Dispose();
+            placeIcons.Dispose();
             appIcon.Dispose();
         }
     }

@@ -11,6 +11,7 @@ public sealed class ExplorerPane : UserControl
     private readonly UiText text;
     private readonly List<Action> languageBindings = [];
     private Func<string>? localizedStatus;
+    private string statusMessage = "";
     private readonly Stack<string> closedTabs = [];
     private readonly ToolStrip tabStrip = Theme.Strip();
     private readonly Panel contents = new() { Dock = DockStyle.Fill, BackColor = Color.White };
@@ -311,7 +312,22 @@ public sealed class ExplorerPane : UserControl
             tab.Button.Text = ShortTitle(tab.Host.DisplayName);
         }
         tabMenu.Close();
-        if (localizedStatus is not null) RenderStatus(localizedStatus());
+        RenderStatus(localizedStatus is not null ? localizedStatus() : statusMessage);
+    }
+
+    internal void RefreshTheme()
+    {
+        Theme.Apply(this);
+        BackColor = Theme.Border;
+        contents.BackColor = emptyHint.BackColor = status.BackColor = address.BackColor = Theme.Surface;
+        emptyHint.ForeColor = status.ForeColor = Theme.Muted;
+        address.ForeColor = Theme.Text;
+        foreach (var tab in tabs)
+        {
+            tab.Button.ForeColor = tab == tabs.ElementAtOrDefault(selectedIndex) ? Theme.Accent : Theme.Text;
+            if (tab.Host.IsHandleCreated) Theme.ApplyNative(tab.Host.Handle);
+        }
+        candidates.RefreshTheme();
     }
 
     public void AddTab(string path, bool select = true)
@@ -342,6 +358,7 @@ public sealed class ExplorerPane : UserControl
         };
         host.Navigated += (_, _) =>
         {
+            Theme.ApplyNative(host.Handle);
             button.Text = ShortTitle(host.DisplayName);
             button.ToolTipText = host.LocationPath;
             button.AccessibleName = $"Folder tab: {host.DisplayName}";
@@ -349,6 +366,11 @@ public sealed class ExplorerPane : UserControl
             StateChanged?.Invoke(this, EventArgs.Empty);
         };
         host.NavigationError += (_, message) => SetLocalizedStatus(() => host.ErrorStatus ?? message);
+        // Tab removal hides the host while the selected index is still being updated.
+        host.ItemCountChanged += (_, _) =>
+        {
+            if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host == host) RenderItemCount();
+        };
         tabs.Add(tab);
         tabStrip.Items.Insert(tabStrip.Items.Count - 1, button);
         contents.Controls.Add(host);
@@ -416,7 +438,17 @@ public sealed class ExplorerPane : UserControl
     }
     public void SetActive(bool active) => activeLine.BackColor = active ? Theme.Accent : Theme.Border;
     public void SetStatus(string message) { localizedStatus = null; RenderStatus(message); }
-    private void RenderStatus(string message) { status.Text = message; tips.SetToolTip(status, message); }
+    private void RenderStatus(string message)
+    {
+        statusMessage = message;
+        RenderItemCount();
+    }
+    private void RenderItemCount()
+    {
+        status.Text = ActiveView is null ? statusMessage : statusMessage + "  |  " + (ActiveView.ItemCount is int value
+            ? text.T("{0} items", value) : text.T("Counting items..."));
+        tips.SetToolTip(status, status.Text);
+    }
     internal void SetLocalizedStatus(string key, params object?[] args) => SetLocalizedStatus(() => text.T(key, args));
     internal void SetLocalizedStatus(Func<string> message) { localizedStatus = message; RenderStatus(message()); }
     private void UpdateStatus() => SetLocalizedStatus(() => tabs.Count == 1
