@@ -14,6 +14,12 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly FolderTree folderTree;
     private readonly ToolStripButton treeButton = new() { AccessibleName = "Folder tree", CheckOnClick = true };
     private readonly Button treeHeader;
+    private readonly Panel treePanel = new() { Dock = DockStyle.Bottom };
+    private readonly Splitter treeSplitter = new()
+    {
+        Dock = DockStyle.Bottom, Height = 6, Cursor = Cursors.HSplit, AccessibleName = "Resize favorites and folder tree"
+    };
+    private int folderTreeHeight;
     private readonly ToolStripButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
     private bool showFolderTree;
@@ -71,6 +77,7 @@ public sealed class MainForm : Form, IMessageFilter
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
         colorTheme = initialState.ColorTheme;
         showFolderTree = initialState.ShowFolderTree;
+        folderTreeHeight = initialState.FolderTreeHeight;
         Theme.Set(colorTheme);
         text = new UiText(initialState.Language);
         layoutTree = initialState.LayoutTree!;
@@ -216,12 +223,12 @@ public sealed class MainForm : Form, IMessageFilter
         ReloadPlaces();
         folderTree = new FolderTree(text, treeRoots)
         {
-            Dock = DockStyle.Bottom, AccessibleName = "Folder tree", Visible = showFolderTree
+            Dock = DockStyle.Fill, AccessibleName = "Folder tree", Visible = showFolderTree
         };
         folderTree.OpenRequested += OpenTreeFolder;
-        // Docked bottom: the header is added first so the tree docks below it and collapses to the header.
+        // The splitter resizes this bottom panel; the favorites list fills the space left above it.
         treeHeader = Theme.Button("", "Collapse folder tree", () => SetFolderTreeVisible(!showFolderTree));
-        treeHeader.Dock = DockStyle.Bottom;
+        treeHeader.Dock = DockStyle.Top;
         treeHeader.Height = 32;
         treeHeader.Font = favoritesHeader.Font;
         treeHeader.TextAlign = ContentAlignment.MiddleLeft;
@@ -230,8 +237,17 @@ public sealed class MainForm : Form, IMessageFilter
         BindTip(treeHeader, "Collapse / expand folder tree (Ctrl+Shift+E)");
         languageBindings.Add(UpdateTreeHeader);
         UpdateTreeHeader();
-        sidebar.Controls.Add(treeHeader);
-        sidebar.Controls.Add(folderTree);
+        treePanel.Controls.Add(folderTree);
+        treePanel.Controls.Add(treeHeader);
+        treeSplitter.Visible = showFolderTree;
+        treeSplitter.SplitterMoved += (_, _) =>
+        {
+            folderTreeHeight = (int)Math.Round((treePanel.Height - treeHeader.Height) * 96d / DeviceDpi);
+            ScheduleSave();
+        };
+        BindTip(treeSplitter, "Drag to resize favorites and the folder tree");
+        sidebar.Controls.Add(treeSplitter);
+        sidebar.Controls.Add(treePanel);
         sidebar.SizeChanged += (_, _) => UpdateSidebarContent();
         UpdateSidebarContent();
 
@@ -379,7 +395,8 @@ public sealed class MainForm : Form, IMessageFilter
         languageBindings.Add(RefreshThemeButton);
         RefreshThemeButton();
         themeButton.Click += (_, _) => SetColorTheme(colorTheme == "dark" ? "light" : "dark");
-        toolbar.Items.Add(themeButton);
+        themeButton.Alignment = ToolStripItemAlignment.Right;
+        themeButton.Overflow = ToolStripItemOverflow.Never;
         var help = new ToolStripButton
         {
             Alignment = ToolStripItemAlignment.Right, AccessibleName = "Shortcuts",
@@ -413,6 +430,7 @@ public sealed class MainForm : Form, IMessageFilter
         languageSelector.ToolTipText = text.T("Choose UI language");
         toolbar.Items.Add(languageSelector);
         toolbar.Items.Add(languageLabel);
+        toolbar.Items.Add(themeButton); // Right-aligned items run right to left: theme sits left of the language label.
         toolbar.Layout += (_, _) =>
         {
             int width = Math.Max(100, languageSelector.Items.Cast<string>()
@@ -479,7 +497,7 @@ public sealed class MainForm : Form, IMessageFilter
     internal void SetFolderTreeVisible(bool visible)
     {
         showFolderTree = visible;
-        folderTree.Visible = visible;
+        folderTree.Visible = treeSplitter.Visible = visible;
         treeButton.Checked = visible;
         UpdateTreeHeader();
         if (visible && !sidebar.Visible) SetSidebarVisible(true);
@@ -499,7 +517,11 @@ public sealed class MainForm : Form, IMessageFilter
         double scale = DeviceDpi / 96d;
         double height = sidebar.ClientSize.Height / scale;
         places.Height = (int)Math.Round(Math.Clamp(height / 4, 108, 216) * scale);
-        folderTree.Height = (int)Math.Round(Math.Clamp(height / 3, 120, 280) * scale);
+        double tree = folderTreeHeight > 0 ? folderTreeHeight : Math.Clamp(height / 3, 120, 280);
+        double room = Math.Max(80, height - places.Height / scale - 200);
+        treePanel.Height = treeHeader.Height + (showFolderTree ? (int)Math.Round(Math.Clamp(tree, 80, room) * scale) : 0);
+        treeSplitter.MinSize = treeHeader.Height + (int)Math.Round(80 * scale);
+        treeSplitter.MinExtra = (int)Math.Round(60 * scale);
     }
 
     private async void SyncTree()
@@ -988,7 +1010,7 @@ public sealed class MainForm : Form, IMessageFilter
             {
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
-                ColorTheme = colorTheme, ShowFolderTree = showFolderTree,
+                ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,

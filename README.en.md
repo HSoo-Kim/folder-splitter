@@ -8,9 +8,19 @@ A **Windows file manager that shows up to 4 folders at once in a single window, 
 
 It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modify or replace the existing `explorer.exe` and runs as a separate app.
 
-## Fast independent search
+## The address bar is a search box
 
-**Search p95: 62 ms across about 3.72 million paths.** Find candidates by file/folder name or partial path without installing Everything. Choosing a file opens its parent with the file selected.
+You don't need the full path. Type **any fragment you remember** into the address bar and matching folders and files appear as you type. Join folder and file name fragments with `/`, such as `공유용/월별연구계획`, to narrow the results.
+
+![Typing '공유용/월별연구계획' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search.png)
+
+- Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
+- Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
+- Local drives are indexed by the app itself, so no separate tool such as Everything is needed. File contents are never read.
+
+### Search speed
+
+**p95 of 62 ms across about 3.72 million paths.** Both the overall median and p95 beat the Everything adapter; Everything is faster for very short terms with many matches.
 
 | Response time — lower is faster | Independent engine | Reference Everything adapter |
 |---|---:|---:|
@@ -20,12 +30,6 @@ It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modi
 | Short terms with many matches (p95) | 68.8 ms | **7.1 ms** |
 
 Measured on October 21, 2026: about 3.72 million common candidates, identical ranking and a 100-result limit, 37 queries and 370 measured calls per engine. Results depend on the query; this is not a comparison of Everything's intrinsic matcher alone. Initial indexing took about **50 seconds**, separate from warmed search latency above. [Method and full results](docs/search-evidence/benchmark.md)
-
-## Introduction video
-
-[![Folder Splitter introduction video, 46 seconds: four panes, quick access icons, folder tree, item counts, light and dark themes, partial-path search](docs/media/folder-splitter-intro-poster.png)](docs/media/folder-splitter-intro.mp4)
-
-46 seconds, no audio. Every screen is the real app showing a synthetic sample folder (`C:\Folder Splitter Demo`); captions are in Korean and English. Click the image to open the [MP4 video](docs/media/folder-splitter-intro.mp4).
 
 ## Screenshot
 
@@ -53,12 +57,12 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Partial-path candidates**: Type at least two characters, such as `공유용/월별연구계획_20261019`, in an address bar. Current folder, open tabs, favorites and recently closed tabs rank first. Choose with Up/Down and Enter or click; choosing a file opens its parent with that file selected. The independent index needs no Everything installation.
 - **Resizable splits**: Drag the dividers, or use `Equal size` to even out the layout.
 - **Quick access and favorites**: User folder, Desktop, Downloads, Documents, This PC, Recycle Bin and your pinned folders, each with its Windows icon.
-- **Folder tree**: The tree at the lower left follows the active pane's folder. Click to open in the current pane; middle-click or Ctrl+click to open a new tab. Right-click to open in a new pane or in Windows File Explorer. Collapse or expand it with its `▾ Folder tree` sidebar header, the `Folder tree` toolbar button or `Ctrl+Shift+E`; the state is saved.
-- **Light / dark theme**: Switch with the `Light mode`/`Dark mode` button in the top bar; the choice is saved. It covers the sidebar, tabs, address bars, buttons, menus and folder tree. Each pane's file list is drawn by the Windows Shell, so it may stay light depending on your Windows version and settings.
+- **Folder tree**: The tree at the lower left follows the active pane's folder. Click to open in the current pane; middle-click or Ctrl+click to open a new tab. Right-click to open in a new pane or in Windows File Explorer. Collapse or expand it with its `▾ Folder tree` sidebar header, the `Folder tree` toolbar button or `Ctrl+Shift+E`. Drag the divider between favorites and the folder tree up or down to resize them; the collapsed state and height are saved.
+- **Light / dark theme**: Switch with the `Light mode`/`Dark mode` button at the top right, next to the language selector; the choice is saved. It covers the sidebar, tabs, address bars, buttons, menus, folder tree and the text, background and sorted column of each pane's file list.
 - **Item count**: Each pane's status line shows how many items its file list displays and updates when files are added or deleted.
 - **Native Windows file operations**: Right-click menu in the file list, copy/cut/paste, rename, delete, and drag and drop between panes.
 - **View options**: Details, List, or Icons view from each pane's options menu.
-- **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size, theme and folder tree visibility are saved locally.
+- **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size, theme, and folder tree visibility and height are saved locally.
 - **Open in external Explorer**: Open the same folder in Windows File Explorer from the pane options.
 
 Column sorting and the right-click menu in the file list are handled by the Windows Shell. The app doesn't embed the Windows 11 command bar or the modern tab UI of the built-in File Explorer.
@@ -92,7 +96,7 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 | `Ctrl+L`, `Alt+D` | Select the address bar |
 | `Alt+Left`, `Alt+Right`, `Alt+Up` | Back/forward/parent folder |
 | `Ctrl+D` | Add the current folder to favorites |
-| `Ctrl+Shift+E` | Show or hide the folder tree |
+| `Ctrl+Shift+E` | Collapse or expand the folder tree |
 | `F5` | Refresh |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy/cut/paste selected files |
 | `F2` | Rename selected file |

@@ -17,6 +17,7 @@ public sealed record SessionState
     public string Language { get; init; } = "ko";
     public string ColorTheme { get; init; } = "light";
     public bool ShowFolderTree { get; init; } = true;
+    public int FolderTreeHeight { get; init; }
     public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];
@@ -158,6 +159,7 @@ public static class SessionStore
             WindowWidth = Math.Clamp(state.WindowWidth, 900, 10000),
             WindowHeight = Math.Clamp(state.WindowHeight, 600, 10000),
             SidebarWidth = Math.Clamp(state.SidebarWidth, 140, 480),
+            FolderTreeHeight = state.FolderTreeHeight <= 0 ? 0 : Math.Clamp(state.FolderTreeHeight, 80, 2000),
             ColumnRatio = NormalizeRatio(state.ColumnRatio),
             LeftRowRatio = NormalizeRatio(state.LeftRowRatio),
             RightRowRatio = NormalizeRatio(state.RightRowRatio)

@@ -421,6 +421,14 @@ internal static class Program
                 treeHeader.PerformClick();
                 Check(form.FolderTreeVisible && form.FolderTree.Visible && treeHeader.AccessibleName == "Collapse folder tree"
                     && treeHeader.Bottom <= form.FolderTree.Top, "sidebar header expands the folder tree above it");
+                var treeSplitter = Descendants(form).OfType<Splitter>().Single(s => s.AccessibleName == "Resize favorites and folder tree");
+                var favoritesList = Descendants(form).OfType<ListBox>().Single(l => l.AccessibleName == "Favorites");
+                int favoritesBefore = favoritesList.Height;
+                int treeBody = (int)Math.Round(200 * form.DeviceDpi / 96d);
+                treeSplitter.SplitPosition = treeHeader.Height + treeBody;
+                Check(Math.Abs(form.FolderTree.Height - treeBody) <= 1 && favoritesList.Height != favoritesBefore
+                    && favoritesList.Parent == treeSplitter.Parent && treeSplitter.Bottom <= form.FolderTree.Parent!.Top + 1,
+                    "dragging the sidebar splitter resizes the folder tree against favorites");
                 treeHeader.PerformClick();
                 Check(!form.FolderTree.Visible, "sidebar header collapses the folder tree again");
             }
@@ -430,6 +438,7 @@ internal static class Program
         Application.Run(form);
         var restored = SessionStore.Load(session);
         Check(restored.ColorTheme == "dark" && !restored.ShowFolderTree, "theme and folder tree visibility persist");
+        Check(Math.Abs(restored.FolderTreeHeight - 200) <= 1, "resized folder tree height persists");
     }
 
     private static bool ButtonCornersMatchBackground(ExplorerPane pane)
@@ -712,11 +721,12 @@ internal static class Program
         var label = items.Single(i => i.AccessibleName == "Language");
         var close = items.Single(i => i.AccessibleName == "Close tab");
         var help = items.Single(i => i.AccessibleName == "Shortcuts");
-        Check(new[] { label, selector, close, help }.All(i =>
+        var theme = items.Single(i => i.AccessibleName == "Color theme");
+        Check(new[] { theme, label, selector, close, help }.All(i =>
                 i.Alignment == ToolStripItemAlignment.Right && i.Placement == ToolStripItemPlacement.Main)
-            && label.Bounds.Right <= selector.Bounds.Left && selector.Bounds.Right <= close.Bounds.Left
+            && theme.Bounds.Right <= label.Bounds.Left && label.Bounds.Right <= selector.Bounds.Left && selector.Bounds.Right <= close.Bounds.Left
             && close.Bounds.Right <= help.Bounds.Left,
-            name + " right group orders language, close tab and shortcuts");
+            name + " right group orders theme, language, close tab and shortcuts");
         var visible = items.Where(i => i.Placement == ToolStripItemPlacement.Main && i.Available).ToArray();
         Check(!visible.SelectMany((item, index) => visible.Skip(index + 1)
                 .Select(other => item.Bounds.IntersectsWith(other.Bounds))).Any(overlap => overlap)
