@@ -125,7 +125,7 @@ public sealed class ExplorerPane : UserControl
         AddButton(navigation, 5, "\uE838", "Choose folder", ChooseFolder);
         AddButton(navigation, 6, "\uE713", "Pane options", ShowOptions);
 
-        var newTab = new ToolStripButton("+")
+        var newTab = new OutlinedToolStripButton("+")
         {
             AutoSize = false, Width = 30, Margin = new Padding(12, 1, 0, 2), // gap keeps it away from the last tab's close button
             AccessibleName = $"Pane {number} new tab", ToolTipText = this.text.T("New tab (Ctrl+T)"),

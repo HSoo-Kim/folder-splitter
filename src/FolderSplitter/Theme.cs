@@ -194,6 +194,7 @@ internal static class Theme
         }
     }
 
+    private static Color Blend(Color a, Color b) => Color.FromArgb((a.R + b.R) / 2, (a.G + b.G) / 2, (a.B + b.B) / 2);
     private static int ColorRef(Color color) => color.R | color.G << 8 | color.B << 16;
     private static int Scale(int value, int dpi) => Math.Max(1, (int)Math.Round(value * dpi / 96d));
 
@@ -363,7 +364,8 @@ internal static class Theme
         {
             bool isChecked = e.Item is ToolStripButton { Checked: true } or ToolStripMenuItem { Checked: true };
             bool active = e.Item.Enabled && (e.Item.Selected || e.Item.Pressed);
-            if (!isChecked && !active) return;
+            bool outlineOnly = e.Item is OutlinedToolStripButton && !isChecked && !active;
+            if (!isChecked && !active && !outlineOnly) return;
             int dpi = e.ToolStrip?.DeviceDpi ?? 96;
             var bounds = new Rectangle(1, 1, e.Item.Width - 3, e.Item.Height - 3);
             if (bounds.Width <= 0 || bounds.Height <= 0) return;
@@ -372,8 +374,9 @@ internal static class Theme
             using var path = Rounded(bounds, Scale(CornerRadius, dpi));
             using var brush = new SolidBrush(!e.Item.Enabled ? Surface
                 : e.Item.Pressed ? current.Pressed : isChecked ? Selected : current.Hover);
-            using var pen = new Pen(e.Item.Enabled && (isChecked || e.Item.Pressed) ? Accent : Border);
-            e.Graphics.FillPath(brush, path);
+            using var pen = new Pen(e.Item.Enabled && (isChecked || e.Item.Pressed) ? Accent
+                : outlineOnly ? Blend(Border, Muted) : Border);
+            if (!outlineOnly) e.Graphics.FillPath(brush, path);
             e.Graphics.DrawPath(pen, path);
             e.Graphics.SmoothingMode = smoothing;
         }
@@ -462,3 +465,6 @@ internal static class Theme
         public static extern int DwmSetWindowAttribute(nint window, uint attribute, ref int value, int size);
     }
 }
+
+// A toolbar button that keeps its rounded outline when idle, so a lone icon such as "+" stays easy to find.
+internal sealed class OutlinedToolStripButton(string text) : ToolStripButton(text);

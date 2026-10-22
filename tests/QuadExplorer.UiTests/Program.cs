@@ -108,6 +108,14 @@ internal static class Program
                     int gap = plus.Bounds.Left - tabItems[^2].Bounds.Right;
                     Check(plus.AccessibleName == "Pane 1 new tab" && plus.Visible && gap is >= 10 and <= 20,
                         "new tab button sits just after the last tab with a gap");
+                    var strip = plus.Owner!;
+                    using (var image = new Bitmap(strip.Width, strip.Height))
+                    {
+                        strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
+                        Color edge = image.GetPixel(plus.Bounds.Left + 1, plus.Bounds.Top + plus.Bounds.Height / 2);
+                        Color gapColor = image.GetPixel(plus.Bounds.Left - 5, plus.Bounds.Top + plus.Bounds.Height / 2);
+                        Check(edge.ToArgb() != gapColor.ToArgb(), "new tab button draws an outline when idle");
+                    }
                     Check(HasNativeDropTarget(newView), "new shell tab registers a native drop target");
                     panes[0].CloseTab();
                     Check(panes[0].TabCount == 1 && panes[0].CurrentPath == folders[0], "close restores previous tab");
