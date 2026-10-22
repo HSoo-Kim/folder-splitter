@@ -30,6 +30,7 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolStripMenuItem trayItem = new() { CheckOnClick = true };
     private bool closeToTray;
     private bool exiting;
+    private bool trayNoticeShown;
     private readonly ToolStripButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
     private bool showFolderTree;
@@ -89,7 +90,8 @@ public sealed class MainForm : Form, IMessageFilter
         showFolderTree = initialState.ShowFolderTree;
         folderTreeHeight = initialState.FolderTreeHeight;
         globalHotkey = initialState.GlobalHotkey;
-        closeToTray = initialState.CloseToTray;
+        closeToTray = initialState.KeepInTray;
+        trayNoticeShown = initialState.TrayNoticeShown;
         activationMessage = Program.ActivationMessage(sessionPath);
         Theme.Set(colorTheme);
         text = new UiText(initialState.Language);
@@ -560,6 +562,7 @@ public sealed class MainForm : Form, IMessageFilter
     }
 
     internal bool TrayIconVisible => trayIcon.Visible;
+    internal bool TrayNoticeShown => trayNoticeShown;
 
     internal void SetCloseToTray(bool enabled)
     {
@@ -1157,7 +1160,7 @@ public sealed class MainForm : Form, IMessageFilter
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
-                GlobalHotkey = globalHotkey, CloseToTray = closeToTray,
+                GlobalHotkey = globalHotkey, KeepInTray = closeToTray, TrayNoticeShown = trayNoticeShown,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,
@@ -1187,6 +1190,12 @@ public sealed class MainForm : Form, IMessageFilter
         {
             e.Cancel = true;
             Hide();
+            if (!trayNoticeShown)
+            {
+                trayNoticeShown = true;
+                trayIcon.ShowBalloonTip(8000, "Folder Splitter", text.T("Folder Splitter keeps running in the notification area. Press Win+Alt+E or click its icon to reopen it; right-click the icon and choose Exit to quit. You can turn this off in Settings."), ToolTipIcon.Info);
+                SaveSession();
+            }
             base.OnFormClosing(e);
             return;
         }

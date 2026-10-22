@@ -74,11 +74,11 @@ Column sorting and the right-click menu in the file list are handled by the Wind
 | Situation | What happens |
 |---|---|
 | `Win+Alt+E` while the app is running | Brings Folder Splitter to the front from any app; press again to minimize. |
-| Closing the window | Exits by default. With `Settings` → `Keep running in the notification area when closed`, it stays among the hidden icons at the right of the taskbar and `Win+Alt+E` keeps working. |
+| Closing the window | By default the app keeps running among the hidden icons at the right of the taskbar, so `Win+Alt+E` keeps working; a one-time notice explains this. To quit on close, turn off `Settings` → `Keep running in the notification area when closed`. |
 | `Win+E` while the app isn't running | Starts Folder Splitter only if `Settings` → `Open Folder Splitter with Win+E instead of File Explorer` is on; otherwise File Explorer opens as usual. |
 | Launching it again while it runs | Brings the existing window forward instead of opening another, showing it again if it was hidden. |
 
-Click the notification-area icon to reopen the window; right-click → `Exit` to quit completely. `Win+Alt+E` only works while the app is running, so turn on the notification-area option as well if you want it always available. The Win+E setting only creates and removes its own entry in your user registry (HKCU) and needs no administrator rights.
+Click the notification-area icon to reopen the window; right-click → `Exit` to quit completely. `Win+Alt+E` works while the app is running, and by default closing the window keeps it running, so the shortcut is always available. The Win+E setting only creates and removes its own entry in your user registry (HKCU) and needs no administrator rights.
 
 ## Usage
 

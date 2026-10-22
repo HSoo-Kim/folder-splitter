@@ -115,7 +115,7 @@ internal static class Program
                     Check(panes.All(p => p.Width > 200 && p.Height > 100), "minimum-size pane layout");
                 }
                 catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-                finally { form.Close(); }
+                finally { form.ExitApplication(); }
             };
             Application.Run(form);
             var restored = SessionStore.Load(session, out var warning);
@@ -192,7 +192,7 @@ internal static class Program
                 form.ToggleFavorites();
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-            finally { form.Close(); }
+            finally { form.ExitApplication(); }
         };
         Application.Run(form);
         var restored = SessionStore.Load(session, out var warning);
@@ -278,7 +278,7 @@ internal static class Program
                     await CaptureDemo(form, output, "04-light-search", address);
                 }
                 catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-                finally { form.Close(); }
+                finally { form.ExitApplication(); }
             };
             Application.Run(form);
         }
@@ -450,7 +450,7 @@ internal static class Program
                 Check(!form.FolderTree.Visible, "sidebar header collapses the folder tree again");
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-            finally { form.Close(); }
+            finally { form.ExitApplication(); }
         };
         Application.Run(form);
         var restored = SessionStore.Load(session);
@@ -479,7 +479,7 @@ internal static class Program
         string session = Path.Combine(root, "tray.json");
         SessionStore.Save(session, new SessionState
         {
-            Layout = 1, Language = "en", ExplorerFavoritesImported = true, CloseToTray = true,
+            Layout = 1, Language = "en", ExplorerFavoritesImported = true,
             Panes = [new PaneState { Tabs = [folder] }]
         });
         using var form = new MainForm(session, []);
@@ -488,7 +488,7 @@ internal static class Program
         {
             try
             {
-                Check(form.TrayIconVisible, "notification-area icon is shown when close-to-tray is on");
+                Check(form.TrayIconVisible && !form.TrayNoticeShown, "keeping the app in the notification area is the default");
                 var hidden = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void Changed(object? sender, EventArgs e) { if (form.Visible) return; hidden.TrySetResult(); }
                 form.VisibleChanged += Changed;
@@ -496,7 +496,7 @@ internal static class Program
                 await hidden.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 form.VisibleChanged -= Changed;
                 closedToTray = !form.Visible && !form.IsDisposed;
-                Check(closedToTray, "closing the window hides it to the notification area");
+                Check(closedToTray && form.TrayNoticeShown, "closing the window hides it to the notification area with a one-time notice");
                 var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void Shown(object? sender, EventArgs e) { if (form.Visible) shown.TrySetResult(); }
                 form.VisibleChanged += Shown;
@@ -509,7 +509,8 @@ internal static class Program
             finally { form.ExitApplication(); }
         };
         Application.Run(form);
-        Check(closedToTray && form.IsDisposed && SessionStore.Load(session).CloseToTray, "Exit closes the app and close-to-tray persists");
+        var saved = SessionStore.Load(session);
+        Check(closedToTray && form.IsDisposed && saved.KeepInTray && saved.TrayNoticeShown, "Exit closes the app; tray setting and notice state persist");
     }
 
     private static async Task WindowRestored(Form form, Action trigger)
@@ -644,7 +645,7 @@ internal static class Program
                     "navigation icon columns fit their preferred glyph width");
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-            finally { form.Close(); }
+            finally { form.ExitApplication(); }
         };
         Application.Run(form);
         var restored = SessionStore.Load(session);
@@ -768,7 +769,7 @@ internal static class Program
                     ValidateTranslations();
                 }
                 catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-                finally { form.Close(); }
+                finally { form.ExitApplication(); }
             };
             Application.Run(form);
         }
@@ -1048,7 +1049,7 @@ internal static class Program
                     "direct folder navigation remains usable without search backend");
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-            finally { backend.Release(); form.Close(); }
+            finally { backend.Release(); form.ExitApplication(); }
         };
         Application.Run(form);
     }
