@@ -229,24 +229,26 @@ internal static class Program
             string session = Path.Combine(output, "demo-session.json");
             SessionStore.Save(session, new SessionState
             {
-                Layout = 4, Language = "ko", ExplorerFavoritesImported = true, WindowWidth = 1600, WindowHeight = 900,
+                Layout = 3, Language = "ko", ExplorerFavoritesImported = true, WindowWidth = 1600, WindowHeight = 900,
                 Favorites = [projects, photos, documents],
-                Panes = [new PaneState { Tabs = [projects, launch], SelectedTab = 1 }, new PaneState { Tabs = [photos] },
-                    new PaneState { Tabs = [documents] }, new PaneState { Tabs = [downloads] }]
+                // Three panes with one left empty, as a new split shows it.
+                Panes = [new PaneState { Tabs = [projects, launch], SelectedTab = 1 }, new PaneState { Tabs = [documents] },
+                    new PaneState(), new PaneState()]
             });
             using var search = new IndependentSearchBackend(new[] { demoRoot }, Path.Combine(output, "demo-index.fsix"));
             using var form = new MainForm(session, [], search, [demoRoot]);
             foreach (var window in CandidatePopups(form).Prepend<Form>(form))
                 SetWindowLongPtr(window.Handle, -20, GetWindowLongPtr(window.Handle, -20) | 0x08000000); // WS_EX_NOACTIVATE: keep the user's focus
             var panes = Enumerable.Range(0, 4).Select(form.GetPane).ToArray();
-            var navigation = panes.Select(p => p.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(p.ActiveView)).ToArray();
+            var shown = panes.Where(p => p.ActiveView is not null).ToArray();
+            var navigation = shown.Select(p => p.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(p.ActiveView)).ToArray();
             form.Shown += async (_, _) =>
             {
                 try
                 {
                     await Task.WhenAll(navigation).WaitAsync(TimeSpan.FromSeconds(20));
-                    foreach (var pane in panes) pane.ActiveView!.SetViewMode(4);
-                    foreach (var pane in panes) await ItemCountKnown(pane.ActiveView!);
+                    foreach (var pane in shown) pane.ActiveView!.SetViewMode(4);
+                    foreach (var pane in shown) await ItemCountKnown(pane.ActiveView!);
                     await form.FolderTree.FollowPathAsync(launch);
                     await CaptureDemo(form, output, "01-light-panes");
                     form.SetColorTheme("dark");
