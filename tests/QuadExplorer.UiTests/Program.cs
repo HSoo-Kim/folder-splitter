@@ -127,6 +127,7 @@ internal static class Program
             RunSearchScenario(root);
             RunAppearanceScenario(root);
             RunTrayScenario(root);
+            RunUpdateScenario(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -511,6 +512,41 @@ internal static class Program
         Application.Run(form);
         var saved = SessionStore.Load(session);
         Check(closedToTray && form.IsDisposed && saved.KeepInTray && saved.TrayNoticeShown, "Exit closes the app; tray setting and notice state persist");
+    }
+
+    private static void RunUpdateScenario(string root)
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(root, "Update")).FullName;
+        string session = Path.Combine(root, "update.json");
+        SessionStore.Save(session, new SessionState
+        {
+            Layout = 1, Language = "en", ExplorerFavoritesImported = true, Panes = [new PaneState { Tabs = [folder] }]
+        });
+        var current = typeof(MainForm).Assembly.GetName().Version!;
+        var latest = new ReleaseInfo(new Version(current.Major, current.Minor, current.Build), "v-current", "https://github.com/HSoo-Kim/folder-splitter/releases");
+        int requests = 0;
+        using var form = new MainForm(session, [], latestRelease: _ => { requests++; return Task.FromResult<ReleaseInfo?>(latest); });
+        form.Shown += async (_, _) =>
+        {
+            try
+            {
+                await form.CheckForUpdateAsync();
+                Check(!form.UpdateLinkShown && form.VersionText == "v" + current.ToString(3), "no update notice when the latest release is this version");
+                latest = new ReleaseInfo(new Version(99, 0, 0), "v99.0.0", "https://github.com/HSoo-Kim/folder-splitter/releases/tag/v99.0.0");
+                await form.CheckForUpdateAsync();
+                Check(form.UpdateLinkShown && form.VersionText.StartsWith("v" + current.ToString(3) + " ", StringComparison.Ordinal)
+                    && form.VersionText.Contains("New version v99.0.0 available", StringComparison.Ordinal),
+                    "a newer release shows a download link next to the version");
+                form.SetCheckUpdates(false);
+                int before = requests;
+                await form.CheckForUpdateAsync();
+                Check(!form.UpdateLinkShown && requests == before, "turning update checks off hides the notice and stops requests");
+            }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+            finally { form.ExitApplication(); }
+        };
+        Application.Run(form);
+        Check(!SessionStore.Load(session).CheckUpdates, "update check setting persists");
     }
 
     private static async Task WindowRestored(Form form, Action trigger)

@@ -63,6 +63,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Native Windows file operations**: Right-click menu in the file list, copy/cut/paste, rename, delete, and drag and drop between panes.
 - **View options**: Details, List, or Icons view from each pane's options menu.
 - **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size, theme, and folder tree visibility and height are saved locally.
+- **New version notice**: When a new release is out, `New version vX.Y.Z available · Download` appears next to the version at the lower left; click it to open the release page. Nothing is installed automatically.
 - **Open in external Explorer**: Open the same folder in Windows File Explorer from the pane options.
 - **Summon from anywhere**: `Win+Alt+E` brings Folder Splitter to the front from any app; press it again to minimize. Turn it off under `Settings` at the top right.
 - **Open with Win+E (optional)**: `Settings` → `Open Folder Splitter with Win+E instead of File Explorer` makes Win+E launch Folder Splitter even when it isn't running, or bring the running window forward. It only changes your user registry; turning it off restores File Explorer.
@@ -121,6 +122,7 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 
 ## Data and compatibility
 
+- Update check: on launch and once a day while running, the app reads only the latest release version from GitHub (`api.github.com`). No file or user information is sent, and the app makes no other network connections. Turn it off under `Settings` → `Check for new versions`.
 - Settings location: `%LOCALAPPDATA%\QuadExplorer\session.json`
 - The settings path is unchanged so tabs and favorites from earlier QuadExplorer versions carry over.
 - Run only one app instance at a time against the same settings file.

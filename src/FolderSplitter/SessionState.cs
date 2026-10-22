@@ -22,6 +22,7 @@ public sealed record SessionState
     // Replaces 0.7.5's CloseToTray (stored off by default) so everyone starts with the new default.
     public bool KeepInTray { get; init; } = true;
     public bool TrayNoticeShown { get; init; }
+    public bool CheckUpdates { get; init; } = true;
     public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];

@@ -24,6 +24,8 @@ public sealed class UiText
         ["Settings"] = ("설정", "设置", "設定"),
         ["Open Folder Splitter"] = ("Folder Splitter 열기", "打开 Folder Splitter", "Folder Splitter を開く"),
         ["Exit"] = ("종료", "退出", "終了"),
+        ["New version {0} available · Download"] = ("새 버전 {0} 있음 · 다운로드", "有新版本 {0} · 下载", "新しいバージョン {0} · ダウンロード"),
+        ["Check for new versions"] = ("새 버전 확인", "检查新版本", "新しいバージョンを確認"),
         ["Folder Splitter keeps running in the notification area. Press Win+Alt+E or click its icon to reopen it; right-click the icon and choose Exit to quit. You can turn this off in Settings."] = ("Folder Splitter가 알림 영역에서 계속 실행 중입니다. Win+Alt+E나 아이콘 클릭으로 다시 열고, 완전히 끝내려면 아이콘을 우클릭해 종료를 누르세요. 설정에서 끌 수 있습니다.", "Folder Splitter 仍在通知区域中运行。按 Win+Alt+E 或单击图标可重新打开；右键单击图标并选择“退出”可完全退出。可在设置中关闭此功能。", "Folder Splitter は通知領域で実行を続けています。Win+Alt+E またはアイコンのクリックで再び開き、完全に終了するにはアイコンを右クリックして「終了」を選んでください。設定でオフにできます。"),
         ["Keep running in the notification area when closed"] = ("닫아도 알림 영역(숨겨진 아이콘)에서 계속 실행", "关闭后在通知区域（隐藏的图标）中继续运行", "閉じても通知領域（隠れているインジケーター）で実行を続ける"),
         ["Shortcuts and Windows integration"] = ("단축키와 Windows 연동", "快捷键与 Windows 集成", "ショートカットと Windows 連携"),

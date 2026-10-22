@@ -47,7 +47,7 @@ internal static class Program
         var search = new IndependentSearchBackend(roots, storePath);
         _ = search.BuildOrLoadAsync().ContinueWith(task => System.Diagnostics.Debug.WriteLine(task.Exception),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-        Application.Run(new MainForm(sessionPath, folders, search));
+        Application.Run(new MainForm(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync));
     }
 
     internal static string InstanceKey(string sessionPath) =>

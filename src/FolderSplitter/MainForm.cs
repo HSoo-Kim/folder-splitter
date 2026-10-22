@@ -60,12 +60,18 @@ public sealed class MainForm : Form, IMessageFilter
     private bool favoritesExpanded;
     private readonly List<string> favorites;
     private readonly ToolStrip toolbar = Theme.Strip();
-    private readonly Label versionLabel = new()
+    private readonly LinkLabel versionLabel = new()
     {
         Dock = DockStyle.Bottom, AutoSize = true, TextAlign = ContentAlignment.MiddleLeft,
         ForeColor = Theme.Muted, BackColor = Theme.Canvas, Padding = new Padding(12, 4, 0, 4),
-        AccessibleName = "Application version"
+        AccessibleName = "Application version", LinkBehavior = LinkBehavior.HoverUnderline
     };
+    private readonly Func<CancellationToken, Task<ReleaseInfo?>>? latestRelease;
+    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 24 * 60 * 60 * 1000 };
+    private readonly CancellationTokenSource updateCancellation = new();
+    private readonly ToolStripMenuItem updateItem = new() { CheckOnClick = true };
+    private ReleaseInfo? availableUpdate;
+    private bool checkUpdates;
     private readonly ToolStripButton[] layoutButtons = new ToolStripButton[4];
     private readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 800 };
     private readonly ToolTip tips = new() { ShowAlways = true, AutoPopDelay = 10000 };
@@ -81,9 +87,10 @@ public sealed class MainForm : Form, IMessageFilter
     }
 
     public MainForm(string sessionPath, IReadOnlyList<string> folders, IPathSearchBackend? search = null,
-        IReadOnlyList<string>? treeRoots = null)
+        IReadOnlyList<string>? treeRoots = null, Func<CancellationToken, Task<ReleaseInfo?>>? latestRelease = null)
     {
         this.search = search;
+        this.latestRelease = latestRelease;
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
         colorTheme = initialState.ColorTheme;
@@ -92,6 +99,7 @@ public sealed class MainForm : Form, IMessageFilter
         globalHotkey = initialState.GlobalHotkey;
         closeToTray = initialState.KeepInTray;
         trayNoticeShown = initialState.TrayNoticeShown;
+        checkUpdates = initialState.CheckUpdates;
         activationMessage = Program.ActivationMessage(sessionPath);
         Theme.Set(colorTheme);
         text = new UiText(initialState.Language);
@@ -112,7 +120,14 @@ public sealed class MainForm : Form, IMessageFilter
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 9.5f);
-        versionLabel.Text = "v" + typeof(MainForm).Assembly.GetName().Version!.ToString(3);
+        UpdateVersionText();
+        languageBindings.Add(UpdateVersionText);
+        versionLabel.LinkClicked += (_, _) =>
+        {
+            if (availableUpdate is null) return;
+            try { Process.Start(new ProcessStartInfo(availableUpdate.Url) { UseShellExecute = true }); }
+            catch (Win32Exception error) { Active.SetStatus(error.Message); }
+        };
         using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("QuadExplorer.AppIcon")!)
         using (var sourceIcon = new Icon(iconStream))
             appIcon = (Icon)sourceIcon.Clone();
@@ -306,6 +321,9 @@ public sealed class MainForm : Form, IMessageFilter
             if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab();
             foreach (string folder in folders) Active.AddTab(folder);
             Active.FocusFiles();
+            updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
+            updateTimer.Enabled = checkUpdates && latestRelease is not null;
+            _ = CheckForUpdateAsync();
         };
         ResizeEnd += (_, _) => ScheduleSave();
         RenderLayout(layoutTree);
@@ -470,6 +488,10 @@ public sealed class MainForm : Form, IMessageFilter
         trayItem.Checked = closeToTray;
         trayItem.CheckedChanged += (_, _) => SetCloseToTray(trayItem.Checked);
         settings.DropDownItems.Add(trayItem);
+        BindText(updateItem, "Check for new versions");
+        updateItem.Checked = checkUpdates;
+        updateItem.CheckedChanged += (_, _) => SetCheckUpdates(updateItem.Checked);
+        settings.DropDownItems.Add(updateItem);
         toolbar.Items.Add(settings);
         toolbar.Layout += (_, _) =>
         {
@@ -562,6 +584,47 @@ public sealed class MainForm : Form, IMessageFilter
     }
 
     internal bool TrayIconVisible => trayIcon.Visible;
+    internal string VersionText => versionLabel.Text;
+    internal bool UpdateLinkShown => versionLabel.LinkArea.Length > 0;
+
+    internal void SetCheckUpdates(bool enabled)
+    {
+        checkUpdates = enabled;
+        updateItem.Checked = enabled;
+        updateTimer.Enabled = enabled && latestRelease is not null;
+        if (!enabled) availableUpdate = null;
+        UpdateVersionText();
+        if (enabled) _ = CheckForUpdateAsync();
+        ScheduleSave();
+    }
+
+    // Offline, blocked or rate-limited networks simply leave the version label unchanged.
+    internal async Task CheckForUpdateAsync()
+    {
+        if (!checkUpdates || latestRelease is null || updateCancellation.IsCancellationRequested) return;
+        ReleaseInfo? latest;
+        try { latest = await latestRelease(updateCancellation.Token); }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or OperationCanceledException
+            or System.Text.Json.JsonException or IOException or InvalidOperationException or KeyNotFoundException) { return; }
+        if (IsDisposed || !checkUpdates) return;
+        availableUpdate = latest is not null && latest.Version > UpdateChecker.Current ? latest : null;
+        UpdateVersionText();
+    }
+
+    private void UpdateVersionText()
+    {
+        string current = "v" + UpdateChecker.Current.ToString(3);
+        if (availableUpdate is null)
+        {
+            versionLabel.Text = current;
+            versionLabel.LinkArea = new LinkArea(0, 0);
+            return;
+        }
+        string notice = text.T("New version {0} available · Download", availableUpdate.Tag);
+        versionLabel.Text = current + "   " + notice;
+        versionLabel.LinkArea = new LinkArea(current.Length + 3, notice.Length);
+        versionLabel.LinkColor = versionLabel.ActiveLinkColor = versionLabel.VisitedLinkColor = Theme.Accent;
+    }
     internal bool TrayNoticeShown => trayNoticeShown;
 
     internal void SetCloseToTray(bool enabled)
@@ -1161,6 +1224,7 @@ public sealed class MainForm : Form, IMessageFilter
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, TrayNoticeShown = trayNoticeShown,
+                CheckUpdates = checkUpdates,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,
@@ -1219,6 +1283,8 @@ public sealed class MainForm : Form, IMessageFilter
             trayIcon.Visible = false;
             trayIcon.ContextMenuStrip?.Dispose();
             trayIcon.Dispose();
+            updateCancellation.Cancel();
+            updateTimer.Dispose();
             places.ContextMenuStrip?.Dispose();
             favoritePlaces.ContextMenuStrip?.Dispose();
         }
