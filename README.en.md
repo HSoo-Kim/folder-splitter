@@ -47,55 +47,57 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 
 ## Features
 
-- **Current version**: The lower-left corner shows the running version, even when the sidebar is hidden.
-- **Language selection**: Choose 한국어 / English / 简体中文 / 日本語 in the top bar. The selection is saved. Native file lists and folder dialogs follow your Windows language.
-- **Browse for a folder**: Click the folder icon beside an address bar. Hover over navigation icons and main buttons for descriptions in the selected language.
-- **1 / 2 / 3 / 4 panes**: Switch from the top bar. Hidden panes retain their tabs. The three-pane menu offers two-to-one arrangements horizontally or vertically.
-- **Drag tabs to split**: Drop a tab near a file-list edge to split, or in the center to move it into that pane. Up to four panes are supported. The tab context menu also offers `Split tab`.
-- **Independent tabs per pane**: New tab, duplicate tab, reopen closed tab, move a tab to another pane.
-- **Separate navigation**: Address input, path autocomplete, back/forward/up to parent folder.
-- **Partial-path candidates**: Type at least two characters, such as `공유용/월별연구계획_20261019`, in an address bar. Current folder, open tabs, favorites and recently closed tabs rank first. Choose with Up/Down and Enter or click; choosing a file opens its parent with that file selected. The independent index needs no Everything installation.
-- **Resizable splits**: Drag the dividers, or use `Equal size` to even out the layout.
-- **Quick access and favorites**: User folder, Desktop, Downloads, Documents, This PC, Recycle Bin and your pinned folders, each with its Windows icon.
-- **Folder tree**: The tree at the lower left follows the active pane's folder. Click to open in the current pane; middle-click or Ctrl+click to open a new tab. Right-click to open in a new pane or in Windows File Explorer. Collapse or expand it with its `▾ Folder tree` sidebar header, the `Folder tree` toolbar button or `Ctrl+Shift+E`. Drag the divider between favorites and the folder tree up or down to resize them; the collapsed state and height are saved.
-- **Light / dark theme**: Switch with the `Light mode`/`Dark mode` button at the top right, next to the language selector; the choice is saved. It covers the sidebar, tabs, address bars, buttons, menus, folder tree and the text, background and sorted column of each pane's file list.
-- **Item count**: Each pane's status line shows how many items its file list displays and updates when files are added or deleted.
-- **Native Windows file operations**: Right-click menu in the file list, copy/cut/paste, rename, delete, and drag and drop between panes.
-- **View options**: Details, List, or Icons view from each pane's options menu.
-- **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size, theme, and folder tree visibility and height are saved locally.
-- **New version notice**: When a new release is out, `New version vX.Y.Z available · Download` appears next to the version at the lower left; click it to open the release page. Nothing is installed automatically.
-- **Open in external Explorer**: Open the same folder in Windows File Explorer from the pane options.
-- **Summon from anywhere**: `Win+Alt+E` brings Folder Splitter to the front from any app; press it again to hide it to the notification area. One key shows and hides it, keeping tabs and position. Turn it off under `Settings` at the top right.
-- **Open with Win+E (optional)**: `Settings` → `Open Folder Splitter with Win+E instead of File Explorer` makes Win+E launch Folder Splitter even when it isn't running, or bring the running window forward. It only changes your user registry; turning it off restores File Explorer.
+### Panes and tabs
+- **1 to 4 panes**: Switch from the top bar or with `Ctrl+1`–`Ctrl+4`. Three panes can also be arranged 2:1 side by side or top and bottom.
+- **Resizing**: Drag the dividers; `Equal size` evens them out again.
+- **Tabs per pane**: Each pane has its own tabs, with new tab, duplicate and reopen closed tab.
+- **Drag tabs into place**: Drop a tab near a file-list edge to split in that direction, or in the center to move it into that pane. Empty panes accept tabs too.
+- **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
 
-Column sorting and the right-click menu in the file list are handled by the Windows Shell. The app doesn't embed the Windows 11 command bar or the modern tab UI of the built-in File Explorer.
+### Navigation and search
+- **Address-bar search**: Type part of a name to find it across all local drives instantly. [Details](#the-address-bar-is-a-search-box)
+- **Moving around**: Path input with autocomplete, back/forward/up, and the mouse side buttons.
+- **Browse for a folder**: The folder icon beside the address bar opens a folder picker.
+
+### Sidebar
+- **Quick access**: User folder, Desktop, Downloads, Documents, This PC and Recycle Bin. Clicking opens in the active pane (blue line at the top).
+- **Favorites**: Add with `Ctrl+D`, remove by right-click. File Explorer's pinned folders are imported on first launch; `Manage...` re-imports, removes all or restores. Explorer itself is not changed.
+- **Folder tree**: Follows the active pane. Click opens in the current pane, middle-click or Ctrl+click in a new tab, right-click in a new pane or File Explorer. `Ctrl+Shift+E` collapses it.
+- **Size**: Drag to set the sidebar width and the favorites/tree height; `Sidebar` hides it.
+
+### Files
+- **Native Windows actions**: Right-click menu, copy/cut/paste, rename, delete and drag and drop between panes are handled by Windows as usual.
+- **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer.
+- **Item count**: Each pane shows how many items it displays, updated immediately.
+
+### Appearance and settings
+- **Light/dark theme**: Toggle at the top right; the file lists follow too.
+- **Languages**: 한국어, English, 简体中文, 日本語.
+- **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
+- **Version and update notice**: The lower left shows the current version and, when a new release is out, a download link beside it. Nothing installs automatically.
+
+File lists are native Windows lists, so column sorting and right-click menus are handled by the Windows Shell. The Windows 11 Explorer command bar and tab UI are not embedded.
 
 ## Summoning the app
 
 | Situation | What happens |
 |---|---|
-| `Win+Alt+E` while the app is running | Brings Folder Splitter to the front from any app; press again to hide it to the notification area (it keeps running). If the notification-area option is off, it minimizes instead. |
-| Closing the window | By default the app keeps running among the hidden icons at the right of the taskbar, so `Win+Alt+E` keeps working; a one-time notice explains this. To quit on close, turn off `Settings` → `Keep running in the notification area when closed`. |
-| `Win+E` while the app isn't running | Starts Folder Splitter only if `Settings` → `Open Folder Splitter with Win+E instead of File Explorer` is on; otherwise File Explorer opens as usual. |
-| Launching it again while it runs | Brings the existing window forward instead of opening another, showing it again if it was hidden. |
+| `Win+Alt+E` | Brings the window to the front from any app; press again to hide it to the notification area. |
+| Closing the window (X) | The app keeps running among the hidden icons in the notification area. A one-time notice explains this. |
+| `Win+E` | Opens Folder Splitter only if turned on in `Settings`; otherwise File Explorer opens. |
+| Launching it again | Brings the existing window back instead of opening another. |
 
-Click the notification-area icon to reopen the window; right-click → `Exit` to quit completely. `Win+Alt+E` works while the app is running, and by default closing the window keeps it running, so the shortcut is always available. The Win+E setting only creates and removes its own entry in your user registry (HKCU) and needs no administrator rights.
+- **Quit completely**: Right-click the notification-area icon → `Exit`.
+- **In `Settings`**: Win+Alt+E, keeping running in the notification area, Win+E replacement and update checks.
+- With the notification-area option off, X quits and a second Win+Alt+E minimizes.
+- The Win+E setting only creates and removes one entry in your user registry (HKCU) and needs no administrator rights.
 
 ## Usage
 
-1. Click `4 panes` at the top.
-2. Type a folder path into each pane's address bar and press Enter.
-3. Add a tab with the `+` on the right side of the pane.
-4. Right-click a tab to duplicate it, move it to another pane, or close other tabs.
-5. Click the file list, then use the same shortcuts as in Windows.
-
-Shortcuts in the left sidebar open in the currently active pane. The active pane is marked with a blue line at the top. Right-click a favorite to remove it.
-
-Drag the right edge of Quick access to resize it. `Sidebar` hides or restores the entire section; its width and visibility are saved.
-
-Unused split panes remain blank. Enter an address or choose a shortcut to open a folder. Closing the last tab leaves the pane empty. Existing saved tabs are preserved.
-
-Click `Favorites` to collapse its list. Windows File Explorer pinned folders are imported by default on first launch. `Manage...` offers import, remove all, and a restore list. Removal only changes this app, not Explorer. The restore list includes removed entries and standard locations such as Recycle Bin and This PC.
+1. Choose the number of panes at the top.
+2. Type a path or part of a name into a pane's address bar and press Enter.
+3. Add tabs with `+` and drag them into the panes you want.
+4. Use the usual Windows shortcuts in the file list.
 
 ### Keyboard shortcuts
 
