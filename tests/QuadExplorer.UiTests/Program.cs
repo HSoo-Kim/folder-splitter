@@ -103,6 +103,11 @@ internal static class Program
                     var newView = Descendants(panes[0]).OfType<ShellViewHost>().Single(h => h.LocationPath == folders[1]);
                     await Navigate(newView, () => panes[0].SelectTab(1));
                     Check(panes[0].TabCount == 2 && panes[0].CurrentPath == folders[1], "new independent tab");
+                    var tabItems = Descendants(panes[0]).OfType<ToolStrip>().Single(s => s.AccessibleName == "Pane 1 tabs").Items;
+                    var plus = tabItems[^1];
+                    int gap = plus.Bounds.Left - tabItems[^2].Bounds.Right;
+                    Check(plus.AccessibleName == "Pane 1 new tab" && plus.Visible && gap is >= 10 and <= 20,
+                        "new tab button sits just after the last tab with a gap");
                     Check(HasNativeDropTarget(newView), "new shell tab registers a native drop target");
                     panes[0].CloseTab();
                     Check(panes[0].TabCount == 1 && panes[0].CurrentPath == folders[0], "close restores previous tab");

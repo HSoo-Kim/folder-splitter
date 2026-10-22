@@ -127,7 +127,7 @@ public sealed class ExplorerPane : UserControl
 
         var newTab = new ToolStripButton("+")
         {
-            Alignment = ToolStripItemAlignment.Right, AutoSize = false, Width = 30,
+            AutoSize = false, Width = 30, Margin = new Padding(12, 1, 0, 2), // gap keeps it away from the last tab's close button
             AccessibleName = $"Pane {number} new tab", ToolTipText = this.text.T("New tab (Ctrl+T)"),
             Overflow = ToolStripItemOverflow.Never
         };
