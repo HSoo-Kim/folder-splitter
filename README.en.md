@@ -65,7 +65,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size, theme, and folder tree visibility and height are saved locally.
 - **New version notice**: When a new release is out, `New version vX.Y.Z available · Download` appears next to the version at the lower left; click it to open the release page. Nothing is installed automatically.
 - **Open in external Explorer**: Open the same folder in Windows File Explorer from the pane options.
-- **Summon from anywhere**: `Win+Alt+E` brings Folder Splitter to the front from any app; press it again to minimize. Turn it off under `Settings` at the top right.
+- **Summon from anywhere**: `Win+Alt+E` brings Folder Splitter to the front from any app; press it again to hide it to the notification area. One key shows and hides it, keeping tabs and position. Turn it off under `Settings` at the top right.
 - **Open with Win+E (optional)**: `Settings` → `Open Folder Splitter with Win+E instead of File Explorer` makes Win+E launch Folder Splitter even when it isn't running, or bring the running window forward. It only changes your user registry; turning it off restores File Explorer.
 
 Column sorting and the right-click menu in the file list are handled by the Windows Shell. The app doesn't embed the Windows 11 command bar or the modern tab UI of the built-in File Explorer.
@@ -74,7 +74,7 @@ Column sorting and the right-click menu in the file list are handled by the Wind
 
 | Situation | What happens |
 |---|---|
-| `Win+Alt+E` while the app is running | Brings Folder Splitter to the front from any app; press again to minimize. |
+| `Win+Alt+E` while the app is running | Brings Folder Splitter to the front from any app; press again to hide it to the notification area (it keeps running). If the notification-area option is off, it minimizes instead. |
 | Closing the window | By default the app keeps running among the hidden icons at the right of the taskbar, so `Win+Alt+E` keeps working; a one-time notice explains this. To quit on close, turn off `Settings` → `Keep running in the notification area when closed`. |
 | `Win+E` while the app isn't running | Starts Folder Splitter only if `Settings` → `Open Folder Splitter with Win+E instead of File Explorer` is on; otherwise File Explorer opens as usual. |
 | Launching it again while it runs | Brings the existing window forward instead of opening another, showing it again if it was hidden. |
@@ -112,7 +112,7 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 | Mouse back/forward buttons | Back/forward in the pane under the pointer |
 | `Ctrl+D` | Add the current folder to favorites |
 | `Ctrl+Shift+E` | Collapse or expand the folder tree |
-| `Win+Alt+E` | Bring Folder Splitter to the front / again to minimize |
+| `Win+Alt+E` | Bring Folder Splitter to the front / again to hide it |
 | `F5` | Refresh |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy/cut/paste selected files |
 | `F2` | Rename selected file |

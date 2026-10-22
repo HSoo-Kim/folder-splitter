@@ -655,11 +655,23 @@ public sealed class MainForm : Form, IMessageFilter
         winEItem.Checked = winE.IsEnabled;
     }
 
-    // Win+Alt+E and a second launch both bring this window forward; the hotkey minimizes it when it is already in front.
+    // Win+Alt+E and a second launch both bring this window forward; the hotkey puts it away when it is already in front.
     internal void ToggleFromHotkey()
     {
-        if (Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) WindowState = FormWindowState.Minimized;
+        if (Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) DismissFromHotkey();
         else Summon();
+    }
+
+    // Hiding keeps the app (and the hotkey) running in the notification area; without it, minimize instead.
+    internal void DismissFromHotkey()
+    {
+        if (closeToTray)
+        {
+            saveTimer.Stop();
+            SaveSession();
+            Hide();
+        }
+        else WindowState = FormWindowState.Minimized;
     }
 
     internal void Summon()

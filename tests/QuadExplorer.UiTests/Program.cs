@@ -505,6 +505,20 @@ internal static class Program
                 await shown.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 form.VisibleChanged -= Shown;
                 Check(form.Visible, "Win+E or a second launch shows the hidden window again");
+                form.DismissFromHotkey();
+                Check(!form.Visible && !form.IsDisposed, "pressing Win+Alt+E again hides the window to the notification area");
+                var reshown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void Reshown(object? sender, EventArgs e) { if (form.Visible) reshown.TrySetResult(); }
+                form.VisibleChanged += Reshown;
+                PostMessage(form.Handle, 0x0312, 0x4653, 0); // WM_HOTKEY while hidden
+                await reshown.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                form.VisibleChanged -= Reshown;
+                Check(form.Visible, "Win+Alt+E shows the hidden window again");
+                form.SetCloseToTray(false);
+                form.DismissFromHotkey();
+                Check(form.Visible && form.WindowState == FormWindowState.Minimized,
+                    "without the notification area, pressing Win+Alt+E again minimizes instead");
+                form.SetCloseToTray(true);
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
             finally { form.ExitApplication(); }

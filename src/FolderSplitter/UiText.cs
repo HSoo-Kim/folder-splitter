@@ -182,7 +182,7 @@ public sealed class UiText
             Ctrl+L / Alt+D   주소창
             Alt+Left / Right / Up   뒤로, 앞으로, 상위 폴더
             마우스 뒤로 / 앞으로 버튼   포인터가 있는 영역에서 뒤로, 앞으로
-            Win+Alt+E   어디서나 Folder Splitter 불러오기 (다시 누르면 최소화)
+            Win+Alt+E   어디서나 Folder Splitter 불러오기 (다시 누르면 알림 영역으로 숨기기)
             F5   새로고침
             Ctrl+D   현재 폴더 고정
             폴더 선택 버튼은 폴더 선택 창을 엽니다.
@@ -218,7 +218,7 @@ public sealed class UiText
             Ctrl+L / Alt+D   地址栏
             Alt+Left / Right / Up   后退、前进、上级文件夹
             鼠标后退 / 前进键   在指针所在区域后退、前进
-            Win+Alt+E   随时调出 Folder Splitter（再按一次最小化）
+            Win+Alt+E   随时调出 Folder Splitter（再按一次隐藏到通知区域）
             F5   刷新
             Ctrl+D   固定当前文件夹
             选择文件夹按钮打开文件夹选择窗口。
@@ -254,7 +254,7 @@ public sealed class UiText
             Ctrl+L / Alt+D   アドレス バー
             Alt+Left / Right / Up   戻る、進む、上のフォルダー
             マウスの戻る / 進むボタン   ポインターがあるペインで戻る、進む
-            Win+Alt+E   どこからでも Folder Splitter を前面に（もう一度で最小化）
+            Win+Alt+E   どこからでも Folder Splitter を前面に（もう一度で通知領域に隠す）
             F5   最新の情報に更新
             Ctrl+D   現在のフォルダーをピン留め
             フォルダーを選択 ボタンでフォルダー選択ダイアログを開きます。
@@ -292,7 +292,7 @@ public sealed class UiText
         Ctrl+L / Alt+D   Address bar
         Alt+Left / Right / Up   Back, forward, parent
         Mouse back / forward buttons   Back, forward in the pane under the pointer
-        Win+Alt+E   Bring Folder Splitter to the front from anywhere (again: minimize)
+        Win+Alt+E   Bring Folder Splitter to the front from anywhere (again: hide to the notification area)
         F5   Refresh
         Ctrl+D   Pin current folder
         Choose folder opens the folder picker.
