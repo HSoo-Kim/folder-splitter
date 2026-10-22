@@ -68,6 +68,7 @@ public sealed class UiText
         ["Documents"] = ("문서", "文档", "ドキュメント"),
         ["This PC"] = ("내 PC", "此电脑", "PC"),
         ["Recycle Bin"] = ("휴지통", "回收站", "ごみ箱"),
+        ["Recent items"] = ("최근 항목", "最近使用的项目", "最近使った項目"),
         ["Favorites"] = ("즐겨찾기", "收藏夹", "お気に入り"),
         ["Collapse / expand favorites"] = ("즐겨찾기 목록 접기 / 펼치기", "折叠 / 展开收藏夹", "お気に入りの折りたたみ / 展開"),
         ["Drag to resize quick access; double-click to hide"] = ("좌우로 끌어 빠른 접근 폭 조절 — 두 번 클릭하면 숨기기", "拖动调整快速访问宽度；双击隐藏", "ドラッグでクイック アクセスの幅を調整、ダブルクリックで非表示"),

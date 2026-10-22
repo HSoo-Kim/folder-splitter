@@ -520,6 +520,7 @@ public sealed class MainForm : Form, IMessageFilter
         places.Items.Add(new Place(text.T("Desktop"), Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)));
         places.Items.Add(new Place(text.T("Downloads"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")));
         places.Items.Add(new Place(text.T("Documents"), Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)));
+        if (ShellNative.Recent.Length > 0) places.Items.Add(new Place(text.T("Recent items"), ShellNative.Recent));
         places.Items.Add(new Place(text.T("This PC"), ShellNative.ThisPc));
         places.Items.Add(new Place(text.T("Recycle Bin"), ShellNative.RecycleBin));
         favoritePlaces.Items.Clear();

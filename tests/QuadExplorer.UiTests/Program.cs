@@ -85,6 +85,15 @@ internal static class Program
                     Check(panes[0].CurrentPath == child, "mouse forward button navigates the pane forward");
                     await Navigate(mouseHost, () => PostMessage(mouseHost.Handle, 0x20C, 1 << 16, 0));
 
+                    var recentText = new UiText(form.Language).T("Recent items");
+                    Check(Descendants(form).OfType<ListBox>().Single(l => l.AccessibleName == "Quick access").Items
+                        .Cast<object>().Any(item => item.ToString() == recentText), "quick access lists recent items");
+                    string recent = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
+                    await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(recent));
+                    Check(ShellViewHost.IsRecent(panes[0].CurrentPath) && panes[0].ActiveView!.SortedNewestFirst,
+                        "recent items open sorted newest first");
+                    await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(folders[0]));
+
                     string selectedFile = Path.Combine(folders[0], "sample.txt");
                     await Navigate(panes[0].ActiveView!, () => panes[0].ActiveView!.NavigateAndSelect(selectedFile));
                     Check(SelectedPaths(panes[0].ActiveView!).SequenceEqual(new[] { selectedFile },

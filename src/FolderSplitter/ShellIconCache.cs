@@ -3,10 +3,10 @@ using System.Runtime.InteropServices;
 namespace QuadExplorer;
 
 // Images are borrowed by callers and remain owned here until Dispose. Classifying
-// paths, rather than caching each favorite, bounds this cache to seven Shell icons.
+// paths, rather than caching each favorite, bounds this cache to eight Shell icons.
 internal sealed class ShellIconCache : IDisposable
 {
-    private enum Kind { Folder, Home, Desktop, Downloads, Documents, ThisPc, RecycleBin }
+    private enum Kind { Folder, Home, Desktop, Downloads, Documents, Recent, ThisPc, RecycleBin }
     private readonly Dictionary<Kind, Image> images = [];
     private readonly string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile,
         Environment.SpecialFolderOption.DoNotVerify);
@@ -39,6 +39,7 @@ internal sealed class ShellIconCache : IDisposable
             return Kind.Downloads;
         if (EqualsPath(value, documents) || value.Equals("Documents", StringComparison.OrdinalIgnoreCase))
             return Kind.Documents;
+        if (ShellViewHost.IsRecent(value)) return Kind.Recent;
         if (value.Equals("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}", StringComparison.OrdinalIgnoreCase)
             || value.Equals("ThisPc", StringComparison.OrdinalIgnoreCase))
             return Kind.ThisPc;
@@ -61,6 +62,7 @@ internal sealed class ShellIconCache : IDisposable
             Kind.Desktop => 183,
             Kind.Downloads => 184,
             Kind.Documents => 112,
+            Kind.Recent => 117,
             _ => 0
         };
         nint handle = 0;

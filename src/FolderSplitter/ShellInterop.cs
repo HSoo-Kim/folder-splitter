@@ -8,6 +8,8 @@ internal static class ShellNative
     public static readonly Guid BrowserClass = new("71F96385-DDD6-48D3-A0C1-AE06E8B055FB");
     public const string ThisPc = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
     public const string RecycleBin = "::{645FF040-5081-101B-9F08-00AA002F954E}";
+    public static readonly string Recent = Environment.GetFolderPath(Environment.SpecialFolder.Recent,
+        Environment.SpecialFolderOption.DoNotVerify);
     public const uint SvgioAllView = 0x2;
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
@@ -148,4 +150,32 @@ public interface IFolderView
     [PreserveSig] int GetAutoArrange();
     [PreserveSig] int SelectItem(int item, uint flags);
     [PreserveSig] int SelectAndPositionItems(uint count, nint pidls, nint positions, uint flags);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct PropertyKey
+{
+    public Guid FormatId;
+    public uint PropertyId;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct SortColumn
+{
+    public PropertyKey Property;
+    public int Direction;
+}
+
+// Only the sort methods are called; the other slots keep the vtable order of IFolderView and IFolderView2.
+[ComImport, Guid("1AF3A467-214F-4298-908E-06B03E0B39F9"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IFolderView2
+{
+    void GetCurrentViewMode(); void SetCurrentViewMode(); void GetFolder(); void Item(); void ItemCount();
+    void Items(); void GetSelectionMarkedItem(); void GetFocusedItem(); void GetItemPosition(); void GetSpacing();
+    void GetDefaultSpacing(); void GetAutoArrange(); void SelectItem(); void SelectAndPositionItems();
+    void SetGroupBy(); void GetGroupBy(); void SetViewProperty(); void GetViewProperty(); void SetTileViewProperties();
+    void SetExtendedTileViewProperties(); void SetText(); void SetCurrentFolderFlags(); void GetCurrentFolderFlags();
+    [PreserveSig] int GetSortColumnCount(out int count);
+    [PreserveSig] int SetSortColumns([In, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] SortColumn[] columns, int count);
+    [PreserveSig] int GetSortColumns([Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] SortColumn[] columns, int count);
 }

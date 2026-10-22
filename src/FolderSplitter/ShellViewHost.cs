@@ -315,6 +315,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         DisplayName = ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath, text);
         requestedLocation = LocationPath;
         navigationReady = true;
+        if (IsRecent(LocationPath)) SortNewestFirst();
         UpdateItemCountMonitoring();
         RefreshItemCount();
         error.Visible = false;
@@ -363,10 +364,34 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         return 0;
     }
 
+    internal static bool IsRecent(string path) => ShellNative.Recent.Length > 0
+        && path.TrimEnd('\\', '/').Equals(ShellNative.Recent.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+
+    private static readonly PropertyKey DateModified = new() { FormatId = new("B725F130-47EF-101A-A5F1-02608C9EEBAC"), PropertyId = 14 };
+
+    // Recent items are shortcuts whose modified time is when the item was last opened.
+    private void SortNewestFirst()
+    {
+        if (view is IFolderView2 folderView)
+            folderView.SetSortColumns([new SortColumn { Property = DateModified, Direction = -1 }], 1);
+    }
+
+    internal bool SortedNewestFirst
+    {
+        get
+        {
+            if (view is not IFolderView2 folderView || folderView.GetSortColumnCount(out int count) < 0 || count < 1) return false;
+            var columns = new SortColumn[count];
+            return folderView.GetSortColumns(columns, count) >= 0 && columns[0].Property.FormatId == DateModified.FormatId
+                && columns[0].Property.PropertyId == DateModified.PropertyId && columns[0].Direction == -1;
+        }
+    }
+
     internal static string TitleFor(string path, UiText? text = null)
     {
         if (path == ShellNative.ThisPc) return text?.T("This PC") ?? "This PC";
         if (path == ShellNative.RecycleBin) return text?.T("Recycle Bin") ?? "Recycle Bin";
+        if (IsRecent(path)) return text?.T("Recent items") ?? "Recent items";
         string trimmed = path.TrimEnd('\\', '/');
         string name = Path.GetFileName(trimmed);
         return string.IsNullOrEmpty(name) ? path : name;
