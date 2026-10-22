@@ -12,7 +12,7 @@ The live [official downloads page](https://www.voidtools.com/downloads/) reporte
 | Stable x64 control, not running user instance | `C:/Program Files/Everything/Everything.exe`, 1.4.1.1032 | `f191f756996a14a11e5445fa7103d302efd510cf2fbf920e6c0c8ed51d512e36` |
 | Running stable x86, identity only | `C:/Program Files (x86)/Everything/Everything.exe`, 1.4.1.1032 | `d38f48dd60de6b10f9a132718ccbfddc171a7a7d1cc88ef2e4ce73c0c43dcd5f` |
 
-Beta archive: [official portable download](https://www.voidtools.com/Everything-1.5.0.1424b.x64.zip). Archive SHA256 `f8e5d907305fc1aff288ad4d722548f36a1ef8c3389933b1fbc935dba7083084` matched the [publisher checksum file](https://www.voidtools.com/Everything-1.5.0.1424b.sha256). Full URLs, roles, sizes, versions and prerequisite checksums are in `rea-targets.json`.
+Beta archive: [official portable download](https://www.voidtools.com/Everything-1.5.0.1424b.x64.zip). Archive SHA256 `f8e5d907305fc1aff288ad4d722548f36a1ef8c3389933b1fbc935dba7083084` matched the [publisher checksum file](https://www.voidtools.com/Everything-1.5.0.1424b.sha256). Full URLs, roles, sizes, versions and prerequisite checksums are in the unpublished raw outputs described below.
 
 Portable Ghidra 12.1.4 and full Temurin JDK 21.0.12.1+1 were downloaded into an owned `fs.mkdtemp` root; Node 24.14.0 was already present. REA was installed with `npm install --prefix <OWNED_ROOT>/rea rea-agents@6.7.0`, not globally. Its actual shipped CLI help and live MCP input schemas determined invocation syntax.
 
@@ -36,7 +36,7 @@ REA reported `import_mode: ephemeral-source-immutable`, `analyzer_preset: ghidra
 
 ## Proven native indexing and update mechanisms
 
-All addresses below belong to the beta hash above. `FUN_*` names are Ghidra names, not recovered source symbols. `rea-functions.json` preserves actual complete pseudocode for six focused dossiers, procedure body ranges and direct callers/callees. `rea-calls.json` preserves exact reference queries and results.
+All addresses below belong to the beta hash above. `FUN_*` names are Ghidra names, not recovered source symbols. The unpublished raw outputs preserve the six focused decompilations, procedure body ranges, direct callers/callees and exact reference queries.
 
 1. **Real filesystem controls pass through a common wrapper.** `analyze_function({"procedure":"0x1401c1470"})` produced a 232-byte function whose pseudocode calls imported `KERNEL32.DLL::DeviceIoControl` (`EXTERNAL:0x6c`). It checks input/output lengths against `0x100000000`, forwards the control code and buffers, reports `GetLastError`, and copies the returned byte count. `procedure_callers` found 18 direct callers of this wrapper.
 
@@ -77,7 +77,7 @@ The same function also writes diacritic, prefix, suffix, punctuation and whitesp
 ## Precise limits and failures
 
 - The NTFS file-record diagnostic at `0x1404355a0` has code xref `0x1401a7fd9`. Its containing candidate `0x1401a6f70` was actually analyzed, but the complete MCP dossier exceeded the 10,484,736-byte response budget; REA reported at least 10,538,891 bytes. This was a transport resource constraint, not absence of decompilation.
-- REA retained Evidence `ev_62d46c324e8dcafbbcede9eaacdfaf2b206801b533dc02ad226935edba73f0ac` and supplied an `inspect_analysis_view` continuation. The invoked first page returned only 64 UTF-16 code units of 26,027. It does not substantiate the file-record algorithm. Exact error and continuation are retained in `rea-inspect.json`; no claim is based on unread pages.
+- REA retained Evidence `ev_62d46c324e8dcafbbcede9eaacdfaf2b206801b533dc02ad226935edba73f0ac` and supplied an `inspect_analysis_view` continuation. The invoked first page returned only 64 UTF-16 code units of 26,027. It does not substantiate the file-record algorithm. The exact error and continuation are retained in the unpublished raw outputs; no claim is based on unread pages.
 - The `db_journal_file_read` and automatic-path-setting seed strings had empty provider xrefs. This does not establish unused or absent behavior.
 - The binary references `Everything.pdb`; Ghidra reported PDB load state unknown. Original types/names may be missing. Decompiled signatures, locals and pointer offsets are observations, not source declarations.
 - Static direct calls can omit unresolved indirect flow. High-pcode/value-flow output may be truncated; this report uses preserved pseudocode and direct reference evidence, not exhaustive value-flow claims.
@@ -86,13 +86,8 @@ The same function also writes diacritic, prefix, suffix, punctuation and whitesp
 
 ## Evidence, invocations and teardown
 
-- `rea-targets.json`: versions, roles, URLs, SHA256 and prerequisite receipt.
-- `rea-inspect.json`: selected real CLI inspection results, imports, exact large-response error and partial-view coverage.
-- `rea-functions.json`: six real focused decompilations, body ranges and call edges.
-- `rea-calls.json`: exact MCP operation parameters and normalized xref/caller/containment results.
-- `rea-invocations.txt`: installation, environment, CLI and MCP protocol invocations, including setup corrections.
-- `rea-teardown.json`: owned resource inventory, process readback, root removal and installed-binary hash readback.
+The raw REA outputs (target receipts, inspection results, six focused decompilations, call/xref results, invocations and teardown readback) are kept outside this repository. They contain decompiled output of Everything, a proprietary program, so only this summary is published.
 
 JSON artifacts are explicitly selected/sanitized projections, not importable canonical REA Evidence envelopes. Source Evidence IDs identify the original responses. Duplicate transport text, full assembly/high-pcode, downloaded binaries, installers and broad string inventories were not retained.
 
-All package, temp, Java home, appdata and compilation caches were directed into the newly owned root. Finalization observed no matching owned process. The MCP terminal was no longer registered, so there is no explicit `close_binary` response receipt; the remaining owned ephemeral-project directory was removed with the rest of the root. `rea-teardown.json` records the actual final readback rather than assuming provider cleanup succeeded. Installed stable binaries were not updated or modified, because their version already matched latest stable.
+All package, temp, Java home, appdata and compilation caches were directed into the newly owned root. Finalization observed no matching owned process. The MCP terminal was no longer registered, so there is no explicit `close_binary` response receipt; the remaining owned ephemeral-project directory was removed with the rest of the root. The unpublished teardown readback records the actual final state rather than assuming provider cleanup succeeded. Installed stable binaries were not updated or modified, because their version already matched latest stable.
