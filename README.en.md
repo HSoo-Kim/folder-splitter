@@ -8,6 +8,25 @@ A **Windows file manager that shows up to 4 folders at once in a single window, 
 
 It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modify or replace the existing `explorer.exe` and runs as a separate app.
 
+## Fast independent search
+
+**Search p95: 62 ms across about 3.72 million paths.** Find candidates by file/folder name or partial path without installing Everything. Choosing a file opens its parent with the file selected.
+
+| Response time — lower is faster | Independent engine | Reference Everything adapter |
+|---|---:|---:|
+| Typical response · median (p50) | **21.1 ms** | 48.4 ms |
+| 95% completion threshold (p95) | **62.1 ms** | 164.6 ms |
+| Korean partial path (p95) | **40.3 ms** | 141.5 ms |
+| Short terms with many matches (p95) | 68.8 ms | **7.1 ms** |
+
+Measured on October 21, 2026: about 3.72 million common candidates, identical ranking and a 100-result limit, 37 queries and 370 measured calls per engine. Results depend on the query; this is not a comparison of Everything's intrinsic matcher alone. Initial indexing took about **50 seconds**, separate from warmed search latency above. [Method and full results](docs/search-evidence/benchmark.md)
+
+## Introduction video
+
+[![Folder Splitter introduction video, 46 seconds: four panes, quick access icons, folder tree, item counts, light and dark themes, partial-path search](docs/media/folder-splitter-intro-poster.png)](docs/media/folder-splitter-intro.mp4)
+
+46 seconds, no audio. Every screen is the real app showing a synthetic sample folder (`C:\Folder Splitter Demo`); captions are in Korean and English. Click the image to open the [MP4 video](docs/media/folder-splitter-intro.mp4).
+
 ## Screenshot
 
 ![Folder Splitter showing four panes with independent tabs](docs/images/folder-splitter-overview.png)
@@ -33,10 +52,13 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Separate navigation**: Address input, path autocomplete, back/forward/up to parent folder.
 - **Partial-path candidates**: Type at least two characters, such as `공유용/월별연구계획_20261019`, in an address bar. Current folder, open tabs, favorites and recently closed tabs rank first. Choose with Up/Down and Enter or click; choosing a file opens its parent with that file selected. The independent index needs no Everything installation.
 - **Resizable splits**: Drag the dividers, or use `Equal size` to even out the layout.
-- **Quick access and favorites**: User folder, Desktop, Downloads, Documents, This PC, Recycle Bin. You can pin any folder you like.
+- **Quick access and favorites**: User folder, Desktop, Downloads, Documents, This PC, Recycle Bin and your pinned folders, each with its Windows icon.
+- **Folder tree**: The tree at the lower left follows the active pane's folder. Click to open in the current pane; middle-click or Ctrl+click to open a new tab. Right-click to open in a new pane or in Windows File Explorer. Hide it with the `Folder tree` button or `Ctrl+Shift+E`.
+- **Light / dark theme**: Switch with the `Light mode`/`Dark mode` button in the top bar; the choice is saved. It covers the sidebar, tabs, address bars, buttons, menus and folder tree. Each pane's file list is drawn by the Windows Shell, so it may stay light depending on your Windows version and settings.
+- **Item count**: Each pane's status line shows how many items its file list displays and updates when files are added or deleted.
 - **Native Windows file operations**: Right-click menu in the file list, copy/cut/paste, rename, delete, and drag and drop between panes.
 - **View options**: Details, List, or Icons view from each pane's options menu.
-- **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size are saved locally.
+- **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size, theme and folder tree visibility are saved locally.
 - **Open in external Explorer**: Open the same folder in Windows File Explorer from the pane options.
 
 Column sorting and the right-click menu in the file list are handled by the Windows Shell. The app doesn't embed the Windows 11 command bar or the modern tab UI of the built-in File Explorer.
@@ -70,6 +92,7 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 | `Ctrl+L`, `Alt+D` | Select the address bar |
 | `Alt+Left`, `Alt+Right`, `Alt+Up` | Back/forward/parent folder |
 | `Ctrl+D` | Add the current folder to favorites |
+| `Ctrl+Shift+E` | Show or hide the folder tree |
 | `F5` | Refresh |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy/cut/paste selected files |
 | `F2` | Rename selected file |
@@ -88,7 +111,7 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 - OneDrive/Dropbox status indicators, third-party Shell extensions, and network shares depend on the provider's installation state and permissions.
 - Ready local fixed drives are indexed in the background by file/folder name and path, not file contents. The first run shows index preparation; later runs use the saved snapshot while reconciling changes.
 - Cache: `%LOCALAPPDATA%\FolderSplitter\Search\paths.v1.index`. An explicit `--session` uses an adjacent `.search.index` file. Inaccessible paths and junction/symlink contents are excluded. Network and removable drives retain direct-path navigation.
-- The current version uses a light theme. Replacing File Explorer and importing its existing tabs aren't included. See the [benchmark and limitations](docs/search-evidence/benchmark.md).
+- Replacing File Explorer and importing its existing tabs aren't included. See the [benchmark and limitations](docs/search-evidence/benchmark.md).
 
 You can point to a different settings path for a separate work session or for testing.
 
@@ -108,7 +131,7 @@ Requirements: Windows 11 x64, .NET 10 SDK.
 .\build.ps1 -Publish        # Produce runtime-bundled executable and ZIP
 ```
 
-Run the UI integration tests on a signed-in, interactive Windows desktop. The tests only use temporary folders and wait for navigation-complete events. They don't rely on fixed time delays.
+The UI integration tests run on a separate private Windows desktop created by `tools/PrivateDesktopQa`, so they never open windows on the screen you're using or touch your mouse and keyboard. A signed-in Windows session is required. The tests only use temporary folders and wait for navigation-complete events. They don't rely on fixed time delays.
 
 Output:
 
@@ -126,14 +149,18 @@ src/FolderSplitter/
   ShellViewHost.cs      Native Shell view lifetime management
   ShellInterop.cs       Windows SDK COM/PInvoke declarations
   SessionState.cs       Settings validation and atomic saving
-  Theme.cs              Light theme and shared controls
+  Theme.cs              Light/dark themes and rounded shared controls
+  FolderTree.cs         Left folder tree
+  ShellIconCache.cs     Windows icons for quick access
   Assets/               Source PNG for the app icon and multi-resolution ICO
 tests/
   QuadExplorer.Tests/   Settings model regression tests
   QuadExplorer.UiTests/ Integration tests with real Shell views
+tools/
+  PrivateDesktopQa/     Private-desktop UI test launcher
 ```
 
-The app code has no external NuGet package dependencies. It uses the Windows Shell and .NET Windows Forms.
+The app code has no external NuGet package dependencies (only the UI tests use Lib.Harmony). It uses the Windows Shell and .NET Windows Forms.
 
 When you replace the source icon, regenerate the Windows ICO with the command below.
 
