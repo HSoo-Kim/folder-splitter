@@ -94,8 +94,20 @@ internal static class Program
                         "recent items open sorted newest first");
                     await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(folders[0]));
 
+                    var byType = new PropertyKey { FormatId = new("B725F130-47EF-101A-A5F1-02608C9EEBAC"), PropertyId = 4 };
+                    bool GroupedByType(ShellViewHost host) => host.GroupKey is { } key && key.FormatId == byType.FormatId && key.PropertyId == byType.PropertyId;
+                    panes[0].ActiveView!.GroupBy(byType);
+                    Check(GroupedByType(panes[0].ActiveView!), "folder can be grouped by type");
+                    await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(child));
+                    Check(!GroupedByType(panes[0].ActiveView!), "another folder keeps its own grouping");
+                    await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(folders[0]));
+                    Check(GroupedByType(panes[0].ActiveView!), "a folder's grouping is remembered after leaving it");
+                    panes[0].ActiveView!.GroupBy(default);
+
                     string selectedFile = Path.Combine(folders[0], "sample.txt");
+                    var selectionSettled = SelectionSignal(panes[0].ActiveView!);
                     await Navigate(panes[0].ActiveView!, () => panes[0].ActiveView!.NavigateAndSelect(selectedFile));
+                    await selectionSettled.WaitAsync(TimeSpan.FromSeconds(10));
                     Check(SelectedPaths(panes[0].ActiveView!).SequenceEqual(new[] { selectedFile },
                         StringComparer.OrdinalIgnoreCase), "file candidate selects its actual native shell item");
 
@@ -1277,6 +1289,15 @@ internal static class Program
         };
         host.Navigated += completed;
         host.NavigationError += failed;
+        return source.Task;
+    }
+
+    private static Task SelectionSignal(ShellViewHost host)
+    {
+        var source = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler? settled = null;
+        settled = (_, _) => { host.SelectionSettled -= settled; source.TrySetResult(); };
+        host.SelectionSettled += settled;
         return source.Task;
     }
 

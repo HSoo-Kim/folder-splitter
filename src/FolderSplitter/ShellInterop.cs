@@ -173,7 +173,9 @@ public interface IFolderView2
     void GetCurrentViewMode(); void SetCurrentViewMode(); void GetFolder(); void Item(); void ItemCount();
     void Items(); void GetSelectionMarkedItem(); void GetFocusedItem(); void GetItemPosition(); void GetSpacing();
     void GetDefaultSpacing(); void GetAutoArrange(); void SelectItem(); void SelectAndPositionItems();
-    void SetGroupBy(); void GetGroupBy(); void SetViewProperty(); void GetViewProperty(); void SetTileViewProperties();
+    [PreserveSig] int SetGroupBy(ref PropertyKey key, [MarshalAs(UnmanagedType.Bool)] bool ascending);
+    [PreserveSig] int GetGroupBy(out PropertyKey key, [MarshalAs(UnmanagedType.Bool)] out bool ascending);
+    void SetViewProperty(); void GetViewProperty(); void SetTileViewProperties();
     void SetExtendedTileViewProperties(); void SetText(); void SetCurrentFolderFlags(); void GetCurrentFolderFlags();
     [PreserveSig] int GetSortColumnCount(out int count);
     [PreserveSig] int SetSortColumns([In, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] SortColumn[] columns, int count);

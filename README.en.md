@@ -67,7 +67,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 
 ### Files
 - **Native Windows actions**: Right-click menu, copy/cut/paste, rename, delete and drag and drop between panes are handled by Windows as usual.
-- **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer.
+- **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer. Grouping, sort order and view mode are remembered per folder, as in File Explorer.
 - **Item count**: Each pane shows how many items it displays, updated immediately.
 
 ### Appearance and settings

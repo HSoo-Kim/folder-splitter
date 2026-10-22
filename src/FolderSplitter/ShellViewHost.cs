@@ -19,6 +19,11 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private bool enumerationReady;
     private bool navigationReady;
     private readonly System.Windows.Forms.Timer itemCountTimer = new() { Interval = 250 };
+    private readonly System.Windows.Forms.Timer selectionTimer = new() { Interval = 60 };
+    private string? settlingSelection;
+    private int settleTicks;
+    private int heldTicks;
+    internal event EventHandler? SelectionSettled;
     private static readonly Guid FolderViewEvents = new("62112AA2-EBE4-11CF-A5FB-0020AFE7292D");
 
     public string LocationPath { get; private set; }
@@ -34,6 +39,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     {
         enumerationDone = OnEnumerationDone;
         itemCountTimer.Tick += OnItemCountTick;
+        selectionTimer.Tick += OnSelectionTick;
         this.text = text ?? new UiText();
         LocationPath = requestedLocation = location;
         DisplayName = TitleFor(location, this.text);
@@ -62,6 +68,8 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             var rect = new NativeRect(ClientSize.Width, ClientSize.Height);
             var settings = new FolderSettings { ViewMode = 4, Flags = 0x02000000 }; // Details; full row select.
             browser.Initialize(Handle, ref rect, ref settings);
+            // Like File Explorer, remember each folder's grouping, sort and view mode under this app's name.
+            browser.SetPropertyBag("FolderSplitter");
             initialized = true;
             browser.Advise(this, out cookie);
             BrowseToFolder(requestedLocation);
@@ -240,6 +248,9 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             itemCountTimer.Stop();
             itemCountTimer.Tick -= OnItemCountTick;
             itemCountTimer.Dispose();
+            selectionTimer.Stop();
+            selectionTimer.Tick -= OnSelectionTick;
+            selectionTimer.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -282,6 +293,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public int OnNavigationPending(nint pidlFolder)
     {
+        EndSettling();
         navigationReady = false;
         itemCountTimer.Stop();
         SetItemCount(null);
@@ -344,6 +356,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             {
                 Marshal.ThrowExceptionForHR(ShellNative.SHParseDisplayName(selected, 0, out item, 0, out _));
                 Marshal.ThrowExceptionForHR(view.SelectItem(ShellNative.ILFindLastID(item), 0x1D));
+                BeginSettling(selected);
             }
             catch (COMException ex)
             {
@@ -364,6 +377,43 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         return 0;
     }
 
+    // Restoring a folder's saved grouping can rebuild the list after enumeration and drop the
+    // selection, so a requested file is re-selected until it has stayed selected for a few ticks.
+    private void BeginSettling(string path)
+    {
+        settlingSelection = path;
+        settleTicks = 0;
+        heldTicks = 0;
+        selectionTimer.Start();
+    }
+
+    private void OnSelectionTick(object? sender, EventArgs e)
+    {
+        if (settlingSelection is null || view is not IFolderView folderView) { EndSettling(); return; }
+        settleTicks++;
+        if (folderView.ItemCount(1, out int selectedCount) >= 0 && selectedCount > 0) heldTicks++; // SVGIO_SELECTION
+        else
+        {
+            heldTicks = 0;
+            nint item = 0;
+            try
+            {
+                if (ShellNative.SHParseDisplayName(settlingSelection, 0, out item, 0, out _) >= 0)
+                    view.SelectItem(ShellNative.ILFindLastID(item), 0x1D);
+            }
+            finally { if (item != 0) Marshal.FreeCoTaskMem(item); }
+        }
+        if (heldTicks >= 3 || settleTicks >= 40) EndSettling();
+    }
+
+    private void EndSettling()
+    {
+        selectionTimer.Stop();
+        if (settlingSelection is null) return;
+        settlingSelection = null;
+        SelectionSettled?.Invoke(this, EventArgs.Empty);
+    }
+
     internal static bool IsRecent(string path) => ShellNative.Recent.Length > 0
         && path.TrimEnd('\\', '/').Equals(ShellNative.Recent.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
 
@@ -375,6 +425,14 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         if (view is IFolderView2 folderView)
             folderView.SetSortColumns([new SortColumn { Property = DateModified, Direction = -1 }], 1);
     }
+
+    internal void GroupBy(PropertyKey key)
+    {
+        if (view is IFolderView2 folderView) folderView.SetGroupBy(ref key, true);
+    }
+
+    internal PropertyKey? GroupKey =>
+        view is IFolderView2 folderView && folderView.GetGroupBy(out var key, out _) >= 0 ? key : null;
 
     internal bool SortedNewestFirst
     {
