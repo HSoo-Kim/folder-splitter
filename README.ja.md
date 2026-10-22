@@ -95,6 +95,7 @@ Windows 11 x64 用です。リリースの `folder-splitter-win-x64.zip` を展�
 | `Ctrl+Tab`、`Ctrl+Shift+Tab` | 次・前のタブ |
 | `Ctrl+L`、`Alt+D` | アドレスバーを選択 |
 | `Alt+Left`、`Alt+Right`、`Alt+Up` | 戻る・進む・親フォルダー |
+| マウスの戻る/進むボタン | ポインターがあるペインで戻る/進む |
 | `Ctrl+D` | 現在のフォルダーをお気に入りに追加 |
 | `Ctrl+Shift+E` | フォルダーツリーの折りたたみ/展開 |
 | `F5` | 更新 |

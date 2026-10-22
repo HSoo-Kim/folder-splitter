@@ -76,6 +76,14 @@ internal static class Program
                     Check(panes[0].CurrentPath == child, "native forward history");
                     await Navigate(panes[0].ActiveView!, () => panes[0].ActiveView!.Travel(0x2000));
                     Check(panes[0].CurrentPath == folders[0], "native parent navigation");
+                    panes[0].FocusFiles();
+                    await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(child));
+                    var mouseHost = panes[0].ActiveView!;
+                    await Navigate(mouseHost, () => PostMessage(mouseHost.Handle, 0x20C, 1 << 16, 0));
+                    Check(panes[0].CurrentPath == folders[0], "mouse back button navigates the pane back");
+                    await Navigate(mouseHost, () => PostMessage(mouseHost.Handle, 0x20C, 2 << 16, 0));
+                    Check(panes[0].CurrentPath == child, "mouse forward button navigates the pane forward");
+                    await Navigate(mouseHost, () => PostMessage(mouseHost.Handle, 0x20C, 1 << 16, 0));
 
                     string selectedFile = Path.Combine(folders[0], "sample.txt");
                     await Navigate(panes[0].ActiveView!, () => panes[0].ActiveView!.NavigateAndSelect(selectedFile));

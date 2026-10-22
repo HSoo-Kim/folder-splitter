@@ -948,11 +948,24 @@ public sealed class MainForm : Form, IMessageFilter
     public bool PreFilterMessage(ref Message m)
     {
         if (!ContainsFocus || tabDragging) return false;
-        if (m.Msg == 0x201 || m.Msg == 0x204 || m.Msg == 0x100 || m.Msg == 0x104)
+        if (m.Msg == 0x201 || m.Msg == 0x204 || m.Msg == 0x20B || m.Msg == 0x100 || m.Msg == 0x104)
         {
             foreach (int i in visiblePanes)
                 if (panes[i].IsHandleCreated && (m.HWnd == panes[i].Handle || ShellNative.IsChild(panes[i].Handle, m.HWnd)))
                 { if (i != activePane) ActivatePane(i); break; }
+        }
+        // Mouse back/forward (X1/X2) buttons travel the history of the pane under the pointer.
+        // Down is swallowed too, so the Shell view does not also act on the click.
+        if (m.Msg is 0x20B or 0x20C)
+        {
+            nint window = m.HWnd;
+            int target = Array.FindIndex(visiblePanes, i => panes[i].IsHandleCreated &&
+                (window == panes[i].Handle || ShellNative.IsChild(panes[i].Handle, window)));
+            if (target < 0) return false;
+            int button = (int)(((long)m.WParam >> 16) & 0xFFFF);
+            if (m.Msg == 0x20C && button is 1 or 2)
+                panes[visiblePanes[target]].ActiveView?.Travel(button == 1 ? 0x4000u : 0x8000u);
+            return button is 1 or 2;
         }
         if (m.Msg is 0x100 or 0x104)
         {

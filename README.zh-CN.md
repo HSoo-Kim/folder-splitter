@@ -95,6 +95,7 @@
 | `Ctrl+Tab`、`Ctrl+Shift+Tab` | 下一个/上一个标签页 |
 | `Ctrl+L`、`Alt+D` | 选中地址栏 |
 | `Alt+Left`、`Alt+Right`、`Alt+Up` | 后退/前进/上级文件夹 |
+| 鼠标后退/前进键 | 在指针所在区域后退/前进 |
 | `Ctrl+D` | 收藏当前文件夹 |
 | `Ctrl+Shift+E` | 折叠/展开文件夹树 |
 | `F5` | 刷新 |

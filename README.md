@@ -95,6 +95,7 @@ Windows 11 x64용입니다. 릴리스의 `folder-splitter-win-x64.zip`을 풀고
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | 다음/이전 탭 |
 | `Ctrl+L`, `Alt+D` | 주소창 선택 |
 | `Alt+Left`, `Alt+Right`, `Alt+Up` | 뒤로/앞으로/상위 폴더 |
+| 마우스 뒤로/앞으로 버튼 | 포인터가 있는 영역에서 뒤로/앞으로 |
 | `Ctrl+D` | 현재 폴더 즐겨찾기 |
 | `Ctrl+Shift+E` | 폴더 트리 접기/펼치기 |
 | `F5` | 새로고침 |

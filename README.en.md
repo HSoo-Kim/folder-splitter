@@ -95,6 +95,7 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next/previous tab |
 | `Ctrl+L`, `Alt+D` | Select the address bar |
 | `Alt+Left`, `Alt+Right`, `Alt+Up` | Back/forward/parent folder |
+| Mouse back/forward buttons | Back/forward in the pane under the pointer |
 | `Ctrl+D` | Add the current folder to favorites |
 | `Ctrl+Shift+E` | Collapse or expand the folder tree |
 | `F5` | Refresh |
