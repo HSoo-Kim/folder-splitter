@@ -21,6 +21,12 @@ public sealed class UiText
         ["Show / hide folder tree (Ctrl+Shift+E)"] = ("폴더 트리 표시 / 숨기기 (Ctrl+Shift+E)", "显示 / 隐藏文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを表示 / 非表示 (Ctrl+Shift+E)"),
         ["Collapse / expand folder tree (Ctrl+Shift+E)"] = ("폴더 트리 접기 / 펼치기 (Ctrl+Shift+E)", "折叠 / 展开文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを折りたたむ / 展開 (Ctrl+Shift+E)"),
         ["Drag to resize favorites and the folder tree"] = ("드래그해 즐겨찾기와 폴더 트리 높이 조절", "拖动以调整收藏夹和文件夹树的高度", "ドラッグしてお気に入りとフォルダーツリーの高さを調整"),
+        ["Settings"] = ("설정", "设置", "設定"),
+        ["Shortcuts and Windows integration"] = ("단축키와 Windows 연동", "快捷键与 Windows 集成", "ショートカットと Windows 連携"),
+        ["Win+Alt+E brings Folder Splitter to the front"] = ("Win+Alt+E로 Folder Splitter 불러오기", "按 Win+Alt+E 将 Folder Splitter 调到前台", "Win+Alt+E で Folder Splitter を前面に表示"),
+        ["Open Folder Splitter with Win+E instead of File Explorer"] = ("Win+E로 파일 탐색기 대신 Folder Splitter 열기", "按 Win+E 时打开 Folder Splitter 而不是文件资源管理器", "Win+E でエクスプローラーの代わりに Folder Splitter を開く"),
+        ["Win+Alt+E is already used by another program."] = ("Win+Alt+E를 다른 프로그램이 이미 쓰고 있습니다.", "Win+Alt+E 已被其他程序占用。", "Win+Alt+E は別のプログラムが使用しています。"),
+        ["Could not change the Win+E setting: {0}"] = ("Win+E 설정을 바꾸지 못했습니다: {0}", "无法更改 Win+E 设置：{0}", "Win+E の設定を変更できませんでした: {0}"),
         ["Open in current pane"] = ("현재 영역에서 열기", "在当前窗格中打开", "現在のペインで開く"),
         ["Open in new pane"] = ("새 영역에서 열기", "在新窗格中打开", "新しいペインで開く"),
         ["Loading folders..."] = ("하위 폴더 읽는 중...", "正在读取子文件夹...", "サブフォルダーを読み込み中..."),
@@ -138,7 +144,6 @@ public sealed class UiText
         ["Use the address bar to choose another folder, or retry with Go."] = ("주소창에서 다른 폴더를 선택하거나 이동 버튼으로 다시 시도하세요.", "请使用地址栏选择其他文件夹，或点击前往按钮重试。", "アドレス バーで別のフォルダーを選択するか、移動ボタンで再試行してください。"),
         ["Folder unavailable: {0}"] = ("폴더를 사용할 수 없습니다: {0}", "文件夹不可用：{0}", "フォルダーを使用できません：{0}"),
         ["Not a folder or recognized argument:\n{0}"] = ("폴더 또는 지원하는 인수가 아닙니다:\n{0}", "不是文件夹或有效参数：\n{0}", "フォルダーまたは認識できる引数ではありません：\n{0}"),
-        ["Folder Splitter is already running. Use its taskbar button to switch to it."] = ("Folder Splitter가 이미 실행 중입니다. 작업 표시줄 버튼으로 전환하세요.", "Folder Splitter 已在运行。请通过任务栏按钮切换到该窗口。", "Folder Splitter はすでに実行中です。タスク バーのボタンから切り替えてください。"),
         ["Folder Splitter shortcuts"] = ("Folder Splitter 단축키", "Folder Splitter 快捷键", "Folder Splitter のショートカット"),
         ["Windows Explorer favorites could not be read."] = ("파일 탐색기의 즐겨찾기를 읽지 못했습니다.", "无法读取文件资源管理器收藏夹。", "エクスプローラーのお気に入りを読み取れませんでした。"),
         ["Legacy Explorer Links were unavailable."] = ("이전 탐색기 Links를 사용할 수 없습니다.", "旧版资源管理器 Links 不可用。", "旧エクスプローラーの Links を使用できませんでした。"),
@@ -170,6 +175,8 @@ public sealed class UiText
             탐색
             Ctrl+L / Alt+D   주소창
             Alt+Left / Right / Up   뒤로, 앞으로, 상위 폴더
+            마우스 뒤로 / 앞으로 버튼   포인터가 있는 영역에서 뒤로, 앞으로
+            Win+Alt+E   어디서나 Folder Splitter 불러오기 (다시 누르면 최소화)
             F5   새로고침
             Ctrl+D   현재 폴더 고정
             폴더 선택 버튼은 폴더 선택 창을 엽니다.
@@ -204,6 +211,8 @@ public sealed class UiText
             导航
             Ctrl+L / Alt+D   地址栏
             Alt+Left / Right / Up   后退、前进、上级文件夹
+            鼠标后退 / 前进键   在指针所在区域后退、前进
+            Win+Alt+E   随时调出 Folder Splitter（再按一次最小化）
             F5   刷新
             Ctrl+D   固定当前文件夹
             选择文件夹按钮打开文件夹选择窗口。
@@ -238,6 +247,8 @@ public sealed class UiText
             ナビゲーション
             Ctrl+L / Alt+D   アドレス バー
             Alt+Left / Right / Up   戻る、進む、上のフォルダー
+            マウスの戻る / 進むボタン   ポインターがあるペインで戻る、進む
+            Win+Alt+E   どこからでも Folder Splitter を前面に（もう一度で最小化）
             F5   最新の情報に更新
             Ctrl+D   現在のフォルダーをピン留め
             フォルダーを選択 ボタンでフォルダー選択ダイアログを開きます。
@@ -274,6 +285,8 @@ public sealed class UiText
         NAVIGATION
         Ctrl+L / Alt+D   Address bar
         Alt+Left / Right / Up   Back, forward, parent
+        Mouse back / forward buttons   Back, forward in the pane under the pointer
+        Win+Alt+E   Bring Folder Splitter to the front from anywhere (again: minimize)
         F5   Refresh
         Ctrl+D   Pin current folder
         Choose folder opens the folder picker.

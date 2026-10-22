@@ -18,6 +18,7 @@ public sealed record SessionState
     public string ColorTheme { get; init; } = "light";
     public bool ShowFolderTree { get; init; } = true;
     public int FolderTreeHeight { get; init; }
+    public bool GlobalHotkey { get; init; } = true;
     public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];

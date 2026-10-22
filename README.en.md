@@ -64,6 +64,8 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **View options**: Details, List, or Icons view from each pane's options menu.
 - **Session restore**: Tab paths, selected tabs, favorites, layout and split ratios, and window size, theme, and folder tree visibility and height are saved locally.
 - **Open in external Explorer**: Open the same folder in Windows File Explorer from the pane options.
+- **Summon from anywhere**: `Win+Alt+E` brings Folder Splitter to the front from any app; press it again to minimize. Turn it off under `Settings` at the top right.
+- **Open with Win+E (optional)**: `Settings` → `Open Folder Splitter with Win+E instead of File Explorer` makes Win+E launch Folder Splitter even when it isn't running, or bring the running window forward. It only changes your user registry; turning it off restores File Explorer.
 
 Column sorting and the right-click menu in the file list are handled by the Windows Shell. The app doesn't embed the Windows 11 command bar or the modern tab UI of the built-in File Explorer.
 
@@ -98,6 +100,7 @@ Click `Favorites` to collapse its list. Windows File Explorer pinned folders are
 | Mouse back/forward buttons | Back/forward in the pane under the pointer |
 | `Ctrl+D` | Add the current folder to favorites |
 | `Ctrl+Shift+E` | Collapse or expand the folder tree |
+| `Win+Alt+E` | Bring Folder Splitter to the front / again to minimize |
 | `F5` | Refresh |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy/cut/paste selected files |
 | `F2` | Rename selected file |

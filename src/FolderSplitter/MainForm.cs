@@ -20,6 +20,12 @@ public sealed class MainForm : Form, IMessageFilter
         Dock = DockStyle.Bottom, Height = 6, Cursor = Cursors.HSplit, AccessibleName = "Resize favorites and folder tree"
     };
     private int folderTreeHeight;
+    private const int HotkeyId = 0x4653; // "FS"
+    private readonly uint activationMessage;
+    private readonly ToolStripMenuItem hotkeyItem = new() { CheckOnClick = true };
+    private readonly ToolStripMenuItem winEItem = new() { CheckOnClick = true };
+    private readonly WinEShortcut winE = WinEShortcut.ForCurrentUser();
+    private bool globalHotkey;
     private readonly ToolStripButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
     private bool showFolderTree;
@@ -78,6 +84,8 @@ public sealed class MainForm : Form, IMessageFilter
         colorTheme = initialState.ColorTheme;
         showFolderTree = initialState.ShowFolderTree;
         folderTreeHeight = initialState.FolderTreeHeight;
+        globalHotkey = initialState.GlobalHotkey;
+        activationMessage = Program.ActivationMessage(sessionPath);
         Theme.Set(colorTheme);
         text = new UiText(initialState.Language);
         layoutTree = initialState.LayoutTree!;
@@ -431,6 +439,20 @@ public sealed class MainForm : Form, IMessageFilter
         toolbar.Items.Add(languageSelector);
         toolbar.Items.Add(languageLabel);
         toolbar.Items.Add(themeButton); // Right-aligned items run right to left: theme sits left of the language label.
+        var settings = new ToolStripDropDownButton
+        {
+            Alignment = ToolStripItemAlignment.Right, AccessibleName = "Settings", Overflow = ToolStripItemOverflow.Never
+        };
+        BindText(settings, "Settings", "Shortcuts and Windows integration");
+        BindText(hotkeyItem, "Win+Alt+E brings Folder Splitter to the front");
+        BindText(winEItem, "Open Folder Splitter with Win+E instead of File Explorer");
+        hotkeyItem.Checked = globalHotkey;
+        hotkeyItem.CheckedChanged += (_, _) => SetGlobalHotkey(hotkeyItem.Checked);
+        winEItem.Click += (_, _) => SetWinEShortcut(winEItem.Checked);
+        settings.DropDownOpening += (_, _) => winEItem.Checked = winE.IsEnabled;
+        settings.DropDownItems.Add(hotkeyItem);
+        settings.DropDownItems.Add(winEItem);
+        toolbar.Items.Add(settings);
         toolbar.Layout += (_, _) =>
         {
             int width = Math.Max(100, languageSelector.Items.Cast<string>()
@@ -505,6 +527,84 @@ public sealed class MainForm : Form, IMessageFilter
         if (visible && ready) SyncTree();
         ScheduleSave();
     }
+
+    internal bool GlobalHotkeyEnabled => globalHotkey;
+
+    internal void SetGlobalHotkey(bool enabled)
+    {
+        globalHotkey = enabled;
+        hotkeyItem.Checked = enabled;
+        if (IsHandleCreated)
+        {
+            UnregisterHotKey(Handle, HotkeyId);
+            if (enabled && !RegisterHotKey(Handle, HotkeyId, 0x4000 | 0x0008 | 0x0001, (uint)Keys.E)) // NOREPEAT|WIN|ALT
+                Active.SetLocalizedStatus("Win+Alt+E is already used by another program.");
+        }
+        ScheduleSave();
+    }
+
+    private void SetWinEShortcut(bool enabled)
+    {
+        try
+        {
+            if (enabled) winE.Enable();
+            else winE.Disable();
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            Active.SetLocalizedStatus("Could not change the Win+E setting: {0}", error.Message);
+        }
+        winEItem.Checked = winE.IsEnabled;
+    }
+
+    // Win+Alt+E and a second launch both bring this window forward; the hotkey minimizes it when it is already in front.
+    internal void ToggleFromHotkey()
+    {
+        if (WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) WindowState = FormWindowState.Minimized;
+        else Summon();
+    }
+
+    internal void Summon()
+    {
+        if (WindowState == FormWindowState.Minimized) ShowWindow(Handle, 9); // SW_RESTORE keeps a maximized window maximized
+        Activate();
+        SetForegroundWindow(Handle);
+        Active.FocusFiles();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        if (globalHotkey) RegisterHotKey(Handle, HotkeyId, 0x4000 | 0x0008 | 0x0001, (uint)Keys.E);
+    }
+
+    protected override void OnHandleDestroyed(EventArgs e)
+    {
+        UnregisterHotKey(Handle, HotkeyId);
+        base.OnHandleDestroyed(e);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x0312 && m.WParam == HotkeyId) { ToggleFromHotkey(); return; } // WM_HOTKEY
+        if (activationMessage != 0 && m.Msg == (int)activationMessage) { Summon(); return; }
+        base.WndProc(ref m);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool UnregisterHotKey(nint window, int id);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(nint window);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool ShowWindow(nint window, int command);
 
     private void UpdateTreeHeader()
     {
@@ -1024,6 +1124,7 @@ public sealed class MainForm : Form, IMessageFilter
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
+                GlobalHotkey = globalHotkey,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
                 FavoritesExpanded = favoritesExpanded,

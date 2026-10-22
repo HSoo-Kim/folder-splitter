@@ -424,6 +424,12 @@ internal static class Program
                     && visual.GetColor(1, out int listText) == 0 && listText == ColorTranslator.ToWin32(Theme.Text),
                     "dark theme sets the Shell folder view's own text, background and sorted-column colors");
                 CaptureLanguage(form, "theme-dark");
+                await WindowRestored(form, () => PostMessage(form.Handle, 0x0312, 0x4653, 0)); // WM_HOTKEY Win+Alt+E
+                Check(form.WindowState != FormWindowState.Minimized, "Win+Alt+E hotkey restores a minimized window");
+                await WindowRestored(form, () => PostMessage(form.Handle, QuadExplorer.Program.ActivationMessage(session), 0, 0));
+                Check(form.WindowState != FormWindowState.Minimized, "a second launch brings the running window forward");
+                form.SetGlobalHotkey(false);
+                Check(!form.GlobalHotkeyEnabled, "Win+Alt+E hotkey can be turned off");
                 form.SetFolderTreeVisible(false);
                 var treeHeader = Descendants(form).OfType<Button>().Single(b => b.AccessibleName == "Expand folder tree");
                 Check(!form.FolderTree.Visible && treeHeader.Visible && treeHeader.Text.StartsWith("\u25B8", StringComparison.Ordinal),
@@ -449,6 +455,8 @@ internal static class Program
         var restored = SessionStore.Load(session);
         Check(restored.ColorTheme == "dark" && !restored.ShowFolderTree, "theme and folder tree visibility persist");
         Check(Math.Abs(restored.FolderTreeHeight - 200) <= 1, "resized folder tree height persists");
+        Check(!restored.GlobalHotkey, "Win+Alt+E setting persists");
+        RunWinEScenario();
     }
 
     private static bool ButtonCornersMatchBackground(ExplorerPane pane)
@@ -462,6 +470,49 @@ internal static class Program
         bool matches = opaque is not null && first.ToArgb() == opaque.BackColor.ToArgb() && last.ToArgb() == opaque.BackColor.ToArgb();
         if (!matches) Console.Error.WriteLine($"CORNER {first} {last} expected {opaque?.BackColor} from {opaque?.GetType().Name}; parent {button.Parent?.BackColor}");
         return matches;
+    }
+
+    private static async Task WindowRestored(Form form, Action trigger)
+    {
+        form.WindowState = FormWindowState.Minimized;
+        var restored = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Resized(object? sender, EventArgs e) { if (form.WindowState != FormWindowState.Minimized) restored.TrySetResult(); }
+        form.Resize += Resized;
+        try
+        {
+            trigger();
+            await restored.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally { form.Resize -= Resized; }
+    }
+
+    // Uses a throwaway registry root so the user's real Win+E setting is never touched.
+    private static void RunWinEScenario()
+    {
+        string rootPath = @"Software\FolderSplitterTests\" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using var root = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(rootPath);
+            var shortcut = new WinEShortcut(root, @"C:\Apps\Folder Splitter\FolderSplitter.exe");
+            Check(!shortcut.IsEnabled, "Win+E replacement is off by default");
+            shortcut.Enable();
+            using (var command = root.OpenSubKey(WinEShortcut.ClassKey + @"\shell\opennewwindow\command"))
+                Check(shortcut.IsEnabled && command?.GetValue("") as string == "\"C:\\Apps\\Folder Splitter\\FolderSplitter.exe\""
+                    && command.GetValue("DelegateExecute") as string == "", "Win+E replacement registers the quoted executable");
+            shortcut.Disable();
+            Check(!shortcut.IsEnabled && root.OpenSubKey(WinEShortcut.ClassKey) is null, "turning Win+E off removes only its own keys");
+            using (var icon = root.CreateSubKey(WinEShortcut.ClassKey + @"\DefaultIcon")) icon.SetValue("", "kept");
+            shortcut.Enable();
+            shortcut.Disable();
+            using (var icon = root.OpenSubKey(WinEShortcut.ClassKey + @"\DefaultIcon"))
+                Check(icon?.GetValue("") as string == "kept" && !shortcut.IsEnabled, "turning Win+E off keeps other per-user CLSID settings");
+        }
+        finally
+        {
+            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(rootPath, throwOnMissingSubKey: false);
+            using var parent = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\FolderSplitterTests");
+            if (parent is { SubKeyCount: 0 }) Microsoft.Win32.Registry.CurrentUser.DeleteSubKey(@"Software\FolderSplitterTests", false);
+        }
     }
 
     private static async Task ItemCount(ShellViewHost host, Action trigger, int expected)

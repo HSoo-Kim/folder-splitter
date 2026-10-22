@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using QuadExplorer.Search;
@@ -30,12 +31,13 @@ internal static class Program
             }
         }
 
-        string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionPath.ToUpperInvariant())))[..16];
+        string key = InstanceKey(sessionPath);
         using var mutex = new Mutex(true, @"Local\QuadExplorer-" + key, out bool firstInstance);
         if (!firstInstance)
         {
-            MessageBox.Show(text.T("Folder Splitter is already running. Use its taskbar button to switch to it."),
-                "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // A second launch (for example Win+E) hands the foreground to the running window instead.
+            AllowSetForegroundWindow(-1);
+            PostMessage(0xFFFF, ActivationMessage(sessionPath), 0, 0);
             return;
         }
         var roots = DriveInfo.GetDrives().Where(drive => drive.DriveType == DriveType.Fixed && drive.IsReady)
@@ -47,4 +49,19 @@ internal static class Program
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
         Application.Run(new MainForm(sessionPath, folders, search));
     }
+
+    internal static string InstanceKey(string sessionPath) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionPath.ToUpperInvariant())))[..16];
+
+    internal static uint ActivationMessage(string sessionPath) =>
+        RegisterWindowMessage("FolderSplitter.Activate." + InstanceKey(sessionPath));
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint RegisterWindowMessage(string name);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AllowSetForegroundWindow(int process);
 }
