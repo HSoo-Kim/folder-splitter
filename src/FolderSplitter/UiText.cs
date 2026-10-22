@@ -19,6 +19,7 @@ public sealed class UiText
     {
         ["Folder tree"] = ("폴더 트리", "文件夹树", "フォルダーツリー"),
         ["Show / hide folder tree (Ctrl+Shift+E)"] = ("폴더 트리 표시 / 숨기기 (Ctrl+Shift+E)", "显示 / 隐藏文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを表示 / 非表示 (Ctrl+Shift+E)"),
+        ["Collapse / expand folder tree (Ctrl+Shift+E)"] = ("폴더 트리 접기 / 펼치기 (Ctrl+Shift+E)", "折叠 / 展开文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを折りたたむ / 展開 (Ctrl+Shift+E)"),
         ["Open in current pane"] = ("현재 영역에서 열기", "在当前窗格中打开", "現在のペインで開く"),
         ["Open in new pane"] = ("새 영역에서 열기", "在新窗格中打开", "新しいペインで開く"),
         ["Loading folders..."] = ("하위 폴더 읽는 중...", "正在读取子文件夹...", "サブフォルダーを読み込み中..."),

@@ -13,6 +13,7 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ShellIconCache placeIcons = new();
     private readonly FolderTree folderTree;
     private readonly ToolStripButton treeButton = new() { AccessibleName = "Folder tree", CheckOnClick = true };
+    private readonly Button treeHeader;
     private readonly ToolStripButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
     private bool showFolderTree;
@@ -218,6 +219,18 @@ public sealed class MainForm : Form, IMessageFilter
             Dock = DockStyle.Bottom, AccessibleName = "Folder tree", Visible = showFolderTree
         };
         folderTree.OpenRequested += OpenTreeFolder;
+        // Docked bottom: the header is added first so the tree docks below it and collapses to the header.
+        treeHeader = Theme.Button("", "Collapse folder tree", () => SetFolderTreeVisible(!showFolderTree));
+        treeHeader.Dock = DockStyle.Bottom;
+        treeHeader.Height = 32;
+        treeHeader.Font = favoritesHeader.Font;
+        treeHeader.TextAlign = ContentAlignment.MiddleLeft;
+        treeHeader.ForeColor = Theme.Muted;
+        treeHeader.FlatAppearance.BorderSize = 0;
+        BindTip(treeHeader, "Collapse / expand folder tree (Ctrl+Shift+E)");
+        languageBindings.Add(UpdateTreeHeader);
+        UpdateTreeHeader();
+        sidebar.Controls.Add(treeHeader);
         sidebar.Controls.Add(folderTree);
         sidebar.SizeChanged += (_, _) => UpdateSidebarContent();
         UpdateSidebarContent();
@@ -468,10 +481,17 @@ public sealed class MainForm : Form, IMessageFilter
         showFolderTree = visible;
         folderTree.Visible = visible;
         treeButton.Checked = visible;
+        UpdateTreeHeader();
         if (visible && !sidebar.Visible) SetSidebarVisible(true);
         UpdateSidebarContent();
         if (visible && ready) SyncTree();
         ScheduleSave();
+    }
+
+    private void UpdateTreeHeader()
+    {
+        treeHeader.Text = $"{(showFolderTree ? "\u25BE" : "\u25B8")} {text.T("Folder tree")}";
+        treeHeader.AccessibleName = showFolderTree ? "Collapse folder tree" : "Expand folder tree";
     }
 
     private void UpdateSidebarContent()

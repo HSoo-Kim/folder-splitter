@@ -415,7 +415,14 @@ internal static class Program
                     "dark theme sets the Shell folder view's own text, background and sorted-column colors");
                 CaptureLanguage(form, "theme-dark");
                 form.SetFolderTreeVisible(false);
-                Check(!form.FolderTree.Visible, "folder tree can be hidden");
+                var treeHeader = Descendants(form).OfType<Button>().Single(b => b.AccessibleName == "Expand folder tree");
+                Check(!form.FolderTree.Visible && treeHeader.Visible && treeHeader.Text.StartsWith("\u25B8", StringComparison.Ordinal),
+                    "folder tree collapses to its sidebar header");
+                treeHeader.PerformClick();
+                Check(form.FolderTreeVisible && form.FolderTree.Visible && treeHeader.AccessibleName == "Collapse folder tree"
+                    && treeHeader.Bottom <= form.FolderTree.Top, "sidebar header expands the folder tree above it");
+                treeHeader.PerformClick();
+                Check(!form.FolderTree.Visible, "sidebar header collapses the folder tree again");
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
             finally { form.Close(); }

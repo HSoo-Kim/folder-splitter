@@ -23,11 +23,6 @@ internal sealed class FolderTree : UserControl
     private readonly string[]? suppliedRoots;
     private readonly Image folderIcon = Theme.FolderIcon();
     private readonly ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit, ImageSize = new Size(20, 20) };
-    private readonly Label heading = new()
-    {
-        Dock = DockStyle.Top, Height = 28, Padding = new Padding(7, 0, 0, 0),
-        TextAlign = ContentAlignment.MiddleLeft
-    };
     private readonly ContextMenuStrip menu = new();
     private readonly List<(ToolStripItem Item, string Key)> menuLabels = [];
     private readonly CancellationTokenSource lifetime = new();
@@ -62,7 +57,6 @@ internal sealed class FolderTree : UserControl
         images.Images.Add(folderIcon);
         Tree.ImageList = images;
         Controls.Add(Tree);
-        Controls.Add(heading);
         Tree.BeforeSelect += (_, e) =>
             e.Cancel = e.Node?.Tag is not Folder;
         Tree.BeforeExpand += async (_, e) =>
@@ -119,7 +113,6 @@ internal sealed class FolderTree : UserControl
     public void RefreshLanguage()
     {
         AccessibleName = Tree.AccessibleName = text.T("Folder tree");
-        heading.Text = text.T("Folder tree");
         foreach (var (item, key) in menuLabels) item.Text = text.T(key);
         // Every unloaded folder holds a "Loading" notice; batch them so a large expanded folder
         // does not update the scrollbars once per node.
@@ -147,8 +140,6 @@ internal sealed class FolderTree : UserControl
         Tree.BackColor = Theme.Canvas;
         Tree.ForeColor = Theme.Text;
         Tree.LineColor = Theme.Border;
-        heading.BackColor = Theme.Canvas;
-        heading.ForeColor = Theme.Muted;
         menu.BackColor = Theme.Canvas;
         menu.ForeColor = Theme.Text;
     }
