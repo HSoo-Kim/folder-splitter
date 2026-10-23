@@ -117,7 +117,7 @@ public sealed class ExplorerPane : UserControl
         languageBindings.Add(RefreshAddressTip);
         RefreshAddressTip();
         var go = Theme.Button("\uE8AD", $"Pane {number} go to address", () => Navigate(address.Text));
-        go.Font = new Font("Segoe Fluent Icons", 10);
+        go.Font = new Font(Theme.IconFont, 10);
         go.AutoSize = true;
         go.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         go.Padding = new Padding(5);
@@ -276,7 +276,7 @@ public sealed class ExplorerPane : UserControl
     private void AddButton(TableLayoutPanel row, int column, string glyph, string name, Action action)
     {
         var button = Theme.Button(glyph, $"Pane {PaneNumber} {name}", action);
-        button.Font = new Font("Segoe Fluent Icons", 10);
+        button.Font = new Font(Theme.IconFont, 10);
         button.AutoSize = true;
         button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         button.Padding = new Padding(5);

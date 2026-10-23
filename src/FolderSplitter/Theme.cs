@@ -26,6 +26,10 @@ internal static class Theme
     private static readonly Color FolderBack = Color.FromArgb(205, 145, 36);
     private static readonly Color FolderFront = Color.FromArgb(245, 192, 66);
 
+    // Segoe Fluent Icons ships only with Windows 11; Windows 10 has the same glyphs in Segoe MDL2 Assets.
+    public static readonly string IconFont = new System.Drawing.Text.InstalledFontCollection().Families
+        .Any(family => family.Name == "Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
+
     public static Color Canvas => current.Canvas;
     public static Color Surface => current.Surface;
     public static Color Border => current.Border;

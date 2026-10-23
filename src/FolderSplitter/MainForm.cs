@@ -16,6 +16,7 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolStripButton previewButton = new() { AccessibleName = "Preview", CheckOnClick = true };
     private readonly PreviewPane previewPane;
     private readonly Splitter previewSplitter;
+    private PreviewWindow? previewWindow;
     private readonly System.Windows.Forms.Timer previewTimer = new() { Interval = 200 };
     private bool showPreview;
     private int previewWidth;
@@ -178,7 +179,20 @@ public sealed class MainForm : Form, IMessageFilter
         };
         previewSplitter.SplitterMoved += (_, _) => { previewWidth = previewPane.Width; ScheduleSave(); };
         previewTimer.Tick += (_, _) => { previewTimer.Stop(); UpdatePreview(); };
+        previewPane.DragRequested += point =>
+        {
+            SetPreviewFloating(true);
+            previewWindow!.BeginMove(point);
+        };
+        previewPane.DetachRequested += (_, _) => SetPreviewFloating(true);
+        VisibleChanged += (_, _) =>
+        {
+            if (previewWindow is null) return;
+            if (Visible && showPreview) previewWindow.Show(this);
+            else previewWindow.Hide();
+        };
         languageBindings.Add(previewPane.RefreshLanguage);
+        languageBindings.Add(() => previewWindow?.RefreshLanguage());
         sidebar = new Panel { Dock = DockStyle.Left, Width = sidebarWidth, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
         sidebarSplitter = new Splitter
         {
@@ -589,6 +603,7 @@ public sealed class MainForm : Form, IMessageFilter
         foreach (var pane in panes) pane.RefreshTheme();
         folderTree.RefreshTheme();
         previewPane.ApplyColors();
+        previewWindow?.RefreshTheme();
         previewSplitter.BackColor = Theme.Border;
         RefreshThemeButton();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
@@ -596,16 +611,81 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal bool PreviewVisible => showPreview;
     internal PreviewPane Preview => previewPane;
+    internal PreviewWindow? FloatingPreview => previewWindow;
 
     internal void SetPreviewVisible(bool visible)
     {
         showPreview = visible;
-        previewPane.Visible = previewSplitter.Visible = visible;
+        previewPane.Visible = visible;
+        previewSplitter.Visible = visible && previewWindow is null;
+        if (previewWindow is not null)
+        {
+            if (visible) previewWindow.Show(this);
+            else previewWindow.Hide();
+        }
         previewButton.Checked = visible;
         previewTimer.Stop();
         if (visible) UpdatePreview();
         else previewPane.Unload();
         ScheduleSave();
+    }
+
+    internal void SetPreviewFloating(bool floating)
+    {
+        if (floating == (previewWindow is not null)) return;
+        previewPane.SetFloating(floating);
+        if (floating)
+        {
+            previewWidth = previewPane.Width;
+            previewSplitter.Visible = false;
+            var window = new PreviewWindow(text)
+            {
+                Icon = Icon, Size = new Size(Math.Max(320, previewWidth), Math.Max(400, previewPane.Height)),
+                Location = previewPane.PointToScreen(Point.Empty)
+            };
+            Rectangle screen = Screen.FromControl(this).WorkingArea;
+            window.Size = new Size(Math.Min(window.Width, screen.Width), Math.Min(window.Height, screen.Height));
+            window.Location = new Point(
+                Math.Clamp(window.Left, screen.Left, Math.Max(screen.Left, screen.Right - window.Width)),
+                Math.Clamp(window.Top, screen.Top, Math.Max(screen.Top, screen.Bottom - window.Height)));
+            previewWindow = window;
+            window.DockRequested += (_, _) => SetPreviewFloating(false);
+            window.MoveFinished += TryDockPreview;
+            window.FormClosing += (_, e) =>
+            {
+                if (e.CloseReason != CloseReason.UserClosing) return;
+                e.Cancel = true;
+                SetPreviewVisible(false);
+            };
+            window.AddPreview(previewPane);
+            window.RefreshTheme();
+            previewPane.ApplyColors();
+            if (showPreview) window.Show(this);
+        }
+        else
+        {
+            var window = previewWindow!;
+            previewWindow = null;
+            var workspace = paneHost.Parent!;
+            workspace.Controls.Add(previewPane);
+            previewPane.Dock = DockStyle.Right;
+            previewPane.Width = previewWidth;
+            workspace.Controls.SetChildIndex(previewPane, workspace.Controls.GetChildIndex(previewSplitter) + 1);
+            previewSplitter.Visible = showPreview;
+            previewPane.Visible = showPreview;
+            window.Dispose();
+            if (Visible && showPreview) Active.FocusFiles();
+        }
+        ScheduleSave();
+    }
+
+    internal void TryDockPreview(Point point)
+    {
+        if (previewWindow is null || !Visible || WindowState == FormWindowState.Minimized) return;
+        var bounds = paneHost.Parent!.RectangleToScreen(paneHost.Parent.ClientRectangle);
+        var dropZone = new Rectangle(bounds.Right - Math.Min(previewWidth, bounds.Width / 3),
+            bounds.Top, Math.Min(previewWidth, bounds.Width / 3), bounds.Height);
+        if (dropZone.Contains(point)) SetPreviewFloating(false);
     }
 
     private void SchedulePreview()
@@ -1291,7 +1371,8 @@ public sealed class MainForm : Form, IMessageFilter
 
     public bool PreFilterMessage(ref Message m)
     {
-        if (!ContainsFocus || tabDragging) return false;
+        if ((!ContainsFocus && previewWindow?.ContainsFocus != true) || tabDragging) return false;
+        if (showPreview && previewPane.RouteMouseWheel(ref m)) return true;
         if (m.Msg == 0x201 || m.Msg == 0x204 || m.Msg == 0x20B || m.Msg == 0x100 || m.Msg == 0x104)
         {
             foreach (int i in visiblePanes)
@@ -1314,6 +1395,8 @@ public sealed class MainForm : Form, IMessageFilter
         if (m.Msg is 0x100 or 0x104)
         {
             Keys key = (Keys)(int)m.WParam | ModifierKeys;
+            if (key != (Keys.Alt | Keys.P) &&
+                (previewWindow?.ContainsFocus == true || ShellNative.IsChild(previewPane.Handle, m.HWnd))) return false;
             if (HandleShortcut(key)) return true;
         }
         if (m.Msg >= 0x100 && m.Msg <= 0x109) return Active.ActiveView?.TranslateKey(ref m) ?? false;
@@ -1423,6 +1506,8 @@ public sealed class MainForm : Form, IMessageFilter
         {
             ready = false;
             rebuilding = true;
+            previewWindow?.Dispose();
+            previewWindow = null;
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
             previewTimer.Dispose();

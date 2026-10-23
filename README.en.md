@@ -72,7 +72,7 @@ The actual app with sample folders open. Each pane has independent tabs and an a
 
 [Download the latest Windows executable](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
 
-Built for Windows 11 x64. Extract `folder-splitter-win-x64.zip` from the release and run `FolderSplitter.exe`. The distributed executable bundles the .NET runtime, so you don't need to install a runtime separately.
+The same executable runs on Windows 11 and Windows 10 (version 2004 or later), x64. Development and testing happen on Windows 11. Extract `folder-splitter-win-x64.zip` from the release and run `FolderSplitter.exe`. The distributed executable bundles the .NET runtime, so you don't need to install a runtime separately.
 
 Early versions aren't code-signed. Windows may warn that it can't verify the publisher of the downloaded app.
 
@@ -100,7 +100,10 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Native Windows actions**: Right-click menu, copy/cut/paste, rename, delete and drag and drop between panes are handled by Windows as usual.
 - **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer. Grouping, sort order and view mode are remembered per folder, as in File Explorer.
 - **Item count**: Each pane shows how many items it displays, updated immediately.
-- **Preview**: Turn it on with the `Preview` button at the top or `Alt+P` and a preview pane appears at the far right. Click a file to see the same preview File Explorer shows (images, PDF, Office, text and more); its visibility and width are remembered.
+- **Preview**: Enable it with `Preview` or `Alt+P`, then click a file. Its visibility and width are remembered.
+  - **Multi-page PDFs**: No separate PDF app is needed. Wheel down over the preview for the next page, or up for the previous page. The page number and previous/next buttons appear below.
+  - **Separate window**: Drag the file-name header or click `Detach preview`. Drag it back over the main window's right side or click `Dock preview` to put it back; the current PDF page is preserved.
+  - **Other formats**: Photos use Windows thumbnails; Office, text and other documents use installed Explorer preview handlers. Wheel input over a document goes to its handler rather than the file list; scrolling and paging support depend on the handler.
 
 ### Appearance and settings
 - **Light/dark theme**: Toggle at the top right; the file lists follow too.
@@ -197,7 +200,7 @@ Extra folder arguments open as new tabs in the active pane.
 
 ## Building from source
 
-Requirements: Windows 11 x64, .NET 10 SDK.
+Requirements: Windows 10 (2004 or later) or 11 x64, .NET 10 SDK.
 
 ```powershell
 .\build.ps1                 # Release build + session regression tests

@@ -10,7 +10,7 @@ internal sealed class AddressCandidates : Form
         DrawMode = DrawMode.OwnerDrawFixed, DisplayMember = nameof(SearchHit.FullPath)
     };
     private readonly ToolTip tips = new();
-    private readonly Font symbols = new("Segoe Fluent Icons", 12);
+    private readonly Font symbols = new(Theme.IconFont, 12);
     private Form? ownerForm;
     private string? hoveredPath;
     internal event Action<SearchHit>? Chosen;

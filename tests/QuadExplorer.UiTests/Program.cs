@@ -2,7 +2,7 @@ using QuadExplorer;
 using QuadExplorer.Search;
 using System.Runtime.InteropServices;
 
-internal static class Program
+internal static partial class Program
 {
     private static int failures;
     private static int checks;
@@ -45,6 +45,16 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (args is ["--preview-pdf"])
+            {
+                RunPdfScenario(root);
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--preview-wheel"])
+            {
+                RunPreviewScenario(root);
+                return failures == 0 ? 0 : 1;
+            }
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             string child = Directory.CreateDirectory(Path.Combine(folders[0], "\ud55c\uae00 \ud3f4\ub354")).FullName;
             File.WriteAllText(Path.Combine(folders[0], "sample.txt"), "QuadExplorer integration fixture");
@@ -65,6 +75,8 @@ internal static class Program
                 {
                     await Task.WhenAll(initialNavigation).WaitAsync(TimeSpan.FromSeconds(20));
                     Check(panes.Length == 4 && panes.All(p => p.Visible), "four native shell panes loaded");
+                    Check(new Font(QuadExplorer.Theme.IconFont, 10).Name == QuadExplorer.Theme.IconFont,
+                        "navigation icons use an installed symbol font");
                     Check(panes.Select(p => p.CurrentPath).SequenceEqual(folders, StringComparer.OrdinalIgnoreCase), "independent initial folders");
                     Check(panes.All(p => HasNativeDropTarget(p.ActiveView!)), "initial shell panes register native drop targets");
 
@@ -163,6 +175,7 @@ internal static class Program
             RunTrayScenario(root);
             RunUpdateScenario(root);
             RunPreviewScenario(root);
+            RunPdfScenario(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -576,7 +589,7 @@ internal static class Program
     {
         string folder = Directory.CreateDirectory(Path.Combine(root, "Preview")).FullName;
         string textFile = Path.Combine(folder, "preview-note.txt");
-        File.WriteAllText(textFile, "Folder Splitter preview");
+        File.WriteAllText(textFile, string.Join("\r\n", Enumerable.Range(1, 200).Select(i => $"Preview line {i}")));
         string photo = Path.Combine(folder, "preview-photo.png");
         using (var image = new Bitmap(96, 64))
         {
@@ -619,6 +632,84 @@ internal static class Program
                 Check(!textHandler || form.Preview.HasHandler || form.Preview.MessageText == text.T("Could not show a preview of this file."),
                     "selecting a file previews it with the Windows preview handler");
                 Console.WriteLine($"METRIC preview_txt_handler_registered={textHandler} handler_loaded={form.Preview.HasHandler}");
+                nint document = 0;
+                EnumChildWindows(form.Preview.Handle, (window, _) =>
+                {
+                    var name = new System.Text.StringBuilder(256);
+                    GetClassName(window, name, name.Capacity);
+                    if (name.ToString() == "RICHEDIT50W") document = window;
+                    return true;
+                }, 0);
+                Check(document != 0, "text preview exposes its native scrollable document");
+                if (document != 0)
+                {
+                    pane.FocusFiles();
+                    var point = form.Preview.PointToScreen(new Point(form.Preview.Width / 2, form.Preview.Height / 2));
+                    nint coordinates = (nint)((point.X & 0xFFFF) | ((point.Y & 0xFFFF) << 16));
+                    long before = (long)SendMessage(document, 0xCE, 0, 0); // EM_GETFIRSTVISIBLELINE
+                    SendMessage(document, 0xB6, 0, 5); // EM_LINESCROLL
+                    Check((long)SendMessage(document, 0xCE, 0, 0) > before, "native preview contains scrollable document content");
+                    SendMessage(document, 0xB6, 0, -5);
+                    // The Windows handler ignores wheel input on a non-input desktop, even when sent directly.
+                    // A native receiver checks the app's delivery contract without replacing the preview handler.
+                    using var parent = new Panel { Dock = DockStyle.Fill };
+                    using var receiver = new WheelReceiver { Dock = DockStyle.Fill };
+                    Control.FromHandle(WheelGetParent(document))!.Controls.Add(parent);
+                    parent.Controls.Add(receiver);
+                    parent.BringToFront();
+                    for (int i = 0; i < 3; i++)
+                    {
+                        int messageId = i == 2 ? 0x20E : 0x20A;
+                        nint wheel = (i == 0 ? -120 << 16 : i == 1 ? 120 << 16 : 60 << 16) | 0x8;
+                        var message = Message.Create(pane.ActiveView!.Handle, messageId, wheel, coordinates);
+                        bool routed = form.PreFilterMessage(ref message);
+                        Check(routed && receiver.Count == i + 1 && receiver.LastMessage.Msg == messageId &&
+                            receiver.LastMessage.WParam == wheel && receiver.LastMessage.LParam == coordinates,
+                            "wheel over the preview reaches its deepest document child with direction and modifiers intact");
+                    }
+                    var delivered = Message.Create(document, 0x20A, -120 << 16, coordinates);
+                    Check(!form.PreFilterMessage(ref delivered), "wheel already delivered to the document is not sent twice");
+                    var outside = pane.PointToScreen(new Point(10, 10));
+                    var listWheel = Message.Create(pane.ActiveView.Handle, 0x20A, -120 << 16,
+                        (nint)((outside.X & 0xFFFF) | ((outside.Y & 0xFFFF) << 16)));
+                    Check(!form.PreFilterMessage(ref listWheel), "wheel outside the preview keeps its normal destination");
+                    Check(SelectedPaths(pane.ActiveView).SequenceEqual(new[] { textFile }, StringComparer.OrdinalIgnoreCase),
+                        "scrolling the preview preserves the selected file");
+                }
+                string? previewed = form.Preview.CurrentPath;
+                form.SetPreviewFloating(true);
+                var floating = form.FloatingPreview!;
+                Check(floating.Visible && floating.Owner == form && form.Preview.FindForm() == floating,
+                    "preview detaches into its own owned window");
+                Check(form.Preview.CurrentPath == previewed && form.Preview.HasHandler,
+                    "detaching preserves the current document");
+                form.SetColorTheme("dark");
+                Check(floating.BackColor == form.BackColor, "floating preview follows the app theme");
+                form.Hide();
+                Check(!floating.Visible, "hiding the app also hides its floating preview");
+                form.Show();
+                Check(floating.Visible, "showing the app restores its floating preview");
+                form.TryDockPreview(new Point(int.MinValue, int.MinValue));
+                Check(form.FloatingPreview == floating, "dropping outside the main window keeps the preview floating");
+                var dockPoint = form.PointToScreen(new Point(form.ClientSize.Width - 15, form.ClientSize.Height / 2));
+                form.TryDockPreview(dockPoint);
+                Check(form.FloatingPreview is null && form.Preview.FindForm() == form && Math.Abs(form.Preview.Width - 420) <= 2,
+                    "dropping on the right side docks the preview at its previous width");
+                form.SetPreviewFloating(true);
+                floating = form.FloatingPreview!;
+                var dock = Descendants(floating).OfType<ToolStrip>().SelectMany(strip => strip.Items.Cast<ToolStripItem>())
+                    .Single(item => item.AccessibleName == "Dock preview");
+                dock.PerformClick();
+                Check(form.FloatingPreview is null && floating.IsDisposed, "Dock preview button returns it to the main window");
+                form.SetPreviewFloating(true);
+                floating = form.FloatingPreview!;
+                floating.Close();
+                Check(!form.PreviewVisible && !floating.Visible && !form.Preview.HasHandler,
+                    "closing the floating window disables and unloads the preview");
+                form.SetPreviewVisible(true);
+                Check(floating.Visible && form.Preview.HasHandler, "preview can be reopened after closing its floating window");
+                form.SetPreviewFloating(false);
+                form.SetColorTheme("light");
                 await Select(photo);
                 Check(form.Preview.HasImage && !form.Preview.HasHandler && form.Preview.MessageText == "",
                     "a photo without a preview handler shows its image");
@@ -1105,6 +1196,28 @@ internal static class Program
 
     [DllImport("user32.dll")]
     private static extern nint SendMessage(nint window, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(nint window, System.Text.StringBuilder name, int length);
+
+    [DllImport("user32.dll", EntryPoint = "GetParent")]
+    private static extern nint WheelGetParent(nint window);
+
+    private sealed class WheelReceiver : Control
+    {
+        internal int Count { get; private set; }
+        internal Message LastMessage { get; private set; }
+        protected override void WndProc(ref Message message)
+        {
+            if (message.Msg is 0x20A or 0x20E)
+            {
+                Count++;
+                LastMessage = message;
+                return;
+            }
+            base.WndProc(ref message);
+        }
+    }
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
