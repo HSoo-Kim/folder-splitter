@@ -28,6 +28,7 @@ internal static class Bench
                     SearchBench build --root C:\ --store <snapshot> --report <json>
                     SearchBench coverage --store <snapshot> [--instance name] --report <json>
                     SearchBench compare --store <snapshot> [--seed 42 --limit 100 --warmup 3 --passes 5 --order abba] [--queries file] --report <json>
+                    SearchBench timing --store <snapshot> [--seed 42 --limit 100 --warmup 3 --passes 5] [--queries file] --report <json>
                     SearchBench parity --store <snapshot> [--seed 42 --queries file --instance name] --report <json>
                     SearchBench snapshot-parity --store <snapshot> [--seed 42 --instance name] --report <json>
                     SearchBench update [--root <writable-parent> --instance name] --report <json>
@@ -45,6 +46,7 @@ internal static class Bench
                 "build" => await Build(options),
                 "coverage" => await Coverage(options),
                 "compare" => await Compare(options),
+                "timing" => await IndependentTiming(options),
                 "parity" => await Parity(options),
                 "snapshot-parity" => await SnapshotParity(options),
                 "update" => await Update(options),
@@ -235,6 +237,45 @@ internal static class Bench
             operations = "Actual QueryAsync on both backends; identical scope, context, limit and materialized paths",
             sharedCorpusEntries = corpus.Count, rankedParity = true,
             priorityRootCount = priorityRoots.Length, queryCount = queries.Length, queryDigest = QueryDigest(queries), summaries, samples,
+            stats = independent.Stats, privateBytes = PrivateBytes() };
+    }
+
+    // Same queries, contexts, limit and passes as compare, timing only the independent engine. Used to
+    // re-measure the product after engine changes when no isolated Everything instance is running.
+    private static async Task<object> IndependentTiming(Options options)
+    {
+        using var independent = await Open(options);
+        var roots = await Roots(options);
+        var priorityRoots = options.All("priority-root");
+        if (priorityRoots.Length == 0) priorityRoots = roots;
+        var queries = await Queries(options, independent);
+        var limit = options.Number("limit", 100, 1);
+        var warmup = options.Number("warmup", 3, 0);
+        var passes = options.Number("passes", 5, 1);
+        var samples = new List<Timing>();
+        for (var pass = -warmup; pass < passes; pass++)
+        {
+            Console.WriteLine($"TIMING pass={pass} queries={queries.Length}");
+            for (var index = 0; index < queries.Length; index++)
+            {
+                var query = queries[index];
+                var watch = Stopwatch.StartNew();
+                var parsed = SearchQuery.Parse(query.Text);
+                var materialized = (await independent.QueryAsync(parsed.Normalized, priorityRoots, limit, Stop.Token)).ToArray();
+                var elapsed = watch.Elapsed.TotalMilliseconds;
+                if (materialized.Any(hit => !parsed.IsAnchor(hit.FullPath)))
+                    throw new IOException("Backend returned a result outside anchor semantics.");
+                if (pass >= 0) samples.Add(new Timing("independent", query.Category, index, pass, elapsed,
+                    materialized.Length, Digest(materialized)));
+            }
+        }
+        var summaries = samples.GroupBy(sample => sample.Category)
+            .Select(group => Summary("independent", group.Key, group)).ToList();
+        summaries.Add(Summary("independent", "overall", samples));
+        return new { seed = options.Number("seed", 42, 0), limit, warmup, passes,
+            operations = "Actual QueryAsync on the independent engine only; same query generator and contexts as compare",
+            corpusEntries = independent.Stats.Entries, priorityRootCount = priorityRoots.Length,
+            queryCount = queries.Length, queryDigest = QueryDigest(queries), summaries,
             stats = independent.Stats, privateBytes = PrivateBytes() };
     }
 

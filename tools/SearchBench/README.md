@@ -16,6 +16,10 @@ dotnet run --project tools/SearchBench -c Release -- compare `
   --warmup 3 --passes 5 --order abba `
   --priority-root C:\Work --priority-root C:\Users --priority-root C:\ `
   --report C:\Bench\compare.json
+dotnet run --project tools/SearchBench -c Release -- timing `
+  --store C:\Bench\paths.fsix --seed 42 --limit 100 --warmup 3 --passes 5 `
+  --priority-root C:\Work --priority-root C:\Users --priority-root C:\ `
+  --report C:\Bench\timing.json
 dotnet run --project tools/SearchBench -c Release -- update `
   --root C:\Bench --instance fsbench --report C:\Bench\update.json
 dotnet run --project tools/SearchBench -c Release -- restart --report C:\Bench\restart.json
@@ -24,6 +28,8 @@ dotnet run --project tools/SearchBench -c Release -- smoke `
 ```
 
 Both APIs receive the same query, ordered priority roots and limit. Queries include seeded leaf fragments, case variants, partial paths, Korean, broad matches and a verified absent term. `--queries` accepts a private UTF-8 file with one query per line, optionally prefixed by a category and tab.
+
+`timing` runs the same queries, contexts and passes as `compare` on the independent engine alone, for re-measuring after engine changes without an Everything instance.
 
 `compare` filters the Everything candidates to the independently accessible corpus **before** ranking and truncation. This removes privileged-only entries and namespace aliases, without pretending that the independent scanner has equal privileged coverage. Filtering and IPC materialization costs remain in the reference timing. Every operation must produce the same ordered path/type digest or the command fails. A comparison report is not emitted on failure.
 

@@ -35,16 +35,32 @@ Space-separated fragments are matched against each file's or folder's **own name
 
 ### Search speed
 
-**p95 of 62 ms across about 3.72 million paths.** Both the overall median and p95 beat the Everything adapter; Everything is faster for very short terms with many matches.
+**Across about 2.3 million paths a search typically takes 10 ms, and 95% finish within 31 ms.** (0.7.17, measured 2026-10-23)
 
-| Response time — lower is faster | Independent engine | Reference Everything adapter |
+| Query type | Typical (p50) | 95th percentile (p95) |
 |---|---:|---:|
-| Typical response · median (p50) | **21.1 ms** | 48.4 ms |
-| 95% completion threshold (p95) | **62.1 ms** | 164.6 ms |
-| Korean partial path (p95) | **40.3 ms** | 141.5 ms |
-| Short terms with many matches (p95) | 68.8 ms | **7.1 ms** |
+| Name fragments | 9.4 ms | 22.2 ms |
+| Name fragments, different case | 9.4 ms | 22.0 ms |
+| Partial paths (`folder/name`) | 11.5 ms | 12.7 ms |
+| Korean partial path | 16.1 ms | 16.5 ms |
+| Short terms with very many matches | 32.8 ms | 95.3 ms |
+| Terms with no match | 8.0 ms | 8.1 ms |
+| **Overall** | **9.6 ms** | **31.0 ms** |
 
-Measured on October 21, 2026: about 3.72 million common candidates, identical ranking and a 100-result limit, 37 queries and 370 measured calls per engine. Results depend on the query; this is not a comparison of Everything's intrinsic matcher alone. Initial indexing took about **50 seconds**, separate from warmed search latency above. [Method and full results](docs/search-evidence/benchmark.md)
+Measured over the whole C drive (index exclusions applied, 2,298,670 paths) with 37 queries, top 100 results and 6 priority folders: 3 warm-up passes, then 5 measured passes (185 calls). Ryzen 9 9950X, Windows 11. Building the index took about 26 s and loading the saved index 0.25 s.
+
+**Compared with Everything** (2026-10-21, earlier engine, about 3.72 million paths without exclusions): overall p95 was 62.1 ms for Folder Splitter and 164.6 ms through Everything, while Everything was faster for short terms with very many matches (68.8 ms vs 7.1 ms). The engine and index scope have changed since, and the Everything comparison has not been repeated. [Method and full results](docs/search-evidence/benchmark.md)
+
+### Lightweight
+
+| Item | Value |
+|---|---|
+| App memory (just after launch, 4 panes) | about 280 MB |
+| CPU while idle | under 1% |
+| Search index memory | about 150 MB (about 2.3 million paths) |
+| New files reach search | in 2–3 seconds |
+
+Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on) are not indexed, and changes are applied in batches, so the app uses almost no CPU while idle. Figures are from the developer's PC and depend on the number of files; memory can grow somewhat over a long session (about 460 MB after several hours here). 0.7.14 used about 1.2 GB on the same PC just after launch.
 
 ## Screenshot
 

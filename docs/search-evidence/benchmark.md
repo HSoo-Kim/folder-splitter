@@ -2,6 +2,24 @@
 
 Measured October 21, 2026 on Windows 11 build 26100, Ryzen 9 9950X (16 physical cores), .NET SDK 10.0.402. Product decision: **independent index**, without an Everything runtime dependency.
 
+## Re-measurement for 0.7.17 (2026-10-23)
+
+After 0.7.15 and 0.7.16 changed the engine (index exclusions for Windows, ProgramData, each profile's AppData, the recycle bin and System Volume Information; one packed string per folder; compacting collection after full scans), the independent engine was re-timed with the new `SearchBench timing` command. It uses the same query generator, seed 42, limit 100, six priority roots, three warmup passes and five measured passes as `compare`, but times only the independent engine. No isolated Everything instance was running, so **no new Everything comparison was made**; the table below must not be compared ratio-for-ratio with the October 21 table, whose corpus was larger (3.72 million entries, no exclusions).
+
+Corpus: 2,298,670 entries, 6 denied directories. Fresh build 25.8 s, persisted snapshot load 0.25 s.
+
+| Query category | Samples | p50, ms | p95, ms |
+|---|---:|---:|---:|
+| Leaf fragments | 60 | 9.42 | 22.16 |
+| Case variants | 60 | 9.36 | 22.01 |
+| Partial paths | 40 | 11.54 | 12.74 |
+| Korean path | 5 | 16.08 | 16.47 |
+| Broad terms | 15 | 32.80 | 95.32 |
+| Absent term | 5 | 8.00 | 8.10 |
+| **Overall** | **185** | **9.62** | **31.02** |
+
+Overall p99 was 94.6 ms. Broad terms remain the slowest category; their p95 is a single maximum among 15 samples.
+
 ## Gate declared before measurement
 
 Keep the independent engine when warm-query p95 is at most 100 ms and at most `max(3 * Everything p95, Everything p95 + 25 ms)`, with correct shared-scope results. Report coverage, cold startup, memory and updates separately.
