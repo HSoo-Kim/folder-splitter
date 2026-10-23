@@ -6,6 +6,8 @@ internal sealed class FolderTabButton : ToolStripButton
     private bool dragged;
     private Point pressPosition;
     private ToolStrip? dragOwner;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string Title { get; set; } = "";
     public event EventHandler? CloseRequested;
     public event EventHandler? DragRequested;
 

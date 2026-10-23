@@ -6,7 +6,7 @@ namespace QuadExplorer;
 
 public sealed class ExplorerPane : UserControl
 {
-    private sealed record FolderTab(ShellViewHost Host, ToolStripButton Button);
+    private sealed record FolderTab(ShellViewHost Host, FolderTabButton Button);
     private readonly List<FolderTab> tabs = [];
     private readonly UiText text;
     private readonly List<Action> languageBindings = [];
@@ -28,6 +28,11 @@ public sealed class ExplorerPane : UserControl
     private readonly ContextMenuStrip tabMenu = new();
     private readonly Image folderIcon = Theme.FolderIcon();
     private int selectedIndex = -1;
+    private readonly ToolStripButton newTab;
+    private readonly ToolStripDropDownButton tabList;
+    private int firstVisibleTab;
+    private int tabWheel;
+    private bool layingOutTabs;
     private readonly IPathSearchBackend? search;
     private readonly Func<IReadOnlyList<string>>? searchRoots;
     private readonly AddressCandidates candidates;
@@ -126,7 +131,7 @@ public sealed class ExplorerPane : UserControl
         AddButton(navigation, 5, "\uE838", "Choose folder", ChooseFolder);
         AddButton(navigation, 6, "\uE713", "Pane options", ShowOptions);
 
-        var newTab = new OutlinedToolStripButton("+")
+        newTab = new OutlinedToolStripButton("+")
         {
             AutoSize = false, Width = 30, Margin = new Padding(12, 1, 0, 2), // gap keeps it away from the last tab's close button
             AccessibleName = $"Pane {number} new tab", ToolTipText = this.text.T("New tab (Ctrl+T)"),
@@ -135,6 +140,17 @@ public sealed class ExplorerPane : UserControl
         languageBindings.Add(() => newTab.ToolTipText = this.text.T("New tab (Ctrl+T)"));
         newTab.Click += (_, _) => AddTab(CurrentPath);
         tabStrip.Items.Add(newTab);
+        tabList = new ToolStripDropDownButton
+        {
+            AccessibleName = $"Pane {number} tab list", ToolTipText = this.text.T("All tabs"),
+            Overflow = ToolStripItemOverflow.Never, Visible = false, Margin = new Padding(4, 1, 0, 2)
+        };
+        languageBindings.Add(() => tabList.ToolTipText = this.text.T("All tabs"));
+        tabList.DropDownOpening += (_, _) => Theme.Apply(tabStrip);
+        tabStrip.Items.Add(tabList);
+        // Tabs are sized and windowed here, so nothing is ever pushed into the hidden overflow menu.
+        tabStrip.CanOverflow = false;
+        tabStrip.SizeChanged += (_, _) => LayoutTabs();
         tabStrip.AccessibleName = $"Pane {number} tabs";
         status = new Label
         {
@@ -310,8 +326,9 @@ public sealed class ExplorerPane : UserControl
         foreach (var tab in tabs)
         {
             tab.Host.RefreshLanguage();
-            tab.Button.Text = ShortTitle(tab.Host.DisplayName);
+            tab.Button.Title = tab.Host.DisplayName;
         }
+        LayoutTabs();
         tabMenu.Close();
         RenderStatus(localizedStatus is not null ? localizedStatus() : statusMessage);
     }
@@ -342,8 +359,8 @@ public sealed class ExplorerPane : UserControl
         if (selectFile is not null) host.NavigateAndSelect(selectFile);
         var button = new FolderTabButton
         {
-            Text = ShortTitle(host.DisplayName), Image = folderIcon, AutoSize = false,
-            Width = 164, TextAlign = ContentAlignment.MiddleLeft,
+            Title = host.DisplayName, Text = host.DisplayName, Image = folderIcon, AutoSize = false,
+            Width = 164, TextAlign = ContentAlignment.MiddleLeft, Overflow = ToolStripItemOverflow.Never,
             ImageAlign = ContentAlignment.MiddleLeft, ToolTipText = path,
             AccessibleName = $"Folder tab: {host.DisplayName}",
             Margin = new Padding(1, 0, 1, 0)
@@ -362,8 +379,9 @@ public sealed class ExplorerPane : UserControl
         host.Navigated += (_, _) =>
         {
             Theme.ApplyNative(host.Handle);
-            button.Text = ShortTitle(host.DisplayName);
+            button.Title = host.DisplayName;
             button.ToolTipText = host.LocationPath;
+            LayoutTabs();
             button.AccessibleName = $"Folder tab: {host.DisplayName}";
             if (host == ActiveView) { address.Text = host.LocationPath; UpdateStatus(); }
             StateChanged?.Invoke(this, EventArgs.Empty);
@@ -375,9 +393,10 @@ public sealed class ExplorerPane : UserControl
             if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host == host) RenderItemCount();
         };
         tabs.Add(tab);
-        tabStrip.Items.Insert(tabStrip.Items.Count - 1, button);
+        tabStrip.Items.Insert(tabStrip.Items.IndexOf(newTab), button);
         contents.Controls.Add(host);
         if (select) SelectTab(tabs.Count - 1);
+        else LayoutTabs();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -398,6 +417,7 @@ public sealed class ExplorerPane : UserControl
         current.BringToFront();
         address.Text = current.LocationPath;
         UpdateStatus();
+        LayoutTabs();
         if (focus) { Activated?.Invoke(this, EventArgs.Empty); current.FocusView(); }
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -415,7 +435,7 @@ public sealed class ExplorerPane : UserControl
         tab.Host.Dispose();
         tab.Button.Dispose();
         selectedIndex = -1;
-        if (tabs.Count == 0) ShowEmptyState();
+        if (tabs.Count == 0) { ShowEmptyState(); LayoutTabs(); }
         else SelectTab(Math.Max(0, nextIndex));
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -465,7 +485,107 @@ public sealed class ExplorerPane : UserControl
     }
     public PaneState CaptureState() => new() { Tabs = tabs.Select(t => t.Host.LocationPath).ToList(), SelectedTab = selectedIndex };
     internal int IndexOfTab(ShellViewHost host) => tabs.FindIndex(tab => tab.Host == host);
-    private static string ShortTitle(string title) => title.Length <= 18 ? title : title[..16] + "\u2026";
+    internal ToolStrip TabStrip => tabStrip;
+    internal ToolStripDropDownButton TabList => tabList;
+    internal IReadOnlyList<FolderTabButton> TabButtons => tabs.Select(tab => tab.Button).ToList();
+
+    // Tabs fit their names between a readable minimum and a maximum (wider when alone). When the
+    // row is full every tab shrinks evenly to a floor; past that, a window of tabs containing the
+    // selected one is shown and the rest stay reachable from the tab list button.
+    private void LayoutTabs()
+    {
+        if (layingOutTabs) return;
+        layingOutTabs = true;
+        tabStrip.SuspendLayout();
+        try
+        {
+            int count = tabs.Count;
+            float scale = tabStrip.DeviceDpi / 96f;
+            int Scaled(int value) => (int)Math.Round(value * scale);
+            int chrome = Scaled(62), floor = Scaled(90), margin = 2;
+            int[] natural = tabs.Select(tab => Math.Clamp(TextRenderer.MeasureText(tab.Button.Title, tabStrip.Font).Width + chrome,
+                Scaled(110), Scaled(count == 1 ? 320 : 240))).ToArray();
+            int available = Math.Max(0, tabStrip.ClientSize.Width - tabStrip.Padding.Horizontal
+                - newTab.Width - newTab.Margin.Horizontal - Scaled(6));
+            int[] widths = natural;
+            int shown = count;
+            if (count > 0 && natural.Sum() + margin * count > available)
+            {
+                int low = 0, high = natural.Max();
+                while (low < high)
+                {
+                    int middle = (low + high + 1) / 2;
+                    if (natural.Sum(width => Math.Min(width, middle)) + margin * count <= available) low = middle;
+                    else high = middle - 1;
+                }
+                if (low >= floor) widths = natural.Select(width => Math.Min(width, low)).ToArray();
+                else
+                {
+                    int room = Math.Max(0, available - Scaled(34));
+                    shown = Math.Clamp(room / (floor + margin), 1, count);
+                    int each = Math.Max(floor, room / shown - margin);
+                    widths = natural.Select(width => Math.Min(width, each)).ToArray();
+                }
+            }
+            int first = Math.Clamp(firstVisibleTab, 0, Math.Max(0, count - shown));
+            if (selectedIndex >= 0 && selectedIndex < first) first = selectedIndex;
+            else if (selectedIndex >= first + shown) first = selectedIndex - shown + 1;
+            firstVisibleTab = first;
+            for (int i = 0; i < count; i++)
+            {
+                var button = tabs[i].Button;
+                button.Width = widths[i];
+                button.Text = FitTitle(button.Title, widths[i] - chrome);
+                button.Visible = i >= first && i < first + shown;
+            }
+            tabList.Visible = shown < count;
+            foreach (var old in tabList.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
+            for (int i = 0; i < count; i++)
+            {
+                int index = i;
+                var item = new ToolStripMenuItem(tabs[i].Button.Title)
+                {
+                    Checked = i == selectedIndex, ToolTipText = tabs[i].Host.LocationPath
+                };
+                item.Click += (_, _) => SelectTab(index);
+                tabList.DropDownItems.Add(item);
+            }
+        }
+        finally
+        {
+            tabStrip.ResumeLayout();
+            layingOutTabs = false;
+        }
+    }
+
+    private string FitTitle(string title, int width)
+    {
+        if (TextRenderer.MeasureText(title, tabStrip.Font).Width <= width) return title;
+        int low = 0, high = title.Length;
+        while (low < high)
+        {
+            int middle = (low + high + 1) / 2;
+            if (TextRenderer.MeasureText(title[..middle] + "\u2026", tabStrip.Font).Width <= width) low = middle;
+            else high = middle - 1;
+        }
+        if (low > 0 && char.IsHighSurrogate(title[low - 1])) low--;
+        return title[..low] + "\u2026";
+    }
+
+    // Over the tab row, wheel up / tilt left selects the previous tab and wheel down / tilt right the next.
+    internal bool HandleTabWheel(ref Message message)
+    {
+        if (message.Msg is not (0x20A or 0x20E) || tabs.Count == 0 || !tabStrip.Visible) return false;
+        var point = new Point(unchecked((short)(long)message.LParam), unchecked((short)((long)message.LParam >> 16)));
+        if (!tabStrip.RectangleToScreen(tabStrip.ClientRectangle).Contains(point)) return false;
+        int delta = unchecked((short)((long)message.WParam >> 16));
+        tabWheel += message.Msg == 0x20E ? delta : -delta;
+        int steps = tabWheel / 120;
+        tabWheel %= 120;
+        int target = Math.Clamp(selectedIndex + steps, 0, tabs.Count - 1);
+        if (steps != 0 && target != selectedIndex) SelectTab(target);
+        return true;
+    }
 
     private void ShowTabMenu(int index)
     {

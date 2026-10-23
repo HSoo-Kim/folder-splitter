@@ -82,6 +82,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **1 to 4 panes**: Switch from the top bar or with `Ctrl+1`–`Ctrl+4`. Three panes can also be arranged 2:1 side by side or top and bottom.
 - **Resizing**: Drag the dividers; `Equal size` evens them out again.
 - **Tabs per pane**: Each pane has its own tabs, with new tab, duplicate and reopen closed tab.
+- **Tab width and tab list**: Tabs grow and shrink with the folder name, and a lone tab shows more of a long name. With many tabs they shrink evenly; when they still do not fit, the `▾` button next to `+` lists every tab.
 - **Drag tabs into place**: Drop a tab near a file-list edge to split in that direction, or in the center to move it into that pane. Empty panes accept tabs too.
 - **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
 
@@ -159,6 +160,7 @@ The two apps find files in different ways.
 | `Ctrl+W`, tab ×, middle-click a tab | Close tab |
 | `Ctrl+Shift+T` | Reopen closed tab |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next/previous tab |
+| Mouse wheel or wheel tilt over the tab row | Previous/next tab |
 | `Ctrl+L`, `Alt+D` | Select the address bar |
 | `Alt+Left`, `Alt+Right`, `Alt+Up` | Back/forward/parent folder |
 | Mouse back/forward buttons | Back/forward in the pane under the pointer |

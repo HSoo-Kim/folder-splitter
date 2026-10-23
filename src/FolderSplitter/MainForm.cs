@@ -1373,6 +1373,9 @@ public sealed class MainForm : Form, IMessageFilter
     {
         if ((!ContainsFocus && previewWindow?.ContainsFocus != true) || tabDragging) return false;
         if (showPreview && previewPane.RouteMouseWheel(ref m)) return true;
+        if (m.Msg is 0x20A or 0x20E)
+            foreach (int i in visiblePanes)
+                if (panes[i].HandleTabWheel(ref m)) return true;
         if (m.Msg == 0x201 || m.Msg == 0x204 || m.Msg == 0x20B || m.Msg == 0x100 || m.Msg == 0x104)
         {
             foreach (int i in visiblePanes)

@@ -128,8 +128,8 @@ internal static partial class Program
                     await Navigate(newView, () => panes[0].SelectTab(1));
                     Check(panes[0].TabCount == 2 && panes[0].CurrentPath == folders[1], "new independent tab");
                     var tabItems = Descendants(panes[0]).OfType<ToolStrip>().Single(s => s.AccessibleName == "Pane 1 tabs").Items;
-                    var plus = tabItems[^1];
-                    int gap = plus.Bounds.Left - tabItems[^2].Bounds.Right;
+                    var plus = tabItems.Cast<ToolStripItem>().Single(item => item.AccessibleName == "Pane 1 new tab");
+                    int gap = plus.Bounds.Left - tabItems[tabItems.IndexOf(plus) - 1].Bounds.Right;
                     Check(plus.AccessibleName == "Pane 1 new tab" && plus.Visible && gap is >= 10 and <= 20,
                         "new tab button sits just after the last tab with a gap");
                     var strip = plus.Owner!;
@@ -176,6 +176,7 @@ internal static partial class Program
             RunUpdateScenario(root);
             RunPreviewScenario(root);
             RunPdfScenario(root);
+            RunTabStripScenario(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -669,7 +670,8 @@ internal static partial class Program
                     }
                     var delivered = Message.Create(document, 0x20A, -120 << 16, coordinates);
                     Check(!form.PreFilterMessage(ref delivered), "wheel already delivered to the document is not sent twice");
-                    var outside = pane.PointToScreen(new Point(10, 10));
+                    var list = pane.ActiveView.RectangleToScreen(pane.ActiveView.ClientRectangle);
+                    var outside = new Point(list.Left + list.Width / 2, list.Top + list.Height / 2);
                     var listWheel = Message.Create(pane.ActiveView.Handle, 0x20A, -120 << 16,
                         (nint)((outside.X & 0xFFFF) | ((outside.Y & 0xFFFF) << 16)));
                     Check(!form.PreFilterMessage(ref listWheel), "wheel outside the preview keeps its normal destination");
