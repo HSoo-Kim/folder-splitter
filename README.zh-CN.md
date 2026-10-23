@@ -112,8 +112,8 @@
   - **其他格式**：照片使用 Windows 缩略图，Office、文本等使用已安装的资源管理器预览处理程序。文档上的滚轮会传给预览而非文件列表；滚动与翻页支持取决于处理程序。
 
 ### 外观与设置
-- **颜色主题**：在右上角菜单中从 13 种中选择：标准的“浅色”“深色”，更护眼的“米色”“浅绿色”“柔和深色”，以及基于知名设计配色（Solarized、Everforest、Gruvbox、Rosé Pine、Catppuccin、Nord）、为顶部栏、侧边栏、文件列表和排序列分别着色的 8 种组合。
-  ![Folder Splitter 的 13 种颜色主题配色](docs/images/folder-splitter-themes-v0.7.27.png)
+- **颜色主题**：在右上角菜单中从 15 种中选择：标准的“浅色”“深色”，更护眼的“米色”“浅绿色”“天蓝色”“粉蓝色”“柔和深色”，以及基于知名设计配色（Solarized、Everforest、Gruvbox、Rosé Pine、Catppuccin、Nord）、为顶部栏、侧边栏、文件列表和排序列分别着色的 8 种组合。
+  ![Folder Splitter 的 15 种颜色主题配色](docs/images/folder-splitter-themes-v0.7.29.png)
 - **字体与文字大小**：在“设置”→“字体与文字大小”中选择已安装的字体（Malgun Gothic、Pretendard、NanumGothic 等）和小号、常规、大号文字，文件列表也会一起改变。
 - **文件夹文件合计**：状态栏会显示当前文件夹中直接包含的文件大小合计，例如“此文件夹中的文件 18.4 MB”。不扫描子文件夹，只读取一次文件夹，不会给电脑带来负担；网络文件夹会跳过。
 - **语言**：한국어、English、简体中文、日本語。

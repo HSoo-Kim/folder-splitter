@@ -112,8 +112,8 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
   - **Other formats**: Photos use Windows thumbnails; Office, text and other documents use installed Explorer preview handlers. Wheel input over a document goes to its handler rather than the file list; scrolling and paging support depend on the handler.
 
 ### Appearance and settings
-- **Color themes**: Choose from 13 in the menu at the top right: the standard `Light` and `Dark`, the easier-on-the-eyes `Beige`, `Soft green` and `Soft dark`, and eight mixed palettes based on well-known design palettes (Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin, Nord) that give the top bar, sidebar, file list and sorted column their own colors.
-  ![The 13 Folder Splitter color theme palettes](docs/images/folder-splitter-themes-v0.7.27.png)
+- **Color themes**: Choose from 15 in the menu at the top right: the standard `Light` and `Dark`, the easier-on-the-eyes `Beige`, `Soft green`, `Sky blue`, `Pastel blue` and `Soft dark`, and eight mixed palettes based on well-known design palettes (Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin, Nord) that give the top bar, sidebar, file list and sorted column their own colors.
+  ![The 15 Folder Splitter color theme palettes](docs/images/folder-splitter-themes-v0.7.29.png)
 - **Font and text size**: In `Settings` → `Font and text size`, pick an installed font (Malgun Gothic, Pretendard, NanumGothic and others) and small, normal or large text; the file lists change too.
 - **Folder file total**: The status line shows the total size of the files directly in the current folder, such as `Files here: 18.4 MB`. Subfolders are not scanned, so it is a single folder read with no load on the PC; network folders are skipped.
 - **Languages**: 한국어, English, 简体中文, 日本語.

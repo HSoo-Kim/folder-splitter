@@ -684,7 +684,7 @@ public sealed class MainForm : Form, IMessageFilter
     // Palettes named after their design source keep that name in every language.
     private string ThemeLabel(string mode) => mode switch
     {
-        "dark" => text.T("Dark mode"), "beige" => text.T("Beige"), "green" => text.T("Soft green"), "dim" => text.T("Soft dark"),
+        "dark" => text.T("Dark mode"), "beige" => text.T("Beige"), "green" => text.T("Soft green"), "sky" => text.T("Sky blue"), "pastel" => text.T("Pastel blue"), "dim" => text.T("Soft dark"),
         "solarized" => "Solarized Light", "everforest" => "Everforest Light", "gruvbox" => "Gruvbox Light",
         "rosepine" => "Rosé Pine Dawn", "latte" => "Catppuccin Latte", "everforest-dark" => "Everforest Dark",
         "nord" => "Nord", "mocha" => "Catppuccin Mocha", _ => text.T("Light mode")

@@ -31,6 +31,20 @@ internal static class Theme
         Color.FromArgb(36, 52, 40), Color.FromArgb(92, 112, 96), Color.FromArgb(40, 118, 74),
         Color.FromArgb(220, 236, 222), Color.FromArgb(150, 45, 35),
         Color.FromArgb(230, 242, 231), Color.FromArgb(210, 230, 212));
+    // Muted, slightly grey sky blues with navy text; only the selection and accent carry real blue.
+    private static readonly Palette Sky = new(
+        Color.FromArgb(230, 238, 245), Color.FromArgb(255, 255, 255), Color.FromArgb(205, 221, 234),
+        Color.FromArgb(29, 50, 69), Color.FromArgb(93, 116, 136), Color.FromArgb(58, 124, 184),
+        Color.FromArgb(210, 227, 242), Color.FromArgb(179, 38, 30),
+        Color.FromArgb(223, 233, 243), Color.FromArgb(207, 223, 238),
+        SidebarColor: Color.FromArgb(219, 231, 241), ListColor: Color.FromArgb(248, 251, 253), SortColor: Color.FromArgb(238, 244, 249));
+    // Soft periwinkle blue with a hint of lavender, like a chat bubble; indigo accent.
+    private static readonly Palette Pastel = new(
+        Color.FromArgb(233, 237, 252), Color.FromArgb(255, 255, 255), Color.FromArgb(211, 218, 246),
+        Color.FromArgb(31, 36, 64), Color.FromArgb(95, 102, 136), Color.FromArgb(91, 111, 214),
+        Color.FromArgb(207, 216, 251), Color.FromArgb(179, 38, 30),
+        Color.FromArgb(228, 233, 252), Color.FromArgb(211, 219, 248),
+        SidebarColor: Color.FromArgb(223, 229, 251), ListColor: Color.FromArgb(247, 248, 255), SortColor: Color.FromArgb(238, 241, 253));
     private static readonly Palette Dim = new(
         Color.FromArgb(40, 42, 46), Color.FromArgb(48, 51, 56), Color.FromArgb(70, 74, 80),
         Color.FromArgb(200, 203, 208), Color.FromArgb(150, 155, 162), Color.FromArgb(125, 170, 215),
@@ -88,7 +102,7 @@ internal static class Theme
         SidebarColor: Color.FromArgb(30, 30, 46), ListColor: Color.FromArgb(30, 30, 46), SortColor: Color.FromArgb(36, 36, 58));
     private static readonly Dictionary<string, Palette> Palettes = new()
     {
-        ["light"] = Light, ["dark"] = Dark, ["beige"] = Beige, ["green"] = Green, ["dim"] = Dim,
+        ["light"] = Light, ["dark"] = Dark, ["beige"] = Beige, ["green"] = Green, ["sky"] = Sky, ["pastel"] = Pastel, ["dim"] = Dim,
         ["solarized"] = Solarized, ["everforest"] = Everforest, ["gruvbox"] = Gruvbox, ["rosepine"] = RosePine,
         ["latte"] = Latte, ["everforest-dark"] = EverforestDark, ["nord"] = Nord, ["mocha"] = Mocha
     };

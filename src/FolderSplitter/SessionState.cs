@@ -231,7 +231,7 @@ public static class SessionStore
     public static string NormalizeColorTheme(string? theme) =>
         ColorThemes.FirstOrDefault(name => string.Equals(theme?.Trim(), name, StringComparison.OrdinalIgnoreCase)) ?? "light";
 
-    public static readonly string[] ColorThemes = ["light", "dark", "beige", "green", "dim",
+    public static readonly string[] ColorThemes = ["light", "dark", "beige", "green", "sky", "pastel", "dim",
         "solarized", "everforest", "gruvbox", "rosepine", "latte", "everforest-dark", "nord", "mocha"];
 
     private static List<string> NormalizeFavorites(List<string>? source)

@@ -476,7 +476,7 @@ internal static partial class Program
                         && visual.GetColor(1, out int fore) == 0 && fore == ColorTranslator.ToWin32(Theme.Text),
                         $"{mode} theme recolors the app and the file list");
                 }
-                foreach (var (mode, dark) in new[] { ("solarized", false), ("everforest", false), ("gruvbox", false), ("rosepine", false),
+                foreach (var (mode, dark) in new[] { ("sky", false), ("pastel", false), ("solarized", false), ("everforest", false), ("gruvbox", false), ("rosepine", false),
                     ("latte", false), ("everforest-dark", true), ("nord", true), ("mocha", true) })
                 {
                     form.SetColorTheme(mode);
