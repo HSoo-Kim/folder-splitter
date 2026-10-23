@@ -343,6 +343,9 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         LocationPath = ShellNative.Name(pidlFolder, 0x80028000) ?? requestedLocation; // Desktop absolute parsing.
         DisplayName = ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath, text);
         requestedLocation = LocationPath;
+        recentLocations.RemoveAll(path => string.Equals(path, LocationPath, StringComparison.OrdinalIgnoreCase));
+        recentLocations.Insert(0, LocationPath);
+        if (recentLocations.Count > 16) recentLocations.RemoveAt(16);
         navigationReady = true;
         if (IsRecent(LocationPath)) SortNewestFirst();
         UpdateItemCountMonitoring();
@@ -433,12 +436,25 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     // The first selected file-system path and how many items are selected. Virtual items such as
     // This PC have no file path, so they count toward the selection but yield no path.
+    private readonly List<string> recentLocations = [];
+
+    // Locations this tab has shown, newest first, for the back/forward buttons' recent list.
+    internal IReadOnlyList<string> RecentLocations => recentLocations;
+
     internal (string? Path, int Count) SelectionInfo()
     {
+        var (paths, count) = SelectedPaths(1);
+        return (paths.Count > 0 ? paths[0] : null, count);
+    }
+
+    // File-system paths of the selection (up to limit) and the total number of selected items.
+    // Virtual items such as This PC have no path, so they count toward the selection only.
+    internal (IReadOnlyList<string> Paths, int Count) SelectedPaths(int limit = int.MaxValue)
+    {
         if (view is not IFolderView folderView || folderView.ItemCount(1, out int count) < 0 || count == 0) // SVGIO_SELECTION
-            return (null, 0);
+            return ([], 0);
         Guid dataId = new("0000010e-0000-0000-C000-000000000046");
-        if (view.GetItemObject(1, ref dataId, out nint pointer) < 0) return (null, count);
+        if (view.GetItemObject(1, ref dataId, out nint pointer) < 0) return ([], count);
         var data = (System.Runtime.InteropServices.ComTypes.IDataObject)Marshal.GetObjectForIUnknown(pointer);
         Marshal.Release(pointer);
         var format = new System.Runtime.InteropServices.ComTypes.FORMATETC
@@ -451,15 +467,21 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             data.GetData(ref format, out var medium);
             try
             {
-                uint length = ShellNative.DragQueryFile(medium.unionmember, 0, null, 0);
-                if (length == 0) return (null, count);
-                var buffer = new System.Text.StringBuilder((int)length + 1);
-                ShellNative.DragQueryFile(medium.unionmember, 0, buffer, length + 1);
-                return (buffer.ToString(), count);
+                uint total = ShellNative.DragQueryFile(medium.unionmember, uint.MaxValue, null, 0);
+                var paths = new List<string>((int)Math.Min(total, (uint)Math.Min(limit, 4096)));
+                for (uint i = 0; i < total && paths.Count < limit; i++)
+                {
+                    uint length = ShellNative.DragQueryFile(medium.unionmember, i, null, 0);
+                    if (length == 0) continue;
+                    var buffer = new System.Text.StringBuilder((int)length + 1);
+                    ShellNative.DragQueryFile(medium.unionmember, i, buffer, length + 1);
+                    paths.Add(buffer.ToString());
+                }
+                return (paths, count);
             }
             finally { ShellNative.ReleaseStgMedium(ref medium); }
         }
-        catch (COMException) { return (null, count); }
+        catch (COMException) { return ([], count); }
         finally { Marshal.ReleaseComObject(data); }
     }
 

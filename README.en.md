@@ -81,7 +81,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 ### Panes and tabs
 - **1 to 4 panes**: Switch from the top bar or with `Ctrl+1`–`Ctrl+4`. Three panes can also be arranged 2:1 side by side or top and bottom.
 - **Resizing**: Drag the dividers; `Equal size` evens them out again.
-- **Tabs per pane**: Each pane has its own tabs, with new tab, duplicate and reopen closed tab.
+- **Tabs per pane**: Each pane has its own tabs. `+` or `Ctrl+T` opens a blank tab ready for typing; to open the same folder again, right-click the tab → `Duplicate tab`. Closed tabs can be reopened.
 - **Tab width and tab list**: Tabs grow and shrink with the folder name, and a lone tab shows more of a long name. With many tabs they shrink evenly; when they still do not fit, the `▾` button next to `+` lists every tab.
 - **Drag tabs into place**: Drop a tab near a file-list edge to split in that direction, or in the center to move it into that pane. Empty panes accept tabs too.
 - **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
@@ -89,6 +89,8 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 ### Navigation and search
 - **Address-bar search**: Type part of a name to find it across all local drives instantly. [Details](#the-address-bar-is-a-search-box)
 - **Moving around**: Path input with autocomplete, back/forward/up, and the mouse side buttons.
+- **Path buttons**: The address bar shows each folder as a button (`C: › Users › …`). Click one to go there, or click `›` for its subfolders. Click an empty spot or press `Ctrl+L` to type a path or search as before.
+- **Recent locations**: Right-click the back or forward button for the folders this tab has visited.
 - **Browse for a folder**: The folder icon beside the address bar opens a folder picker.
 
 ### Sidebar
@@ -100,8 +102,10 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 ### Files
 - **Native Windows actions**: Right-click menu, copy/cut/paste, rename, delete and drag and drop between panes are handled by Windows as usual.
 - **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer. Grouping, sort order and view mode are remembered per folder, as in File Explorer.
-- **Item count**: Each pane shows how many items it displays, updated immediately.
+- **Item count and selection**: Each pane shows how many items it displays and, with a selection, the count and total file size (for example `3 selected · 1.2 GB`).
 - **Preview**: Enable it with `Preview` or `Alt+P`, then click a file. Its visibility and width are remembered.
+- **Copy or move to the other pane**: `Ctrl+Alt+C` (copy), `Ctrl+Alt+X` (move) or the pane options (⚙) send the selection to the other pane's folder, meaning the pane you used just before. The same Windows copy dialog as File Explorer handles progress, name conflicts and undo (`Ctrl+Z`).
+- **Copy path, terminal**: `Ctrl+Shift+C` copies the selected items' paths in quotes, like File Explorer (the current folder when nothing is selected). `Open terminal here` in the pane options opens Windows Terminal (or PowerShell) in that folder.
   - **Multi-page PDFs**: No separate PDF app is needed. Wheel down over the preview for the next page, or up for the previous page. The page number and previous/next buttons appear below.
   - **Separate window**: Drag the file-name header or click `Detach preview`. Drag it back over the main window's right side or click `Dock preview` to put it back; the current PDF page is preserved.
   - **Other formats**: Photos use Windows thumbnails; Office, text and other documents use installed Explorer preview handlers. Wheel input over a document goes to its handler rather than the file list; scrolling and paging support depend on the handler.
@@ -110,6 +114,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Light/dark theme**: Toggle at the top right; the file lists follow too.
 - **Languages**: 한국어, English, 简体中文, 日本語.
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
+- **Workspaces**: `Workspaces` at the top saves the current panes and tabs under a name and opens them again later (up to 20). Handy when switching between projects.
 - **Version and updates**: The lower left shows the current version and, when a new release is out, `Update` beside it. Clicking it downloads the new version, swaps it in and restarts, keeping your tabs and settings. Nothing is installed until you click.
 
 File lists are native Windows lists, so column sorting and right-click menus are handled by the Windows Shell. The Windows 11 Explorer command bar and tab UI are not embedded.
@@ -156,7 +161,7 @@ The two apps find files in different ways.
 |---|---|
 | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | Switch layout |
 | `F6` | Move to the next pane |
-| `Ctrl+T` | Open the current folder in a new tab |
+| `Ctrl+T`, `+` | New blank tab |
 | `Ctrl+W`, tab ×, middle-click a tab | Close tab |
 | `Ctrl+Shift+T` | Reopen closed tab |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next/previous tab |
@@ -165,6 +170,9 @@ The two apps find files in different ways.
 | `Alt+Left`, `Alt+Right`, `Alt+Up` | Back/forward/parent folder |
 | Mouse back/forward buttons | Back/forward in the pane under the pointer |
 | `Ctrl+D` | Add the current folder to favorites |
+| `Ctrl+Shift+C` | Copy the selected items' paths (current folder if nothing is selected) |
+| `Ctrl+Alt+C`, `Ctrl+Alt+X` | Copy / move the selection to the other pane |
+| Right-click back or forward | Recent locations |
 | `Ctrl+Shift+E` | Collapse or expand the folder tree |
 | `Alt+P` | Show / hide the preview pane |
 | `Win+Alt+E` | Bring Folder Splitter to the front / again to hide it |

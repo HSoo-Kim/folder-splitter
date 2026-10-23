@@ -99,4 +99,38 @@ internal static partial class Program
         };
         Application.Run(form);
     }
+
+    // Reports layout cost per window resize step with four panes of tabs; printed for comparison only.
+    private static void RunResizeMetric(string root)
+    {
+        var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, "Resize", $"Folder {i}")).FullName).ToArray();
+        string session = Path.Combine(root, "resize.json");
+        SessionStore.Save(session, new SessionState
+        {
+            Layout = 4, Language = "en", ExplorerFavoritesImported = true,
+            Panes = folders.Select(folder => new PaneState { Tabs = Enumerable.Repeat(folder, 6).ToList() }).ToList()
+        });
+        using var form = new MainForm(session, []);
+        form.Shown += async (_, _) =>
+        {
+            try
+            {
+                foreach (var view in Enumerable.Range(0, 4).Select(i => form.GetPane(i).ActiveView!))
+                    if (!view.HasNavigated) await NavigationSignal(view).WaitAsync(TimeSpan.FromSeconds(20));
+                form.Size = new Size(1500, 950);
+                form.Refresh();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                const int steps = 40;
+                for (int i = 0; i < steps; i++)
+                {
+                    form.Size = i % 2 == 0 ? new Size(1300, 850) : new Size(1500, 950);
+                    form.Refresh();
+                }
+                Console.WriteLine($"METRIC resize_ms_per_step={watch.Elapsed.TotalMilliseconds / steps:F2}");
+            }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+            finally { form.ExitApplication(); }
+        };
+        Application.Run(form);
+    }
 }

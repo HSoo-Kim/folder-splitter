@@ -6,7 +6,11 @@ namespace QuadExplorer;
 
 public sealed class ExplorerPane : UserControl
 {
-    private sealed record FolderTab(ShellViewHost Host, FolderTabButton Button);
+    private sealed class FolderTab(FolderTabButton button)
+    {
+        public ShellViewHost? Host { get; set; }
+        public FolderTabButton Button { get; } = button;
+    }
     private readonly List<FolderTab> tabs = [];
     private readonly UiText text;
     private readonly List<Action> languageBindings = [];
@@ -33,6 +37,12 @@ public sealed class ExplorerPane : UserControl
     private int firstVisibleTab;
     private int tabWheel;
     private bool layingOutTabs;
+    private readonly ToolStrip breadcrumb = Theme.Strip();
+    private string? selectionSummary;
+    private int selectionGeneration;
+    private readonly System.Windows.Forms.Timer selectionTimer = new() { Interval = 150 };
+    internal event EventHandler? SelectionSummaryChanged;
+    internal event Action<ExplorerPane, bool>? TransferRequested;
     private readonly IPathSearchBackend? search;
     private readonly Func<IReadOnlyList<string>>? searchRoots;
     private readonly AddressCandidates candidates;
@@ -87,8 +97,10 @@ public sealed class ExplorerPane : UserControl
         navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        AddButton(navigation, 0, "\uE72B", "Back (Alt+Left)", () => ActiveView?.Travel(0x4000));
-        AddButton(navigation, 1, "\uE72A", "Forward (Alt+Right)", () => ActiveView?.Travel(0x8000));
+        var back = AddButton(navigation, 0, "\uE72B", "Back (Alt+Left)", () => ActiveView?.Travel(0x4000));
+        var forward = AddButton(navigation, 1, "\uE72A", "Forward (Alt+Right)", () => ActiveView?.Travel(0x8000));
+        foreach (var travel in new[] { back, forward })
+            travel.MouseUp += (_, e) => { if (e.Button == MouseButtons.Right) ShowRecentLocations(travel); };
         AddButton(navigation, 2, "\uE74A", "Up (Alt+Up)", () => ActiveView?.Travel(0x2000));
         address = new TextBox
         {
@@ -119,6 +131,21 @@ public sealed class ExplorerPane : UserControl
             else if (e.KeyCode == Keys.Tab) CloseCandidates();
         };
         navigation.Controls.Add(address, 3, 0);
+        // The breadcrumb sits inside the address box and gives way to plain text while it has focus.
+        breadcrumb.Dock = DockStyle.Fill;
+        breadcrumb.AutoSize = false;
+        breadcrumb.CanOverflow = false;
+        breadcrumb.Padding = new Padding(1, 0, 1, 0);
+        breadcrumb.AccessibleName = $"Pane {number} breadcrumb";
+        breadcrumb.Visible = false;
+        breadcrumb.MouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left && breadcrumb.GetItemAt(e.Location) is null) FocusAddress();
+        };
+        breadcrumb.SizeChanged += (_, _) => { if (breadcrumb.Visible) FitBreadcrumb(); };
+        address.Controls.Add(breadcrumb);
+        address.GotFocus += (_, _) => breadcrumb.Visible = false;
+        selectionTimer.Tick += async (_, _) => { selectionTimer.Stop(); await UpdateSelectionSummary(); };
         languageBindings.Add(RefreshAddressTip);
         RefreshAddressTip();
         var go = Theme.Button("\uE8AD", $"Pane {number} go to address", () => Navigate(address.Text));
@@ -138,7 +165,7 @@ public sealed class ExplorerPane : UserControl
             Overflow = ToolStripItemOverflow.Never
         };
         languageBindings.Add(() => newTab.ToolTipText = this.text.T("New tab (Ctrl+T)"));
-        newTab.Click += (_, _) => AddTab(CurrentPath);
+        newTab.Click += (_, _) => AddBlankTab();
         tabStrip.Items.Add(newTab);
         tabList = new ToolStripDropDownButton
         {
@@ -180,7 +207,10 @@ public sealed class ExplorerPane : UserControl
             BeginInvoke(() =>
             {
                 if (!IsDisposed && !address.Focused && !candidates.Bounds.Contains(Cursor.Position))
+                {
                     CloseCandidates();
+                    ShowBreadcrumb();
+                }
             });
         };
         SizeChanged += (_, _) => CloseCandidates();
@@ -289,7 +319,7 @@ public sealed class ExplorerPane : UserControl
         else SetLocalizedStatus("No longer available: {0}", hit.FullPath);
     }
 
-    private void AddButton(TableLayoutPanel row, int column, string glyph, string name, Action action)
+    private Button AddButton(TableLayoutPanel row, int column, string glyph, string name, Action action)
     {
         var button = Theme.Button(glyph, $"Pane {PaneNumber} {name}", action);
         button.Font = new Font(Theme.IconFont, 10);
@@ -300,9 +330,12 @@ public sealed class ExplorerPane : UserControl
         {
             "Choose folder" => "Browse for a folder: open folder picker",
             "Pane options" => "Pane options: view mode, refresh, favorites",
+            "Back (Alt+Left)" => "Back (Alt+Left); right-click for recent locations",
+            "Forward (Alt+Right)" => "Forward (Alt+Right); right-click for recent locations",
             _ => name
         });
         row.Controls.Add(button, column, 0);
+        return button;
     }
 
     private void BindTip(Control control, string key)
@@ -325,10 +358,12 @@ public sealed class ExplorerPane : UserControl
         emptyHint.Text = text.T("Enter a folder path above or choose a folder from Pane options.");
         foreach (var tab in tabs)
         {
-            tab.Host.RefreshLanguage();
-            tab.Button.Title = tab.Host.DisplayName;
+            tab.Host?.RefreshLanguage();
+            tab.Button.Title = tab.Host?.DisplayName ?? text.T("New tab");
         }
         LayoutTabs();
+        ShowBreadcrumb();
+        if (selectionSummary is not null) ScheduleSelectionSummary();
         tabMenu.Close();
         RenderStatus(localizedStatus is not null ? localizedStatus() : statusMessage);
     }
@@ -343,31 +378,32 @@ public sealed class ExplorerPane : UserControl
         foreach (var tab in tabs)
         {
             tab.Button.ForeColor = tab == tabs.ElementAtOrDefault(selectedIndex) ? Theme.Accent : Theme.Text;
-            if (tab.Host.IsHandleCreated) Theme.ApplyNative(tab.Host.Handle);
-            tab.Host.ApplyThemeColors();
+            if (tab.Host is not { } host) continue;
+            if (host.IsHandleCreated) Theme.ApplyNative(host.Handle);
+            host.ApplyThemeColors();
         }
         candidates.RefreshTheme();
     }
 
-    public void AddTab(string path, bool select = true)
+    public void AddTab(string path, bool select = true) => InsertTab(path, select);
+
+    // A tab with no folder yet: the address bar takes focus so the user can type a path or search.
+    public void AddBlankTab() => InsertTab(null, select: true);
+
+    private void InsertTab(string? path, bool select)
     {
         if (tabs.Count >= 32) { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return; }
-        if (string.IsNullOrWhiteSpace(path))
-            path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string? selectFile = File.Exists(path) ? Path.GetFullPath(path) : null;
-        var host = new ShellViewHost(selectFile is null ? path : Path.GetDirectoryName(selectFile)!, text) { Visible = false };
-        if (selectFile is not null) host.NavigateAndSelect(selectFile);
+        string title = text.T("New tab");
         var button = new FolderTabButton
         {
-            Title = host.DisplayName, Text = host.DisplayName, Image = folderIcon, AutoSize = false,
+            Title = title, Text = title, Image = folderIcon, AutoSize = false,
             Width = 164, TextAlign = ContentAlignment.MiddleLeft, Overflow = ToolStripItemOverflow.Never,
-            ImageAlign = ContentAlignment.MiddleLeft, ToolTipText = path,
-            AccessibleName = $"Folder tab: {host.DisplayName}",
+            ImageAlign = ContentAlignment.MiddleLeft, AccessibleName = $"Folder tab: {title}",
             Margin = new Padding(1, 0, 1, 0)
         };
-        var tab = new FolderTab(host, button);
+        var tab = new FolderTab(button);
         button.CloseRequested += (_, _) => CloseTab(tabs.IndexOf(tab));
-        button.DragRequested += (_, _) => TabDragRequested?.Invoke(this, host);
+        button.DragRequested += (_, _) => { if (tab.Host is { } host) TabDragRequested?.Invoke(this, host); };
         button.Click += (_, _) => SelectTab(tabs.IndexOf(tab));
         button.MouseDown += (_, e) =>
         {
@@ -375,7 +411,32 @@ public sealed class ExplorerPane : UserControl
             if (e.Button == MouseButtons.Middle) CloseTab(index);
             else if (e.Button == MouseButtons.Right) ShowTabMenu(index);
         };
-        host.SelectionChanged += (_, _) => { if (host == ActiveView) SelectionChanged?.Invoke(this, EventArgs.Empty); };
+        tabs.Add(tab);
+        tabStrip.Items.Insert(tabStrip.Items.IndexOf(newTab), button);
+        if (path is not null) AttachHost(tab, path);
+        if (select) SelectTab(tabs.Count - 1);
+        else LayoutTabs();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void AttachHost(FolderTab tab, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string? selectFile = File.Exists(path) ? Path.GetFullPath(path) : null;
+        var host = new ShellViewHost(selectFile is null ? path : Path.GetDirectoryName(selectFile)!, text) { Visible = false };
+        if (selectFile is not null) host.NavigateAndSelect(selectFile);
+        tab.Host = host;
+        var button = tab.Button;
+        button.Title = host.DisplayName;
+        button.ToolTipText = path;
+        button.AccessibleName = $"Folder tab: {host.DisplayName}";
+        host.SelectionChanged += (_, _) =>
+        {
+            if (host != ActiveView) return;
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+            ScheduleSelectionSummary();
+        };
         host.Navigated += (_, _) =>
         {
             Theme.ApplyNative(host.Handle);
@@ -383,7 +444,7 @@ public sealed class ExplorerPane : UserControl
             button.ToolTipText = host.LocationPath;
             LayoutTabs();
             button.AccessibleName = $"Folder tab: {host.DisplayName}";
-            if (host == ActiveView) { address.Text = host.LocationPath; UpdateStatus(); }
+            if (host == ActiveView) { selectionSummary = null; address.Text = host.LocationPath; UpdateStatus(); ShowBreadcrumb(); }
             StateChanged?.Invoke(this, EventArgs.Empty);
         };
         host.NavigationError += (_, message) => SetLocalizedStatus(() => host.ErrorStatus ?? message);
@@ -392,33 +453,43 @@ public sealed class ExplorerPane : UserControl
         {
             if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host == host) RenderItemCount();
         };
-        tabs.Add(tab);
-        tabStrip.Items.Insert(tabStrip.Items.IndexOf(newTab), button);
         contents.Controls.Add(host);
-        if (select) SelectTab(tabs.Count - 1);
-        else LayoutTabs();
-        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void SelectTab(int index, bool focus = true)
     {
         CloseCandidates();
         if (index < 0 || index >= tabs.Count) return;
-        if (selectedIndex >= 0 && selectedIndex < tabs.Count) tabs[selectedIndex].Host.Visible = false;
+        if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host is { } previous) previous.Visible = false;
         selectedIndex = index;
-        emptyHint.Visible = false;
         for (int i = 0; i < tabs.Count; i++)
         {
             tabs[i].Button.Checked = i == index;
             tabs[i].Button.ForeColor = i == index ? Theme.Accent : Theme.Text;
         }
+        selectionSummary = null;
         var current = tabs[index].Host;
-        current.Visible = true;
-        current.BringToFront();
-        address.Text = current.LocationPath;
+        emptyHint.Visible = current is null;
+        if (current is not null)
+        {
+            current.Visible = true;
+            current.BringToFront();
+            address.Text = current.LocationPath;
+        }
+        else
+        {
+            emptyHint.BringToFront();
+            address.Clear();
+        }
         UpdateStatus();
         LayoutTabs();
-        if (focus) { Activated?.Invoke(this, EventArgs.Empty); current.FocusView(); }
+        ShowBreadcrumb();
+        if (focus)
+        {
+            Activated?.Invoke(this, EventArgs.Empty);
+            if (current is not null) current.FocusView();
+            else FocusAddress();
+        }
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -427,12 +498,15 @@ public sealed class ExplorerPane : UserControl
         if (index < 0) index = selectedIndex;
         if (index < 0 || index >= tabs.Count) return;
         var tab = tabs[index];
-        closedTabs.Push(tab.Host.LocationPath);
         int nextIndex = selectedIndex > index ? selectedIndex - 1 : Math.Min(selectedIndex, tabs.Count - 2);
         tabs.RemoveAt(index);
         tabStrip.Items.Remove(tab.Button);
-        contents.Controls.Remove(tab.Host);
-        tab.Host.Dispose();
+        if (tab.Host is { } host)
+        {
+            closedTabs.Push(host.LocationPath);
+            contents.Controls.Remove(host);
+            host.Dispose();
+        }
         tab.Button.Dispose();
         selectedIndex = -1;
         if (tabs.Count == 0) { ShowEmptyState(); LayoutTabs(); }
@@ -450,10 +524,16 @@ public sealed class ExplorerPane : UserControl
         Activated?.Invoke(this, EventArgs.Empty);
         if (string.IsNullOrWhiteSpace(path)) return;
         if (ActiveView is { } view) view.Navigate(path);
+        else if (selectedIndex >= 0 && tabs[selectedIndex].Host is null)
+        {
+            AttachHost(tabs[selectedIndex], path);
+            SelectTab(selectedIndex);
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
         else AddTab(path);
     }
 
-    public void FocusAddress() { address.Focus(); address.SelectAll(); }
+    public void FocusAddress() { breadcrumb.Visible = false; address.Focus(); address.SelectAll(); }
     public void FocusFiles()
     {
         if (ActiveView is { } view) view.FocusView();
@@ -469,7 +549,8 @@ public sealed class ExplorerPane : UserControl
     private void RenderItemCount()
     {
         status.Text = ActiveView is null ? statusMessage : statusMessage + "  |  " + (ActiveView.ItemCount is int value
-            ? text.T("{0} items", value) : text.T("Counting items..."));
+            ? text.T("{0} items", value) : text.T("Counting items..."))
+            + (selectionSummary is null ? "" : "  |  " + selectionSummary);
         tips.SetToolTip(status, status.Text);
     }
     internal void SetLocalizedStatus(string key, params object?[] args) => SetLocalizedStatus(() => text.T(key, args));
@@ -483,7 +564,14 @@ public sealed class ExplorerPane : UserControl
         emptyHint.Visible = true;
         UpdateStatus();
     }
-    public PaneState CaptureState() => new() { Tabs = tabs.Select(t => t.Host.LocationPath).ToList(), SelectedTab = selectedIndex };
+    // Tabs that never opened a folder are not saved.
+    public PaneState CaptureState()
+    {
+        var saved = tabs.Where(tab => tab.Host is not null).ToList();
+        int selected = selectedIndex < 0 ? -1 : saved.Count(tab => tabs.IndexOf(tab) < selectedIndex)
+            - (tabs[selectedIndex].Host is null ? 1 : 0);
+        return new() { Tabs = saved.Select(tab => tab.Host!.LocationPath).ToList(), SelectedTab = Math.Max(0, selected) };
+    }
     internal int IndexOfTab(ShellViewHost host) => tabs.FindIndex(tab => tab.Host == host);
     internal ToolStrip TabStrip => tabStrip;
     internal ToolStripDropDownButton TabList => tabList;
@@ -503,7 +591,7 @@ public sealed class ExplorerPane : UserControl
             float scale = tabStrip.DeviceDpi / 96f;
             int Scaled(int value) => (int)Math.Round(value * scale);
             int chrome = Scaled(62), floor = Scaled(90), margin = 2;
-            int[] natural = tabs.Select(tab => Math.Clamp(TextRenderer.MeasureText(tab.Button.Title, tabStrip.Font).Width + chrome,
+            int[] natural = tabs.Select(tab => Math.Clamp(TextWidth(tab.Button.Title) + chrome,
                 Scaled(110), Scaled(count == 1 ? 320 : 240))).ToArray();
             int available = Math.Max(0, tabStrip.ClientSize.Width - tabStrip.Padding.Horizontal
                 - newTab.Width - newTab.Margin.Horizontal - Scaled(6));
@@ -545,7 +633,7 @@ public sealed class ExplorerPane : UserControl
                 int index = i;
                 var item = new ToolStripMenuItem(tabs[i].Button.Title)
                 {
-                    Checked = i == selectedIndex, ToolTipText = tabs[i].Host.LocationPath
+                    Checked = i == selectedIndex, ToolTipText = tabs[i].Host?.LocationPath ?? ""
                 };
                 item.Click += (_, _) => SelectTab(index);
                 tabList.DropDownItems.Add(item);
@@ -560,16 +648,32 @@ public sealed class ExplorerPane : UserControl
 
     private string FitTitle(string title, int width)
     {
-        if (TextRenderer.MeasureText(title, tabStrip.Font).Width <= width) return title;
+        if (TextWidth(title) <= width) return title;
         int low = 0, high = title.Length;
         while (low < high)
         {
             int middle = (low + high + 1) / 2;
-            if (TextRenderer.MeasureText(title[..middle] + "\u2026", tabStrip.Font).Width <= width) low = middle;
+            if (TextWidth(title[..middle] + "\u2026") <= width) low = middle;
             else high = middle - 1;
         }
         if (low > 0 && char.IsHighSurrogate(title[low - 1])) low--;
         return title[..low] + "\u2026";
+    }
+
+    // Tab titles are measured on every resize step; widths are cached per font.
+    private readonly Dictionary<string, int> textWidths = [];
+    private Font? measuredFont;
+
+    private int TextWidth(string value)
+    {
+        if (!ReferenceEquals(measuredFont, tabStrip.Font) || textWidths.Count > 4096)
+        {
+            textWidths.Clear();
+            measuredFont = tabStrip.Font;
+        }
+        if (!textWidths.TryGetValue(value, out int width))
+            textWidths[value] = width = TextRenderer.MeasureText(value, tabStrip.Font).Width;
+        return width;
     }
 
     // Over the tab row, wheel up / tilt left selects the previous tab and wheel down / tilt right the next.
@@ -592,8 +696,8 @@ public sealed class ExplorerPane : UserControl
         if (index < 0) return;
         SelectTab(index, focus: false);
         tabMenu.Items.Clear();
-        tabMenu.Items.Add(text.T("New tab"), null, (_, _) => AddTab(CurrentPath));
-        tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => AddTab(CurrentPath));
+        tabMenu.Items.Add(text.T("New tab"), null, (_, _) => AddBlankTab());
+        tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => AddTab(CurrentPath)).Enabled = ActiveView is not null;
         tabMenu.Items.Add(text.T("Reopen closed tab"), null, (_, _) => ReopenTab()).Enabled = closedTabs.Count > 0;
         var move = new ToolStripMenuItem(text.T("Move tab to pane"));
         for (int i = 1; i <= 4; i++)
@@ -602,6 +706,7 @@ public sealed class ExplorerPane : UserControl
             if (target == PaneNumber) continue;
             move.DropDownItems.Add(text.T("Pane {0}", target), null, (_, _) => MoveTabRequested?.Invoke(this, CurrentPath, target));
         }
+        move.Enabled = ActiveView is not null;
         tabMenu.Items.Add(move);
         var split = new ToolStripMenuItem(text.T("Split tab"));
         foreach (SplitEdge edge in Enum.GetValues<SplitEdge>())
@@ -631,6 +736,11 @@ public sealed class ExplorerPane : UserControl
         tabMenu.Items.Add(text.T("Copy folder path"), null, (_, _) => CopyPath());
         tabMenu.Items.Add(text.T("Open in File Explorer"), null, (_, _) => OpenInExplorer());
         tabMenu.Items.Add(text.T("Choose folder..."), null, (_, _) => ChooseFolder());
+        tabMenu.Items.Add(text.T("Copy path    Ctrl+Shift+C"), null, (_, _) => CopySelectionPaths());
+        tabMenu.Items.Add(text.T("Open terminal here"), null, (_, _) => OpenTerminal()).Enabled = Directory.Exists(CurrentPath);
+        tabMenu.Items.Add(new ToolStripSeparator());
+        tabMenu.Items.Add(text.T("Copy selection to other pane    Ctrl+Alt+C"), null, (_, _) => TransferRequested?.Invoke(this, false));
+        tabMenu.Items.Add(text.T("Move selection to other pane    Ctrl+Alt+X"), null, (_, _) => TransferRequested?.Invoke(this, true));
         tabMenu.Items.Add(new ToolStripSeparator());
         tabMenu.Items.Add(text.T("Details view"), null, (_, _) => ActiveView?.SetViewMode(4));
         tabMenu.Items.Add(text.T("List view"), null, (_, _) => ActiveView?.SetViewMode(3));
@@ -664,6 +774,242 @@ public sealed class ExplorerPane : UserControl
         catch (Win32Exception ex) { SetStatus(ex.Message); }
     }
 
+    internal ToolStrip Breadcrumb => breadcrumb;
+    internal string? SelectionSummary => selectionSummary;
+
+    internal void ReplaceTabs(PaneState state)
+    {
+        while (tabs.Count > 0) CloseTab(tabs.Count - 1);
+        foreach (string path in state.Tabs) AddTab(path, select: false);
+        if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
+    }
+
+    // Path segments for the breadcrumb: the root (drive or UNC share) and each folder below it.
+    // Shell locations without a file-system path (This PC, Recycle Bin) have no segments.
+    internal static List<(string Label, string Path)> PathSegments(string path)
+    {
+        var segments = new List<(string, string)>();
+        if (string.IsNullOrEmpty(path) || path.StartsWith("::", StringComparison.Ordinal) || !Path.IsPathFullyQualified(path))
+            return segments;
+        string root = Path.GetPathRoot(path)!;
+        string current = root.EndsWith('\\') ? root : root + "\\";
+        segments.Add((root.TrimEnd('\\'), current));
+        foreach (string part in path[root.Length..].Split('\\', StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, part);
+            segments.Add((part, current));
+        }
+        return segments;
+    }
+
+    private void ShowBreadcrumb()
+    {
+        bool show = ActiveView is not null && !address.Focused && address.Text == CurrentPath;
+        if (show) RebuildBreadcrumb();
+        breadcrumb.Visible = show;
+    }
+
+    private string? breadcrumbPath;
+    private readonly List<(ToolStripItem[] Items, int Width)> breadcrumbGroups = [];
+    private List<(string Label, string Path)> breadcrumbSegments = [];
+    private ToolStripDropDownButton? breadcrumbOverflow;
+
+    private void RebuildBreadcrumb()
+    {
+        if (breadcrumbPath == CurrentPath && breadcrumb.Items.Count > 0) { FitBreadcrumb(); return; }
+        breadcrumb.SuspendLayout();
+        try
+        {
+            foreach (var old in breadcrumb.Items.Cast<ToolStripItem>().ToArray()) old.Dispose();
+            breadcrumbGroups.Clear();
+            breadcrumbOverflow = null;
+            breadcrumbPath = CurrentPath;
+            breadcrumbSegments = PathSegments(CurrentPath);
+            if (breadcrumbSegments.Count == 0)
+            {
+                breadcrumb.Items.Add(new ToolStripLabel(ActiveView?.DisplayName ?? "") { Margin = new Padding(4, 0, 0, 0) });
+                return;
+            }
+            foreach (var (label, path) in breadcrumbSegments)
+            {
+                string target = path;
+                var segment = new ToolStripButton(label) { Margin = new Padding(0), Padding = new Padding(2, 0, 2, 0), ToolTipText = target };
+                segment.Click += (_, _) => Navigate(target);
+                var chevron = new ToolStripDropDownButton("\u203A")
+                {
+                    ShowDropDownArrow = false, Margin = new Padding(0), Padding = new Padding(1, 0, 1, 0),
+                    AccessibleName = $"Subfolders of {label}"
+                };
+                chevron.DropDownItems.Add("\u2026");
+                chevron.DropDownOpening += (_, _) => FillSubfolders(chevron, target);
+                breadcrumb.Items.Add(segment);
+                breadcrumb.Items.Add(chevron);
+                ToolStripItem[] items = [segment, chevron];
+                breadcrumbGroups.Add((items, items.Sum(item => item.GetPreferredSize(Size.Empty).Width + item.Margin.Horizontal)));
+            }
+        }
+        finally { breadcrumb.ResumeLayout(); }
+        FitBreadcrumb();
+    }
+
+    // Keep the deepest folders; ancestors that do not fit move into a leading dropdown.
+    private void FitBreadcrumb()
+    {
+        if (breadcrumbGroups.Count == 0) return;
+        int available = breadcrumb.ClientSize.Width - breadcrumb.Padding.Horizontal - 4;
+        int overflowWidth = 24, used = 0, first = breadcrumbGroups.Count - 1;
+        for (int i = breadcrumbGroups.Count - 1; i >= 0; i--)
+        {
+            int width = breadcrumbGroups[i].Width;
+            if (i < breadcrumbGroups.Count - 1 && used + width > available - (i > 0 ? overflowWidth : 0)) break;
+            used += width;
+            first = i;
+        }
+        int hiddenNow = breadcrumbOverflow?.DropDownItems.Count ?? 0;
+        if (hiddenNow == first) return;
+        breadcrumb.SuspendLayout();
+        try
+        {
+            for (int i = 0; i < breadcrumbGroups.Count; i++)
+                foreach (var item in breadcrumbGroups[i].Items) item.Visible = i >= first;
+            breadcrumbOverflow?.Dispose();
+            breadcrumbOverflow = null;
+            if (first == 0) return;
+            var hidden = new ToolStripDropDownButton("\u00AB")
+            {
+                ShowDropDownArrow = false, Margin = new Padding(0), Padding = new Padding(2, 0, 2, 0),
+                AccessibleName = "Hidden path folders"
+            };
+            for (int i = first - 1; i >= 0; i--)
+            {
+                string target = breadcrumbSegments[i].Path;
+                hidden.DropDownItems.Add(breadcrumbSegments[i].Label, null, (_, _) => Navigate(target));
+            }
+            hidden.DropDownOpening += (_, _) => Theme.Apply(breadcrumb);
+            breadcrumb.Items.Insert(0, hidden);
+            breadcrumbOverflow = hidden;
+        }
+        finally { breadcrumb.ResumeLayout(); }
+    }
+
+    private void FillSubfolders(ToolStripDropDownButton chevron, string folder)
+    {
+        foreach (var old in chevron.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
+        try
+        {
+            var names = new DirectoryInfo(folder).EnumerateDirectories()
+                .Where(directory => (directory.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0)
+                .Select(directory => directory.FullName).Take(500).ToList();
+            names.Sort((left, right) => StrCmpLogicalW(Path.GetFileName(left), Path.GetFileName(right)));
+            foreach (string path in names)
+                chevron.DropDownItems.Add(Path.GetFileName(path), null, (_, _) => Navigate(path));
+            if (names.Count == 0) chevron.DropDownItems.Add(text.T("(No subfolders)")).Enabled = false;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            chevron.DropDownItems.Add(text.T("(Cannot open this folder)")).Enabled = false;
+        }
+        Theme.Apply(breadcrumb);
+    }
+
+    [System.Runtime.InteropServices.DllImport("shlwapi.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int StrCmpLogicalW(string left, string right);
+
+    private void ShowRecentLocations(Control anchor)
+    {
+        tabMenu.Items.Clear();
+        var places = ActiveView?.RecentLocations
+            .Where(place => !string.Equals(place, CurrentPath, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
+        if (places.Count == 0) tabMenu.Items.Add(text.T("No recent locations")).Enabled = false;
+        foreach (string place in places) tabMenu.Items.Add(place, null, (_, _) => Navigate(place));
+        tabMenu.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    internal IReadOnlyList<string> RecentLocationChoices => ActiveView?.RecentLocations
+        .Where(place => !string.Equals(place, CurrentPath, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
+
+    private void ScheduleSelectionSummary()
+    {
+        selectionTimer.Stop();
+        selectionTimer.Start();
+    }
+
+    // "3 selected · 1.2 GB" in the status line. Sizes add up selected files; folders are counted only.
+    internal async Task UpdateSelectionSummary()
+    {
+        int generation = ++selectionGeneration;
+        var view = ActiveView;
+        var (paths, count) = view?.SelectedPaths(5000) ?? ([], 0);
+        if (count == 0)
+        {
+            selectionSummary = null;
+            RenderItemCount();
+            SelectionSummaryChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+        long bytes = await Task.Run(() =>
+        {
+            long total = 0;
+            foreach (string path in paths)
+            {
+                try { var file = new FileInfo(path); if (file.Exists) total += file.Length; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+            }
+            return total;
+        });
+        if (generation != selectionGeneration || IsDisposed || view != ActiveView) return;
+        selectionSummary = bytes > 0 ? text.T("{0} selected · {1}", count, FormatSize(bytes)) : text.T("{0} selected", count);
+        RenderItemCount();
+        SelectionSummaryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal static string FormatSize(long bytes)
+    {
+        var buffer = new System.Text.StringBuilder(32);
+        return StrFormatByteSizeEx((ulong)bytes, 1, buffer, (uint)buffer.Capacity) >= 0 ? buffer.ToString() : bytes + " B";
+    }
+
+    [System.Runtime.InteropServices.DllImport("shlwapi.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int StrFormatByteSizeEx(ulong size, int flags, System.Text.StringBuilder buffer, uint length);
+
+    // Like File Explorer's Copy as path: selected items, each quoted, one per line; the folder itself when nothing is selected.
+    public void CopySelectionPaths()
+    {
+        if (ActiveView is not { } view) return;
+        var (paths, _) = view.SelectedPaths();
+        IReadOnlyList<string> chosen = paths.Count > 0 ? paths : [CurrentPath];
+        try
+        {
+            Clipboard.SetText(PathsForClipboard(chosen));
+            SetLocalizedStatus("Path copied: {0}", chosen.Count == 1 ? chosen[0] : text.T("{0} items", chosen.Count));
+        }
+        catch (System.Runtime.InteropServices.ExternalException ex) { SetStatus(ex.Message); }
+    }
+
+    internal static string PathsForClipboard(IEnumerable<string> paths) => string.Join("\r\n", paths.Select(path => "\"" + path + "\""));
+
+    internal static ProcessStartInfo TerminalStartInfo(string folder, bool windowsTerminal)
+    {
+        var info = new ProcessStartInfo(windowsTerminal ? "wt.exe" : "powershell.exe")
+        {
+            UseShellExecute = true, WorkingDirectory = folder
+        };
+        if (windowsTerminal) { info.ArgumentList.Add("-d"); info.ArgumentList.Add(folder); }
+        else info.ArgumentList.Add("-NoExit");
+        return info;
+    }
+
+    public void OpenTerminal()
+    {
+        if (!Directory.Exists(CurrentPath)) return;
+        try { Process.Start(TerminalStartInfo(CurrentPath, windowsTerminal: true)); }
+        catch (Win32Exception)
+        {
+            try { Process.Start(TerminalStartInfo(CurrentPath, windowsTerminal: false)); }
+            catch (Win32Exception ex) { SetLocalizedStatus("Could not open a terminal: {0}", ex.Message); }
+        }
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -671,6 +1017,7 @@ public sealed class ExplorerPane : UserControl
             CloseCandidates();
             if (search is not null) search.IndexChanged -= SearchIndexChanged;
             searchTimer.Dispose();
+            selectionTimer.Dispose();
             candidates.Dispose();
             tips.Dispose();
             tabMenu.Dispose();

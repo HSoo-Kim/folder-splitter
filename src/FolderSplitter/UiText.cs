@@ -126,6 +126,38 @@ public sealed class UiText
         ["Browse for a folder: open folder picker"] = ("폴더 찾아보기 — 폴더 선택 창 열기", "浏览文件夹：打开文件夹选择窗口", "フォルダーの参照：フォルダー選択ダイアログを開く"),
         ["Pane options"] = ("영역 옵션", "窗格选项", "ペイン オプション"),
         ["Pane options: view mode, refresh, favorites"] = ("영역 옵션 — 보기 방식, 새로고침, 즐겨찾기 등", "窗格选项：视图模式、刷新、收藏夹等", "ペイン オプション：表示モード、最新の情報に更新、お気に入りなど"),
+        ["No recent locations"] = ("최근 위치가 없습니다", "没有最近的位置", "最近の場所はありません"),
+        ["Back (Alt+Left); right-click for recent locations"] = ("뒤로 (Alt+Left) · 우클릭하면 최근 위치", "后退 (Alt+Left) · 右键单击显示最近的位置", "戻る (Alt+Left) · 右クリックで最近の場所"),
+        ["Forward (Alt+Right); right-click for recent locations"] = ("앞으로 (Alt+Right) · 우클릭하면 최근 위치", "前进 (Alt+Right) · 右键单击显示最近的位置", "進む (Alt+Right) · 右クリックで最近の場所"),
+        ["{0} selected"] = ("{0}개 선택", "已选择 {0} 个", "{0} 個選択"),
+        ["{0} selected · {1}"] = ("{0}개 선택 · {1}", "已选择 {0} 个 · {1}", "{0} 個選択 · {1}"),
+        ["Copy path    Ctrl+Shift+C"] = ("경로 복사    Ctrl+Shift+C", "复制路径    Ctrl+Shift+C", "パスのコピー    Ctrl+Shift+C"),
+        ["Path copied: {0}"] = ("경로를 복사했습니다: {0}", "已复制路径: {0}", "パスをコピーしました: {0}"),
+        ["Open terminal here"] = ("여기서 터미널 열기", "在此处打开终端", "ここでターミナルを開く"),
+        ["Could not open a terminal: {0}"] = ("터미널을 열지 못했습니다: {0}", "无法打开终端: {0}", "ターミナルを開けませんでした: {0}"),
+        ["Copy selection to other pane    Ctrl+Alt+C"] = ("선택 항목을 다른 영역으로 복사    Ctrl+Alt+C", "将所选项目复制到另一个区域    Ctrl+Alt+C", "選択した項目を別のペインへコピー    Ctrl+Alt+C"),
+        ["Move selection to other pane    Ctrl+Alt+X"] = ("선택 항목을 다른 영역으로 이동    Ctrl+Alt+X", "将所选项目移动到另一个区域    Ctrl+Alt+X", "選択した項目を別のペインへ移動    Ctrl+Alt+X"),
+        ["(No subfolders)"] = ("(하위 폴더 없음)", "(没有子文件夹)", "(サブフォルダーなし)"),
+        ["(Cannot open this folder)"] = ("(이 폴더를 열 수 없음)", "(无法打开此文件夹)", "(このフォルダーを開けません)"),
+        ["Open a folder in another pane first."] = ("먼저 다른 영역에 폴더를 열어 주세요.", "请先在另一个区域中打开文件夹。", "先に別のペインでフォルダーを開いてください。"),
+        ["Select files or folders first."] = ("먼저 파일이나 폴더를 선택해 주세요.", "请先选择文件或文件夹。", "先にファイルまたはフォルダーを選択してください。"),
+        ["Items without a file path cannot be copied or moved."] = ("파일 경로가 없는 항목은 복사하거나 이동할 수 없습니다.", "没有文件路径的项目无法复制或移动。", "ファイル パスのない項目はコピーまたは移動できません。"),
+        ["The other pane shows the same folder."] = ("다른 영역도 같은 폴더를 보고 있습니다.", "另一个区域显示的是同一个文件夹。", "別のペインも同じフォルダーを表示しています。"),
+        ["Could not copy or move: {0}"] = ("복사하거나 이동하지 못했습니다: {0}", "无法复制或移动: {0}", "コピーまたは移動できませんでした: {0}"),
+        ["Copy or move was cancelled."] = ("복사·이동을 취소했습니다.", "已取消复制或移动。", "コピーまたは移動を取り消しました。"),
+        ["Moved {0} items to pane {1}."] = ("{0}개 항목을 영역 {1}(으)로 이동했습니다.", "已将 {0} 个项目移动到区域 {1}。", "{0} 個の項目をペイン {1} へ移動しました。"),
+        ["Copied {0} items to pane {1}."] = ("{0}개 항목을 영역 {1}(으)로 복사했습니다.", "已将 {0} 个项目复制到区域 {1}。", "{0} 個の項目をペイン {1} へコピーしました。"),
+        ["Up to 20 workspaces can be saved."] = ("작업 구성은 20개까지 저장할 수 있습니다.", "最多可保存 20 个工作区。", "作業セットは 20 個まで保存できます。"),
+        ["Workspace saved: {0}"] = ("작업 구성을 저장했습니다: {0}", "已保存工作区: {0}", "作業セットを保存しました: {0}"),
+        ["Workspace opened: {0}"] = ("작업 구성을 열었습니다: {0}", "已打开工作区: {0}", "作業セットを開きました: {0}"),
+        ["Save current workspace..."] = ("현재 구성 저장...", "保存当前工作区...", "現在の作業セットを保存..."),
+        ["Delete workspace"] = ("작업 구성 삭제", "删除工作区", "作業セットを削除"),
+        ["Workspace name"] = ("작업 구성 이름", "工作区名称", "作業セットの名前"),
+        ["Workspace {0}"] = ("작업 구성 {0}", "工作区 {0}", "作業セット {0}"),
+        ["Save"] = ("저장", "保存", "保存"),
+        ["Cancel"] = ("취소", "取消", "キャンセル"),
+        ["Workspaces"] = ("작업 구성", "工作区", "作業セット"),
+        ["Save or open a named set of panes and tabs"] = ("분할과 탭 배치를 이름 붙여 저장하거나 불러오기", "以名称保存或打开分屏与标签页布局", "分割とタブの配置に名前を付けて保存・呼び出し"),
         ["All tabs"] = ("모든 탭", "所有标签页", "すべてのタブ"),
         ["New tab (Ctrl+T)"] = ("새 탭 열기 (Ctrl+T)", "新建标签页 (Ctrl+T)", "新しいタブ (Ctrl+T)"),
         ["Maximum 32 tabs per pane. Close a tab first."] = ("영역당 탭은 최대 32개입니다. 먼저 탭을 닫으세요.", "每个窗格最多 32 个标签页。请先关闭一个标签页。", "タブは 1 ペインにつき最大 32 個です。先にタブを閉じてください。"),
@@ -192,7 +224,7 @@ public sealed class UiText
             파란 미리보기로 대상을 확인하며 Esc로 취소합니다.
             키보드로는 탭 우클릭 > 탭 분할을 사용하세요.
             사용하지 않는 영역은 폴더를 열 때까지 비어 있습니다.
-            Ctrl+T   현재 폴더에 새 탭
+            Ctrl+T   빈 새 탭
             Ctrl+W / 가운데 클릭   탭 닫기
             Ctrl+Shift+T   닫은 탭 다시 열기
             Ctrl+Tab / Ctrl+Shift+Tab   탭 전환
@@ -210,8 +242,10 @@ public sealed class UiText
             Windows 메뉴 및 영역 간 파일 끌어 놓기를 사용하세요.
             Ctrl+C / Ctrl+X / Ctrl+V   복사, 잘라내기, 붙여넣기
             F2   이름 바꾸기    |    Delete   휴지통으로
-            Ctrl+Shift+N   새 폴더
-            Alt+P   미리보기 칸 표시/숨기기 만들기
+            Ctrl+Shift+N   새 폴더 만들기
+            Alt+P   미리보기 칸 표시/숨기기
+            Ctrl+Shift+C   선택 항목 경로 복사
+            Ctrl+Alt+C / Ctrl+Alt+X   선택 항목을 다른 영역으로 복사 / 이동
 
             탭, 즐겨찾기, 배치 및 언어는 로컬에 저장됩니다.
             영역 옵션에서 보기 방식 및 파일 탐색기에서 열기를 사용할 수 있습니다.
@@ -229,7 +263,7 @@ public sealed class UiText
             蓝色预览显示目标，按 Esc 取消。
             也可通过标签页右键菜单 > 拆分标签页操作。
             未使用的窗格保持空白，直到打开文件夹。
-            Ctrl+T   在当前文件夹新建标签页
+            Ctrl+T   新建空白标签页
             Ctrl+W / 中键点击   关闭标签页
             Ctrl+Shift+T   重新打开已关闭的标签页
             Ctrl+Tab / Ctrl+Shift+Tab   切换标签页
@@ -249,6 +283,8 @@ public sealed class UiText
             F2   重命名    |    Delete   移至回收站
             Ctrl+Shift+N   新建文件夹
             Alt+P   显示/隐藏预览窗格
+            Ctrl+Shift+C   复制所选项目的路径
+            Ctrl+Alt+C / Ctrl+Alt+X   将所选项目复制 / 移动到另一个区域
 
             标签页、收藏、布局和语言保存在本地。
             窗格选项包含视图模式和在文件资源管理器中打开。
@@ -266,7 +302,7 @@ public sealed class UiText
             青いプレビューで移動先を確認でき、Esc でキャンセルします。
             キーボードではタブを右クリック > タブを分割 を使います。
             未使用のペインはフォルダーを開くまで空のままです。
-            Ctrl+T   現在のフォルダーで新しいタブ
+            Ctrl+T   空の新しいタブ
             Ctrl+W / 中クリック   タブを閉じる
             Ctrl+Shift+T   閉じたタブを再度開く
             Ctrl+Tab / Ctrl+Shift+Tab   タブの切り替え
@@ -286,6 +322,8 @@ public sealed class UiText
             F2   名前の変更    |    Delete   ごみ箱へ移動
             Ctrl+Shift+N   新しいフォルダー
             Alt+P   プレビュー ウィンドウの表示/非表示
+            Ctrl+Shift+C   選択した項目のパスをコピー
+            Ctrl+Alt+C / Ctrl+Alt+X   選択した項目を別のペインへコピー / 移動
 
             タブ、お気に入り、レイアウト、言語はローカルに保存されます。
             ペイン オプションには表示モードと エクスプローラーで開く があります。
@@ -305,7 +343,7 @@ public sealed class UiText
         A blue preview shows the destination. Esc cancels.
         Right-click tab > Split tab is the keyboard alternative.
         Unused panes remain empty until you open a folder.
-        Ctrl+T   New tab at current folder
+        Ctrl+T   New blank tab
         Ctrl+W / middle-click   Close tab
         Ctrl+Shift+T   Reopen closed tab
         Ctrl+Tab / Ctrl+Shift+Tab   Switch tabs
@@ -325,6 +363,8 @@ public sealed class UiText
         F2   Rename    |    Delete   Recycle
         Ctrl+Shift+N   New folder
         Alt+P   Show / hide the preview pane
+        Ctrl+Shift+C   Copy the selected items' paths
+        Ctrl+Alt+C / Ctrl+Alt+X   Copy / move the selection to the other pane
 
         Tabs, favorites, layout and language are saved locally.
         Pane options include view modes and Open in File Explorer.

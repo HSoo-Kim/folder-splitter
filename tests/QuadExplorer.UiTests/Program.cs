@@ -45,16 +45,6 @@ internal static partial class Program
         Directory.CreateDirectory(root);
         try
         {
-            if (args is ["--preview-pdf"])
-            {
-                RunPdfScenario(root);
-                return failures == 0 ? 0 : 1;
-            }
-            if (args is ["--preview-wheel"])
-            {
-                RunPreviewScenario(root);
-                return failures == 0 ? 0 : 1;
-            }
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             string child = Directory.CreateDirectory(Path.Combine(folders[0], "\ud55c\uae00 \ud3f4\ub354")).FullName;
             File.WriteAllText(Path.Combine(folders[0], "sample.txt"), "QuadExplorer integration fixture");
@@ -177,6 +167,8 @@ internal static partial class Program
             RunPreviewScenario(root);
             RunPdfScenario(root);
             RunTabStripScenario(root);
+            RunConvenienceScenario(root);
+            RunResizeMetric(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }

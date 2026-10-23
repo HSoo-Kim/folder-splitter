@@ -12,6 +12,15 @@ public sealed record PaneState
     public int SelectedTab { get; init; }
 }
 
+// A named set of panes and tabs the user can switch back to.
+public sealed record Workspace
+{
+    public string Name { get; init; } = "";
+    public PaneLayout? LayoutTree { get; init; }
+    public List<PaneState> Panes { get; init; } = [];
+    public int ActivePane { get; init; }
+}
+
 public sealed record SessionState
 {
     public string Language { get; init; } = "ko";
@@ -42,6 +51,7 @@ public sealed record SessionState
     public double ColumnRatio { get; init; } = .5;
     public double LeftRowRatio { get; init; } = .5;
     public double RightRowRatio { get; init; } = .5;
+    public List<Workspace> Workspaces { get; init; } = [];
 }
 
 public static class SessionStore
@@ -163,6 +173,7 @@ public static class SessionStore
             Panes = panes,
             Favorites = NormalizeFavorites(state.Favorites),
             DeletedFavorites = NormalizeFavorites(state.DeletedFavorites),
+            Workspaces = NormalizeWorkspaces(state.Workspaces),
             ActivePane = active,
             WindowWidth = Math.Clamp(state.WindowWidth, 900, 10000),
             WindowHeight = Math.Clamp(state.WindowHeight, 600, 10000),
@@ -172,6 +183,33 @@ public static class SessionStore
             LeftRowRatio = NormalizeRatio(state.LeftRowRatio),
             RightRowRatio = NormalizeRatio(state.RightRowRatio)
         };
+    }
+
+    public static Workspace NormalizeWorkspace(Workspace workspace)
+    {
+        var state = Normalize(new SessionState
+        {
+            LayoutTree = workspace.LayoutTree, Panes = workspace.Panes ?? [], ActivePane = workspace.ActivePane
+        });
+        return new Workspace
+        {
+            Name = (workspace.Name ?? "").Trim(), LayoutTree = state.LayoutTree, Panes = state.Panes, ActivePane = state.ActivePane
+        };
+    }
+
+    private static List<Workspace> NormalizeWorkspaces(List<Workspace>? source)
+    {
+        var workspaces = new List<Workspace>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var workspace in source ?? [])
+        {
+            if (workspace is null || string.IsNullOrWhiteSpace(workspace.Name)) continue;
+            var normalized = NormalizeWorkspace(workspace);
+            if (!names.Add(normalized.Name)) continue;
+            workspaces.Add(normalized);
+            if (workspaces.Count == 20) break;
+        }
+        return workspaces;
     }
 
     public static string NormalizeLanguage(string? language) => language?.Trim().ToLowerInvariant() switch

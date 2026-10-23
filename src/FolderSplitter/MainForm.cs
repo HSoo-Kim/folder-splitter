@@ -86,6 +86,10 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 800 };
     private readonly ToolTip tips = new() { ShowAlways = true, AutoPopDelay = 10000 };
     private int activePane;
+    private int previousPane = -1;
+    private readonly List<Workspace> workspaces;
+    private readonly ToolStripDropDownButton workspaceButton = new() { AccessibleName = "Workspaces" };
+    internal event Action<bool, string?>? FileOperationFinished;
     private bool ready;
     private bool saving;
     private bool rebuilding;
@@ -119,6 +123,7 @@ public sealed class MainForm : Form, IMessageFilter
         activePane = initialState.ActivePane;
         favorites = [.. initialState.Favorites];
         deletedFavorites = [.. initialState.DeletedFavorites];
+        workspaces = [.. initialState.Workspaces];
         explorerFavoritesImported = initialState.ExplorerFavoritesImported;
         sidebarWidth = initialState.SidebarWidth;
         favoritesExpanded = initialState.FavoritesExpanded;
@@ -167,6 +172,7 @@ public sealed class MainForm : Form, IMessageFilter
             pane.MoveTabRequested += MoveTab;
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
+            pane.TransferRequested += (source, move) => { ActivatePane(Array.IndexOf(panes, source)); TransferSelection(move); };
         }
 
         showPreview = initialState.ShowPreview;
@@ -475,6 +481,11 @@ public sealed class MainForm : Form, IMessageFilter
         BindText(equalize, "Equal size", "Equalize pane sizes");
         equalize.Click += (_, _) => EqualizeSplits();
         toolbar.Items.Add(equalize);
+        toolbar.Items.Add(new ToolStripSeparator());
+        BindText(workspaceButton, "Workspaces", "Save or open a named set of panes and tabs");
+        workspaceButton.DropDownItems.Add("\u2026");
+        workspaceButton.DropDownOpening += (_, _) => BuildWorkspaceMenu();
+        toolbar.Items.Add(workspaceButton);
         languageBindings.Add(RefreshThemeButton);
         RefreshThemeButton();
         themeButton.Click += (_, _) => SetColorTheme(colorTheme == "dark" ? "light" : "dark");
@@ -607,6 +618,138 @@ public sealed class MainForm : Form, IMessageFilter
         previewSplitter.BackColor = Theme.Border;
         RefreshThemeButton();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
+    }
+
+    // The other pane is the one used just before the active pane, or else the next visible pane.
+    internal ExplorerPane? OtherPane()
+    {
+        if (previousPane >= 0 && previousPane != activePane && visiblePanes.Contains(previousPane)) return panes[previousPane];
+        int other = Array.FindIndex(visiblePanes, index => index != activePane);
+        return other >= 0 ? panes[visiblePanes[other]] : null;
+    }
+
+    internal void TransferSelection(bool move)
+    {
+        var source = Active;
+        if (source.ActiveView is not { } view) return;
+        if (OtherPane() is not { ActiveView: { } destinationView } target || !Directory.Exists(destinationView.LocationPath))
+        {
+            source.SetLocalizedStatus("Open a folder in another pane first.");
+            return;
+        }
+        var (paths, count) = view.SelectedPaths();
+        if (count == 0 || paths.Count == 0)
+        {
+            source.SetLocalizedStatus(count == 0 ? "Select files or folders first." : "Items without a file path cannot be copied or moved.");
+            return;
+        }
+        string destination = destinationView.LocationPath;
+        if (paths.All(path => string.Equals(Path.GetDirectoryName(path.TrimEnd('\\')), destination.TrimEnd('\\'),
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            source.SetLocalizedStatus("The other pane shows the same folder.");
+            return;
+        }
+        int number = target.PaneNumber, items = paths.Count;
+        FileOperations.Start(paths, destination, move, Handle, (done, error) =>
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            BeginInvoke(() =>
+            {
+                if (error is not null) source.SetLocalizedStatus("Could not copy or move: {0}", error);
+                else if (!done) source.SetLocalizedStatus("Copy or move was cancelled.");
+                else source.SetLocalizedStatus(move ? "Moved {0} items to pane {1}." : "Copied {0} items to pane {1}.", items, number);
+                FileOperationFinished?.Invoke(done, error);
+            });
+        });
+    }
+
+    internal IReadOnlyList<Workspace> Workspaces => workspaces;
+
+    internal void SaveWorkspace(string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0) return;
+        var snapshot = SessionStore.NormalizeWorkspace(new Workspace
+        {
+            Name = name, LayoutTree = layoutTree, Panes = panes.Select(pane => pane.CaptureState()).ToList(), ActivePane = activePane
+        });
+        int existing = workspaces.FindIndex(workspace => string.Equals(workspace.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (existing >= 0) workspaces[existing] = snapshot;
+        else if (workspaces.Count >= 20) { Active.SetLocalizedStatus("Up to 20 workspaces can be saved."); return; }
+        else workspaces.Add(snapshot);
+        Active.SetLocalizedStatus("Workspace saved: {0}", name);
+        ScheduleSave();
+    }
+
+    internal void LoadWorkspace(string name)
+    {
+        var workspace = workspaces.Find(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (workspace is null) return;
+        for (int i = 0; i < panes.Length; i++) panes[i].ReplaceTabs(workspace.Panes[i]);
+        activePane = workspace.ActivePane;
+        RenderLayout(workspace.LayoutTree!);
+        Active.SetLocalizedStatus("Workspace opened: {0}", workspace.Name);
+        Active.FocusFiles();
+    }
+
+    internal void DeleteWorkspace(string name)
+    {
+        if (workspaces.RemoveAll(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)) > 0) ScheduleSave();
+    }
+
+    private void BuildWorkspaceMenu()
+    {
+        foreach (var old in workspaceButton.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
+        workspaceButton.DropDownItems.Add(text.T("Save current workspace..."), null, (_, _) =>
+        {
+            if (PromptWorkspaceName() is { } name) SaveWorkspace(name);
+        });
+        if (workspaces.Count > 0)
+        {
+            workspaceButton.DropDownItems.Add(new ToolStripSeparator());
+            foreach (var workspace in workspaces)
+            {
+                string name = workspace.Name;
+                workspaceButton.DropDownItems.Add(name, null, (_, _) => LoadWorkspace(name));
+            }
+            var delete = new ToolStripMenuItem(text.T("Delete workspace"));
+            foreach (var workspace in workspaces)
+            {
+                string name = workspace.Name;
+                delete.DropDownItems.Add(name, null, (_, _) => DeleteWorkspace(name));
+            }
+            workspaceButton.DropDownItems.Add(new ToolStripSeparator());
+            workspaceButton.DropDownItems.Add(delete);
+        }
+        Theme.Apply(toolbar);
+    }
+
+    private string? PromptWorkspaceName()
+    {
+        using var dialog = new Form
+        {
+            Text = text.T("Save current workspace..."), FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false,
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12), Font = Font
+        };
+        var layout = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill };
+        var label = new Label { Text = text.T("Workspace name"), AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
+        var input = new TextBox { Width = 280, Text = text.T("Workspace {0}", workspaces.Count + 1) };
+        var ok = new Button { Text = text.T("Save"), DialogResult = DialogResult.OK, AutoSize = true };
+        var cancel = new Button { Text = text.T("Cancel"), DialogResult = DialogResult.Cancel, AutoSize = true };
+        layout.Controls.Add(label, 0, 0);
+        layout.SetColumnSpan(label, 2);
+        layout.Controls.Add(input, 0, 1);
+        layout.SetColumnSpan(input, 2);
+        layout.Controls.Add(ok, 0, 2);
+        layout.Controls.Add(cancel, 1, 2);
+        dialog.Controls.Add(layout);
+        dialog.AcceptButton = ok;
+        dialog.CancelButton = cancel;
+        Theme.Apply(dialog);
+        input.SelectAll();
+        return dialog.ShowDialog(this) == DialogResult.OK && input.Text.Trim().Length > 0 ? input.Text.Trim() : null;
     }
 
     internal bool PreviewVisible => showPreview;
@@ -1220,6 +1363,7 @@ public sealed class MainForm : Form, IMessageFilter
     private void ActivatePane(int index)
     {
         if (!visiblePanes.Contains(index)) return;
+        if (index != activePane) previousPane = activePane;
         activePane = index;
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == index);
         if (ready) SyncTree();
@@ -1410,7 +1554,10 @@ public sealed class MainForm : Form, IMessageFilter
     {
         switch (key)
         {
-            case Keys.Control | Keys.T: Active.AddTab(Active.CurrentPath); break;
+            case Keys.Control | Keys.T: Active.AddBlankTab(); break;
+            case Keys.Control | Keys.Shift | Keys.C: Active.CopySelectionPaths(); break;
+            case Keys.Control | Keys.Alt | Keys.C: TransferSelection(move: false); break;
+            case Keys.Control | Keys.Alt | Keys.X: TransferSelection(move: true); break;
             case Keys.Control | Keys.W: Active.CloseTab(); break;
             case Keys.Control | Keys.Shift | Keys.T: Active.ReopenTab(); break;
             case Keys.Control | Keys.L:
@@ -1458,7 +1605,7 @@ public sealed class MainForm : Form, IMessageFilter
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
-                Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
+                Favorites = [.. favorites], ShowSidebar = sidebar.Visible, Workspaces = [.. workspaces],
                 FavoritesExpanded = favoritesExpanded,
                 SidebarWidth = sidebarWidth, DeletedFavorites = [.. deletedFavorites],
                 ExplorerFavoritesImported = explorerFavoritesImported,
