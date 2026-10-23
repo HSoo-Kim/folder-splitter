@@ -69,9 +69,24 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolStrip toolbar = Theme.Strip(outlineItems: true);
     private readonly LinkLabel versionLabel = new()
     {
-        Dock = DockStyle.Bottom, AutoSize = true, TextAlign = ContentAlignment.MiddleLeft,
+        Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom, Margin = Padding.Empty, AutoSize = true,
+        TextAlign = ContentAlignment.MiddleLeft,
         ForeColor = Theme.Muted, BackColor = Theme.Canvas, Padding = new Padding(12, 4, 0, 4),
         AccessibleName = "Application version", LinkBehavior = LinkBehavior.HoverUnderline
+    };
+    // The bottom line: version on the left, author on the right.
+    // A one-row table sizes itself to the taller label, also after font and DPI changes.
+    private readonly TableLayoutPanel footer = new()
+    {
+        Dock = DockStyle.Bottom, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1,
+        BackColor = Theme.Canvas, Margin = Padding.Empty, Padding = Padding.Empty
+    };
+    private readonly Label authorLink = new()
+    {
+        Anchor = AnchorStyles.Right | AnchorStyles.Top | AnchorStyles.Bottom, Margin = Padding.Empty, AutoSize = true,
+        TextAlign = ContentAlignment.MiddleRight,
+        ForeColor = Theme.Muted, BackColor = Theme.Canvas, Padding = new Padding(0, 4, 12, 4),
+        AccessibleName = "Author", Text = "Made by HSoo-Kim (github.com/HSoo-Kim)"
     };
     private readonly Func<CancellationToken, Task<ReleaseInfo?>>? latestRelease;
     private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 24 * 60 * 60 * 1000 };
@@ -155,6 +170,11 @@ public sealed class MainForm : Form, IMessageFilter
         Theme.ListFont = ListFontChoice();
         UpdateVersionText();
         languageBindings.Add(UpdateVersionText);
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        footer.Controls.Add(versionLabel, 0, 0);
+        footer.Controls.Add(authorLink, 1, 0);
         versionLabel.LinkClicked += async (_, _) =>
         {
             if (availableUpdate is not { } update || updating) return;
@@ -370,7 +390,7 @@ public sealed class MainForm : Form, IMessageFilter
         workspace.Controls.Add(sidebarSplitter);
         workspace.Controls.Add(sidebar);
         Controls.Add(workspace);
-        Controls.Add(versionLabel);
+        Controls.Add(footer);
         Controls.Add(toolbar);
         sidebar.Visible = initialState.ShowSidebar;
         sidebarSplitter.Visible = initialState.ShowSidebar;
@@ -606,16 +626,6 @@ public sealed class MainForm : Form, IMessageFilter
         fontMenu.DropDownItems.Add("\u2026");
         fontMenu.DropDownOpening += (_, _) => BuildFontMenu();
         settings.DropDownItems.Add(fontMenu);
-        settings.DropDownItems.Add(new ToolStripSeparator());
-        var author = new ToolStripMenuItem { AccessibleName = "Author" };
-        languageBindings.Add(() => author.Text = text.T("Made by {0} (GitHub)", "HSoo-Kim"));
-        author.Text = text.T("Made by {0} (GitHub)", "HSoo-Kim");
-        author.Click += (_, _) =>
-        {
-            try { Process.Start(new ProcessStartInfo(AuthorUrl) { UseShellExecute = true }); }
-            catch (Win32Exception error) { Active.SetStatus(error.Message); }
-        };
-        settings.DropDownItems.Add(author);
         toolbar.Items.Add(settings);
         toolbar.Layout += (_, _) =>
         {
@@ -1079,8 +1089,6 @@ public sealed class MainForm : Form, IMessageFilter
 
     private bool CanInstallUpdate(ReleaseInfo update) => autoUpdate && update.PackageUrl is not null && update.PackageSha256 is not null;
 
-    internal const string AuthorUrl = "https://github.com/HSoo-Kim";
-
     private void OpenReleasePage(ReleaseInfo update)
     {
         try { Process.Start(new ProcessStartInfo(update.Url) { UseShellExecute = true }); }
@@ -1536,7 +1544,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         Size minimum = MinimumContentSize(layoutTree);
         MinimumSize = new Size(Math.Max(900, minimum.Width + (sidebar.Visible ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
-            Math.Max(600, minimum.Height + toolbar.Height + versionLabel.Height + 12 + Height - ClientSize.Height));
+            Math.Max(600, minimum.Height + toolbar.Height + footer.Height + 12 + Height - ClientSize.Height));
     }
 
     private void ApplySplitRatios()

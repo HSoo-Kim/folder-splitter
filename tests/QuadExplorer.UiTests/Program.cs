@@ -489,6 +489,12 @@ internal static partial class Program
                 Check(Theme.Sidebar != Theme.Canvas || Theme.ListBack != Theme.Surface, "mixed palettes use more than one background color");
                 var mainToolbar = (ToolStrip)typeof(MainForm).GetField("toolbar", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(form)!;
                 Check(ReferenceEquals(mainToolbar.Tag, Theme.OutlineItems), "top toolbar buttons are drawn with a rounded outline");
+                var author = Descendants(form).OfType<Label>().Single(label => label.AccessibleName == "Author");
+                var authorBounds = form.RectangleToClient(author.RectangleToScreen(author.ClientRectangle));
+                Check(author.Visible && author is not LinkLabel && author.Text == "Made by HSoo-Kim (github.com/HSoo-Kim)"
+                    && authorBounds.Right >= form.ClientSize.Width - 2 && authorBounds.Bottom >= form.ClientSize.Height - 2 && authorBounds.Left > form.ClientSize.Width / 2
+                    && authorBounds.Width > 0 && authorBounds.Height > 0,
+                    "the author credit is plain text at the bottom right of the window");
                 string ListFace() => ListWindowFace(pane.ActiveView!.Handle);
                 string standardFace = SystemFonts.IconTitleFont!.Name;
                 form.SetUiFont("Malgun Gothic", "large");
@@ -1016,9 +1022,10 @@ internal static partial class Program
                 form.SetSidebarWidth(320);
                 form.SetSidebarVisible(false);
                 Check(!Descendants(form).OfType<ListBox>().Any(l => l.Visible), "quick access fully collapses");
-                var version = form.Controls.OfType<Label>().Single(l => l.AccessibleName == "Application version");
+                var version = Descendants(form).OfType<Label>().Single(l => l.AccessibleName == "Application version");
+                var versionBounds = form.RectangleToClient(version.RectangleToScreen(version.ClientRectangle));
                 Check(version.Visible && version.Text == "v" + typeof(MainForm).Assembly.GetName().Version!.ToString(3)
-                    && version.Bounds.Bottom == form.ClientRectangle.Bottom && version.Height >= version.PreferredHeight,
+                    && versionBounds.Bottom == form.ClientRectangle.Bottom && versionBounds.Left == 0 && version.Height >= version.PreferredHeight,
                     "lower-left version matches running assembly and remains visible with sidebar hidden");
                 form.SetSidebarVisible(true);
                 Check(form.SidebarWidth == 320, "quick access restores its resized width");
@@ -1402,9 +1409,11 @@ internal static partial class Program
                 await Search(pane, address, "no-such-search-entry-97d31e");
                 Check(!pane.CandidatesVisible && pane.SearchCandidates.Count == 0, "zero matches closes candidate popup");
                 await Search(pane, address, query);
+                // Switching language with candidates open searches again; wait for that search, not a new edit.
+                var relocalized = SearchSignal(pane);
                 form.SetLanguage("ja");
                 Check(form.Language == "ja", "language switch with candidates open does not throw");
-                await Search(pane, address, query);
+                await relocalized.WaitAsync(TimeSpan.FromSeconds(15));
                 var recreated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 EventHandler handleCreated = (_, _) => recreated.TrySetResult();
                 address.HandleCreated += handleCreated;

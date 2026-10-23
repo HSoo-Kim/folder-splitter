@@ -49,7 +49,6 @@ public sealed class UiText
         ["Dark mode"] = ("밤", "深色", "ダーク"),
         ["Light mode"] = ("낮", "浅色", "ライト"),
         ["Beige"] = ("베이지", "米色", "ベージュ"),
-        ["Made by {0} (GitHub)"] = ("만든 사람: {0} (GitHub)", "作者：{0} (GitHub)", "作者：{0} (GitHub)"),
         ["Font and text size"] = ("글꼴과 글자 크기", "字体与文字大小", "フォントと文字サイズ"),
         ["Standard ({0})"] = ("기본 ({0})", "默认 ({0})", "標準 ({0})"),
         ["Small text"] = ("글자 작게", "小号文字", "文字を小さく"),
