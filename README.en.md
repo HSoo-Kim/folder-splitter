@@ -84,6 +84,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Native Windows actions**: Right-click menu, copy/cut/paste, rename, delete and drag and drop between panes are handled by Windows as usual.
 - **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer. Grouping, sort order and view mode are remembered per folder, as in File Explorer.
 - **Item count**: Each pane shows how many items it displays, updated immediately.
+- **Preview**: Turn it on with the `Preview` button at the top or `Alt+P` and a preview pane appears at the far right. Click a file to see the same preview File Explorer shows (images, PDF, Office, text and more); its visibility and width are remembered.
 
 ### Appearance and settings
 - **Light/dark theme**: Toggle at the top right; the file lists follow too.
@@ -144,6 +145,7 @@ The two apps find files in different ways.
 | Mouse back/forward buttons | Back/forward in the pane under the pointer |
 | `Ctrl+D` | Add the current folder to favorites |
 | `Ctrl+Shift+E` | Collapse or expand the folder tree |
+| `Alt+P` | Show / hide the preview pane |
 | `Win+Alt+E` | Bring Folder Splitter to the front / again to hide it |
 | `F5` | Refresh |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy/cut/paste selected files |

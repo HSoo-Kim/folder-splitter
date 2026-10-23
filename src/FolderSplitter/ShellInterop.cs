@@ -29,6 +29,12 @@ internal static class ShellNative
     [DllImport("user32.dll")]
     public static extern nint GetFocus();
 
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint DragQueryFile(nint drop, uint index, System.Text.StringBuilder? file, uint length);
+
+    [DllImport("ole32.dll")]
+    public static extern void ReleaseStgMedium(ref System.Runtime.InteropServices.ComTypes.STGMEDIUM medium);
+
     [DllImport("user32.dll")]
     public static extern nint SetFocus(nint window);
 

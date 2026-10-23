@@ -69,6 +69,13 @@ public sealed class UiText
         ["This PC"] = ("내 PC", "此电脑", "PC"),
         ["Recycle Bin"] = ("휴지통", "回收站", "ごみ箱"),
         ["Recent items"] = ("최근 항목", "最近使用的项目", "最近使った項目"),
+        ["Preview"] = ("미리보기", "预览", "プレビュー"),
+        ["Show / hide preview pane (Alt+P)"] = ("미리보기 칸 표시/숨기기 (Alt+P)", "显示/隐藏预览窗格 (Alt+P)", "プレビュー ウィンドウの表示/非表示 (Alt+P)"),
+        ["Select a file to preview it."] = ("파일을 선택하면 미리보기가 표시됩니다.", "选择文件即可预览。", "ファイルを選択するとプレビューが表示されます。"),
+        ["{0} items selected"] = ("{0}개 항목 선택됨", "已选择 {0} 个项目", "{0} 個の項目を選択"),
+        ["Folders are not previewed."] = ("폴더는 미리보기를 표시하지 않습니다.", "文件夹不显示预览。", "フォルダーはプレビューされません。"),
+        ["No preview is available for this file type."] = ("이 형식은 미리 볼 수 없습니다.", "此文件类型没有可用的预览。", "この種類のファイルはプレビューできません。"),
+        ["Could not show a preview of this file."] = ("이 파일의 미리보기를 표시하지 못했습니다.", "无法显示此文件的预览。", "このファイルのプレビューを表示できませんでした。"),
         ["Favorites"] = ("즐겨찾기", "收藏夹", "お気に入り"),
         ["Collapse / expand favorites"] = ("즐겨찾기 목록 접기 / 펼치기", "折叠 / 展开收藏夹", "お気に入りの折りたたみ / 展開"),
         ["Drag to resize quick access; double-click to hide"] = ("좌우로 끌어 빠른 접근 폭 조절 — 두 번 클릭하면 숨기기", "拖动调整快速访问宽度；双击隐藏", "ドラッグでクイック アクセスの幅を調整、ダブルクリックで非表示"),
@@ -197,7 +204,8 @@ public sealed class UiText
             Windows 메뉴 및 영역 간 파일 끌어 놓기를 사용하세요.
             Ctrl+C / Ctrl+X / Ctrl+V   복사, 잘라내기, 붙여넣기
             F2   이름 바꾸기    |    Delete   휴지통으로
-            Ctrl+Shift+N   새 폴더 만들기
+            Ctrl+Shift+N   새 폴더
+            Alt+P   미리보기 칸 표시/숨기기 만들기
 
             탭, 즐겨찾기, 배치 및 언어는 로컬에 저장됩니다.
             영역 옵션에서 보기 방식 및 파일 탐색기에서 열기를 사용할 수 있습니다.
@@ -234,6 +242,7 @@ public sealed class UiText
             Ctrl+C / Ctrl+X / Ctrl+V   复制、剪切、粘贴
             F2   重命名    |    Delete   移至回收站
             Ctrl+Shift+N   新建文件夹
+            Alt+P   显示/隐藏预览窗格
 
             标签页、收藏、布局和语言保存在本地。
             窗格选项包含视图模式和在文件资源管理器中打开。
@@ -270,6 +279,7 @@ public sealed class UiText
             Ctrl+C / Ctrl+X / Ctrl+V   コピー、切り取り、貼り付け
             F2   名前の変更    |    Delete   ごみ箱へ移動
             Ctrl+Shift+N   新しいフォルダー
+            Alt+P   プレビュー ウィンドウの表示/非表示
 
             タブ、お気に入り、レイアウト、言語はローカルに保存されます。
             ペイン オプションには表示モードと エクスプローラーで開く があります。
@@ -308,6 +318,7 @@ public sealed class UiText
         Ctrl+C / Ctrl+X / Ctrl+V   Copy, cut, paste
         F2   Rename    |    Delete   Recycle
         Ctrl+Shift+N   New folder
+        Alt+P   Show / hide the preview pane
 
         Tabs, favorites, layout and language are saved locally.
         Pane options include view modes and Open in File Explorer.

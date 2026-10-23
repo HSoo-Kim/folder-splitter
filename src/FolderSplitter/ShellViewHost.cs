@@ -16,6 +16,9 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private string? pendingSelection;
     private object? enumerationSource;
     private readonly Action enumerationDone;
+    private object? selectionSource;
+    private readonly Action selectionChanged;
+    internal event EventHandler? SelectionChanged;
     private bool enumerationReady;
     private bool navigationReady;
     private readonly System.Windows.Forms.Timer itemCountTimer = new() { Interval = 250 };
@@ -38,6 +41,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     public ShellViewHost(string location, UiText? text = null)
     {
         enumerationDone = OnEnumerationDone;
+        selectionChanged = () => SelectionChanged?.Invoke(this, EventArgs.Empty);
         itemCountTimer.Tick += OnItemCountTick;
         selectionTimer.Tick += OnSelectionTick;
         this.text = text ?? new UiText();
@@ -265,6 +269,12 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             Marshal.ReleaseComObject(enumerationSource);
             enumerationSource = null;
         }
+        if (selectionSource is not null)
+        {
+            ComEventsHelper.Remove(selectionSource, FolderViewEvents, 200, selectionChanged);
+            Marshal.ReleaseComObject(selectionSource);
+            selectionSource = null;
+        }
         if (view is null) return;
         Marshal.ReleaseComObject(view);
         view = null;
@@ -314,6 +324,13 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
             try { enumerationSource = Marshal.GetObjectForIUnknown(pointer); }
             finally { Marshal.Release(pointer); }
             ComEventsHelper.Combine(enumerationSource, FolderViewEvents, 201, enumerationDone);
+        }
+        Guid events = new("00020400-0000-0000-C000-000000000046");
+        if (view.GetItemObject(0, ref events, out nint source) >= 0)
+        {
+            try { selectionSource = Marshal.GetObjectForIUnknown(source); }
+            finally { Marshal.Release(source); }
+            ComEventsHelper.Combine(selectionSource, FolderViewEvents, 200, selectionChanged); // DISPID_SELECTIONCHANGED
         }
         ApplyThemeColors();
         UpdateItemCountMonitoring();
@@ -412,6 +429,38 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         if (settlingSelection is null) return;
         settlingSelection = null;
         SelectionSettled?.Invoke(this, EventArgs.Empty);
+    }
+
+    // The first selected file-system path and how many items are selected. Virtual items such as
+    // This PC have no file path, so they count toward the selection but yield no path.
+    internal (string? Path, int Count) SelectionInfo()
+    {
+        if (view is not IFolderView folderView || folderView.ItemCount(1, out int count) < 0 || count == 0) // SVGIO_SELECTION
+            return (null, 0);
+        Guid dataId = new("0000010e-0000-0000-C000-000000000046");
+        if (view.GetItemObject(1, ref dataId, out nint pointer) < 0) return (null, count);
+        var data = (System.Runtime.InteropServices.ComTypes.IDataObject)Marshal.GetObjectForIUnknown(pointer);
+        Marshal.Release(pointer);
+        var format = new System.Runtime.InteropServices.ComTypes.FORMATETC
+        {
+            cfFormat = 15, dwAspect = System.Runtime.InteropServices.ComTypes.DVASPECT.DVASPECT_CONTENT, // CF_HDROP
+            lindex = -1, tymed = System.Runtime.InteropServices.ComTypes.TYMED.TYMED_HGLOBAL
+        };
+        try
+        {
+            data.GetData(ref format, out var medium);
+            try
+            {
+                uint length = ShellNative.DragQueryFile(medium.unionmember, 0, null, 0);
+                if (length == 0) return (null, count);
+                var buffer = new System.Text.StringBuilder((int)length + 1);
+                ShellNative.DragQueryFile(medium.unionmember, 0, buffer, length + 1);
+                return (buffer.ToString(), count);
+            }
+            finally { ShellNative.ReleaseStgMedium(ref medium); }
+        }
+        catch (COMException) { return (null, count); }
+        finally { Marshal.ReleaseComObject(data); }
     }
 
     internal static bool IsRecent(string path) => ShellNative.Recent.Length > 0

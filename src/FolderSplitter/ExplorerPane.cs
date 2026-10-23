@@ -47,6 +47,7 @@ public sealed class ExplorerPane : UserControl
     internal IEnumerable<string> RecentPaths => closedTabs.Take(4);
     public event EventHandler? Activated;
     public event EventHandler? StateChanged;
+    public event EventHandler? SelectionChanged;
     public event EventHandler<string>? FavoriteRequested;
     public event Action<ExplorerPane, string, int>? MoveTabRequested;
     internal event Action<ExplorerPane, ShellViewHost>? TabDragRequested;
@@ -357,6 +358,7 @@ public sealed class ExplorerPane : UserControl
             if (e.Button == MouseButtons.Middle) CloseTab(index);
             else if (e.Button == MouseButtons.Right) ShowTabMenu(index);
         };
+        host.SelectionChanged += (_, _) => { if (host == ActiveView) SelectionChanged?.Invoke(this, EventArgs.Empty); };
         host.Navigated += (_, _) =>
         {
             Theme.ApplyNative(host.Handle);

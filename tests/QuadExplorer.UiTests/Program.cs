@@ -162,6 +162,7 @@ internal static class Program
             RunAppearanceScenario(root);
             RunTrayScenario(root);
             RunUpdateScenario(root);
+            RunPreviewScenario(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
@@ -569,6 +570,61 @@ internal static class Program
         Application.Run(form);
         var saved = SessionStore.Load(session);
         Check(closedToTray && form.IsDisposed && saved.KeepInTray && saved.TrayNoticeShown, "Exit closes the app; tray setting and notice state persist");
+    }
+
+    private static void RunPreviewScenario(string root)
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(root, "Preview")).FullName;
+        string textFile = Path.Combine(folder, "preview-note.txt");
+        File.WriteAllText(textFile, "Folder Splitter preview");
+        string unknown = Path.Combine(folder, "preview-data.fsxyz");
+        File.WriteAllText(unknown, "x");
+        string session = Path.Combine(root, "preview.json");
+        SessionStore.Save(session, new SessionState
+        {
+            Layout = 1, Language = "en", ExplorerFavoritesImported = true, ShowPreview = true, PreviewWidth = 420,
+            Panes = [new PaneState { Tabs = [folder] }]
+        });
+        using var form = new MainForm(session, []);
+        var text = new UiText("en");
+        form.Shown += async (_, _) =>
+        {
+            try
+            {
+                var pane = form.GetPane(0);
+                if (!pane.ActiveView!.HasNavigated) await NavigationSignal(pane.ActiveView!);
+                Check(form.PreviewVisible && form.Preview.Visible && Math.Abs(form.Preview.Width - 420) <= 2,
+                    "preview pane opens at its saved width");
+                Check(form.Preview.MessageText == text.T("Select a file to preview it."), "preview asks for a file when nothing is selected");
+                async Task Select(string file)
+                {
+                    var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void Changed(object? sender, EventArgs e) { if (string.Equals(form.Preview.CurrentPath, file, StringComparison.OrdinalIgnoreCase)) shown.TrySetResult(); }
+                    form.Preview.PreviewChanged += Changed;
+                    try
+                    {
+                        await Navigate(pane.ActiveView!, () => pane.ActiveView!.NavigateAndSelect(file));
+                        await shown.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                    }
+                    finally { form.Preview.PreviewChanged -= Changed; }
+                }
+                await Select(textFile);
+                bool textHandler = QuadExplorer.PreviewHandlers.Find(".txt") is not null;
+                Check(!textHandler || form.Preview.HasHandler || form.Preview.MessageText == text.T("Could not show a preview of this file."),
+                    "selecting a file previews it with the Windows preview handler");
+                Console.WriteLine($"METRIC preview_txt_handler_registered={textHandler} handler_loaded={form.Preview.HasHandler}");
+                await Select(unknown);
+                Check(!form.Preview.HasHandler && form.Preview.MessageText == text.T("No preview is available for this file type."),
+                    "a file type without a preview handler shows a hint");
+                form.SetPreviewVisible(false);
+                Check(!form.Preview.Visible && !form.Preview.HasHandler, "hiding the preview pane unloads the preview");
+            }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+            finally { form.ExitApplication(); }
+        };
+        Application.Run(form);
+        var saved = SessionStore.Load(session);
+        Check(!saved.ShowPreview && saved.PreviewWidth == 420, "preview visibility and width persist");
     }
 
     private static void RunUpdateScenario(string root)

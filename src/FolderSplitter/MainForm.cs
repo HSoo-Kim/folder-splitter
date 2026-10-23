@@ -13,6 +13,12 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ShellIconCache placeIcons = new();
     private readonly FolderTree folderTree;
     private readonly ToolStripButton treeButton = new() { AccessibleName = "Folder tree", CheckOnClick = true };
+    private readonly ToolStripButton previewButton = new() { AccessibleName = "Preview", CheckOnClick = true };
+    private readonly PreviewPane previewPane;
+    private readonly Splitter previewSplitter;
+    private readonly System.Windows.Forms.Timer previewTimer = new() { Interval = 200 };
+    private bool showPreview;
+    private int previewWidth;
     private readonly Button treeHeader;
     private readonly Panel treePanel = new() { Dock = DockStyle.Bottom };
     private readonly Splitter treeSplitter = new()
@@ -153,13 +159,26 @@ public sealed class MainForm : Form, IMessageFilter
             {
                 ScheduleSave();
                 if (ready && ReferenceEquals(pane, Active)) SyncTree();
+                if (ReferenceEquals(pane, Active)) SchedulePreview();
             };
+            pane.SelectionChanged += (_, _) => { if (ReferenceEquals(pane, Active)) SchedulePreview(); };
             pane.FavoriteRequested += (_, path) => AddFavorite(path);
             pane.MoveTabRequested += MoveTab;
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
         }
 
+        showPreview = initialState.ShowPreview;
+        previewWidth = initialState.PreviewWidth > 0 ? Math.Clamp(initialState.PreviewWidth, 200, 1600) : 380;
+        previewPane = new PreviewPane(text) { Dock = DockStyle.Right, Width = previewWidth, Visible = showPreview };
+        previewSplitter = new Splitter
+        {
+            Dock = DockStyle.Right, Width = 6, MinSize = 200, MinExtra = 300, Visible = showPreview,
+            BackColor = Theme.Border, AccessibleName = "Resize preview"
+        };
+        previewSplitter.SplitterMoved += (_, _) => { previewWidth = previewPane.Width; ScheduleSave(); };
+        previewTimer.Tick += (_, _) => { previewTimer.Stop(); UpdatePreview(); };
+        languageBindings.Add(previewPane.RefreshLanguage);
         sidebar = new Panel { Dock = DockStyle.Left, Width = sidebarWidth, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
         sidebarSplitter = new Splitter
         {
@@ -295,6 +314,8 @@ public sealed class MainForm : Form, IMessageFilter
         BuildToolbar();
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
         workspace.Controls.Add(paneHost);
+        workspace.Controls.Add(previewSplitter);
+        workspace.Controls.Add(previewPane);
         workspace.Controls.Add(sidebarSplitter);
         workspace.Controls.Add(sidebar);
         Controls.Add(workspace);
@@ -395,6 +416,10 @@ public sealed class MainForm : Form, IMessageFilter
         BindText(treeButton, "Folder tree", "Show / hide folder tree (Ctrl+Shift+E)");
         treeButton.Click += (_, _) => SetFolderTreeVisible(treeButton.Checked);
         toolbar.Items.Add(treeButton);
+        previewButton.Checked = showPreview;
+        BindText(previewButton, "Preview", "Show / hide preview pane (Alt+P)");
+        previewButton.Click += (_, _) => SetPreviewVisible(previewButton.Checked);
+        toolbar.Items.Add(previewButton);
         toolbar.Items.Add(new ToolStripSeparator());
         int[] counts = [1, 2, 3, 4];
         for (int i = 0; i < counts.Length; i++)
@@ -563,8 +588,42 @@ public sealed class MainForm : Form, IMessageFilter
         Theme.Apply(this);
         foreach (var pane in panes) pane.RefreshTheme();
         folderTree.RefreshTheme();
+        previewPane.ApplyColors();
+        previewSplitter.BackColor = Theme.Border;
         RefreshThemeButton();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
+    }
+
+    internal bool PreviewVisible => showPreview;
+    internal PreviewPane Preview => previewPane;
+
+    internal void SetPreviewVisible(bool visible)
+    {
+        showPreview = visible;
+        previewPane.Visible = previewSplitter.Visible = visible;
+        previewButton.Checked = visible;
+        previewTimer.Stop();
+        if (visible) UpdatePreview();
+        else previewPane.Unload();
+        ScheduleSave();
+    }
+
+    private void SchedulePreview()
+    {
+        if (!showPreview) return;
+        previewTimer.Stop();
+        previewTimer.Start();
+    }
+
+    // Follows the active pane's selection: one file is previewed; folders, several items or nothing show a hint.
+    internal void UpdatePreview()
+    {
+        if (!showPreview || IsDisposed) return;
+        var (path, count) = Active.ActiveView?.SelectionInfo() ?? (null, 0);
+        if (count == 0) previewPane.ShowMessage("Select a file to preview it.");
+        else if (count > 1) previewPane.ShowMessage("{0} items selected", count);
+        else if (path is null || Directory.Exists(path)) previewPane.ShowMessage("Folders are not previewed.");
+        else previewPane.ShowFile(path);
     }
 
     internal void SetFolderTreeVisible(bool visible)
@@ -1084,6 +1143,7 @@ public sealed class MainForm : Form, IMessageFilter
         activePane = index;
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == index);
         if (ready) SyncTree();
+        SchedulePreview();
         ScheduleSave();
     }
 
@@ -1271,6 +1331,7 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Alt | Keys.D: Active.FocusAddress(); break;
             case Keys.Control | Keys.D: AddFavorite(Active.CurrentPath); break;
             case Keys.Control | Keys.Shift | Keys.E: SetFolderTreeVisible(!showFolderTree); break;
+            case Keys.Alt | Keys.P: SetPreviewVisible(!showPreview); break;
             case Keys.Control | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + 1) % Active.TabCount); break;
             case Keys.Control | Keys.Shift | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
@@ -1308,7 +1369,7 @@ public sealed class MainForm : Form, IMessageFilter
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
-                GlobalHotkey = globalHotkey, KeepInTray = closeToTray, TrayNoticeShown = trayNoticeShown,
+                GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible,
@@ -1364,6 +1425,7 @@ public sealed class MainForm : Form, IMessageFilter
             rebuilding = true;
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
+            previewTimer.Dispose();
             tips.Dispose();
             trayIcon.Visible = false;
             trayIcon.ContextMenuStrip?.Dispose();

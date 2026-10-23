@@ -24,6 +24,8 @@ public sealed record SessionState
     public bool TrayNoticeShown { get; init; }
     public bool CheckUpdates { get; init; } = true;
     public bool AutoUpdate { get; init; } = true;
+    public bool ShowPreview { get; init; }
+    public int PreviewWidth { get; init; }
     public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];
