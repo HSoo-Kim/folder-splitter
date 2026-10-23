@@ -16,6 +16,11 @@ internal sealed class PreviewPane : Panel
         AccessibleName = "Preview message"
     };
     private readonly Panel host = new() { Dock = DockStyle.Fill, Visible = false };
+    private readonly PictureBox picture = new()
+    {
+        Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Visible = false, Padding = new Padding(8),
+        AccessibleName = "Preview image"
+    };
     private IPreviewHandler? handler;
     private string messageKey = "Select a file to preview it.";
     private object[] messageArguments = [];
@@ -25,6 +30,7 @@ internal sealed class PreviewPane : Panel
         this.text = text;
         AccessibleName = "Preview";
         Controls.Add(host);
+        Controls.Add(picture);
         Controls.Add(message);
         Controls.Add(title);
         ShowMessage("Select a file to preview it.");
@@ -32,6 +38,7 @@ internal sealed class PreviewPane : Panel
 
     internal string? CurrentPath { get; private set; }
     internal bool HasHandler => handler is not null;
+    internal bool HasImage => picture.Image is not null;
     internal string MessageText => message.Visible ? message.Text : "";
     internal event EventHandler? PreviewChanged;
 
@@ -43,7 +50,14 @@ internal sealed class PreviewPane : Panel
         title.Text = Path.GetFileName(path);
         if (PreviewHandlers.Find(Path.GetExtension(path)) is not { } id)
         {
-            SetMessage("No preview is available for this file type.");
+            int size = Math.Clamp(Math.Max(ClientSize.Width, ClientSize.Height - title.Height), 256, 1600);
+            if (ShellThumbnail.Load(path, size) is { } image)
+            {
+                picture.Image = image;
+                picture.Visible = true;
+                message.Visible = false;
+            }
+            else SetMessage("No preview is available for this file type.");
             Changed();
             return;
         }
@@ -81,7 +95,7 @@ internal sealed class PreviewPane : Panel
 
     internal void ApplyColors()
     {
-        BackColor = host.BackColor = message.BackColor = title.BackColor = Theme.Canvas;
+        BackColor = host.BackColor = picture.BackColor = message.BackColor = title.BackColor = Theme.Canvas;
         message.ForeColor = Theme.Muted;
         title.ForeColor = Theme.Text;
         if (handler is IPreviewHandlerVisuals visuals)
@@ -97,6 +111,12 @@ internal sealed class PreviewPane : Panel
 
     internal void Unload()
     {
+        if (picture.Image is { } image)
+        {
+            picture.Image = null;
+            picture.Visible = false;
+            image.Dispose();
+        }
         if (handler is null) return;
         var current = handler;
         handler = null;

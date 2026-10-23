@@ -577,6 +577,12 @@ internal static class Program
         string folder = Directory.CreateDirectory(Path.Combine(root, "Preview")).FullName;
         string textFile = Path.Combine(folder, "preview-note.txt");
         File.WriteAllText(textFile, "Folder Splitter preview");
+        string photo = Path.Combine(folder, "preview-photo.png");
+        using (var image = new Bitmap(96, 64))
+        {
+            using (var graphics = Graphics.FromImage(image)) graphics.Clear(Color.SteelBlue);
+            image.Save(photo, System.Drawing.Imaging.ImageFormat.Png);
+        }
         string unknown = Path.Combine(folder, "preview-data.fsxyz");
         File.WriteAllText(unknown, "x");
         string session = Path.Combine(root, "preview.json");
@@ -613,8 +619,11 @@ internal static class Program
                 Check(!textHandler || form.Preview.HasHandler || form.Preview.MessageText == text.T("Could not show a preview of this file."),
                     "selecting a file previews it with the Windows preview handler");
                 Console.WriteLine($"METRIC preview_txt_handler_registered={textHandler} handler_loaded={form.Preview.HasHandler}");
+                await Select(photo);
+                Check(form.Preview.HasImage && !form.Preview.HasHandler && form.Preview.MessageText == "",
+                    "a photo without a preview handler shows its image");
                 await Select(unknown);
-                Check(!form.Preview.HasHandler && form.Preview.MessageText == text.T("No preview is available for this file type."),
+                Check(!form.Preview.HasHandler && !form.Preview.HasImage && form.Preview.MessageText == text.T("No preview is available for this file type."),
                     "a file type without a preview handler shows a hint");
                 form.SetPreviewVisible(false);
                 Check(!form.Preview.Visible && !form.Preview.HasHandler, "hiding the preview pane unloads the preview");

@@ -82,6 +82,82 @@ internal static class PreviewHandlers
         [MarshalAs(UnmanagedType.Interface)] out object item);
 }
 
+// Windows 11 registers no preview handler for photos or videos; File Explorer shows the shell's
+// large thumbnail for them instead. THUMBNAILONLY keeps file-type icons out of the preview.
+internal static class ShellThumbnail
+{
+    internal static Bitmap? Load(string path, int size)
+    {
+        Guid factoryId = new("bcc18b79-ba16-442f-80c4-8a59c30c463b");
+        if (SHCreateItemFromParsingName(path, 0, ref factoryId, out object item) < 0) return null;
+        nint bitmap = 0;
+        try
+        {
+            if (((IShellItemImageFactory)item).GetImage(new NativeSize(size, size), 0x1 | 0x8, out bitmap) < 0 || bitmap == 0)
+                return null; // SIIGBF_BIGGERSIZEOK | SIIGBF_THUMBNAILONLY
+            return ToBitmap(bitmap);
+        }
+        catch (Exception error) when (error is COMException or InvalidCastException or ArgumentException
+            or ExternalException or OverflowException) { return null; }
+        finally
+        {
+            if (bitmap != 0) DeleteObject(bitmap);
+            Marshal.FinalReleaseComObject(item);
+        }
+    }
+
+    // Image.FromHbitmap drops the alpha channel. Reread the pixels as ARGB, unless every alpha byte is
+    // zero (opaque photos often come back that way), in which case the opaque copy is already right.
+    private static Bitmap ToBitmap(nint handle)
+    {
+        var opaque = Image.FromHbitmap(handle);
+        if (Image.GetPixelFormatSize(opaque.PixelFormat) != 32) return opaque;
+        var area = new Rectangle(0, 0, opaque.Width, opaque.Height);
+        // Bottom-up bitmaps report a negative stride, so copy row by row from Scan0.
+        int rowBytes = area.Width * 4;
+        var bytes = new byte[rowBytes * area.Height];
+        var data = opaque.LockBits(area, System.Drawing.Imaging.ImageLockMode.ReadOnly, opaque.PixelFormat);
+        try
+        {
+            for (int y = 0; y < area.Height; y++)
+                Marshal.Copy(data.Scan0 + (nint)y * data.Stride, bytes, y * rowBytes, rowBytes);
+        }
+        finally { opaque.UnlockBits(data); }
+        bool hasAlpha = false;
+        for (int i = 3; i < bytes.Length && !hasAlpha; i += 4) hasAlpha = bytes[i] != 0;
+        if (!hasAlpha) return opaque;
+        opaque.Dispose();
+        var result = new Bitmap(area.Width, area.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        var target = result.LockBits(area, System.Drawing.Imaging.ImageLockMode.WriteOnly, result.PixelFormat);
+        try
+        {
+            for (int y = 0; y < area.Height; y++)
+                Marshal.Copy(bytes, y * rowBytes, target.Scan0 + (nint)y * target.Stride, rowBytes);
+        }
+        finally { result.UnlockBits(target); }
+        return result;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHCreateItemFromParsingName(string path, nint bindContext, ref Guid interfaceId,
+        [MarshalAs(UnmanagedType.Interface)] out object item);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(nint handle);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeSize(int width, int height)
+{
+    public int Width = width, Height = height;
+}
+
+[ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IShellItemImageFactory
+{
+    [PreserveSig] int GetImage(NativeSize size, int flags, out nint bitmap);
+}
+
 [StructLayout(LayoutKind.Sequential)]
 internal struct PreviewRect(int left, int top, int right, int bottom)
 {
