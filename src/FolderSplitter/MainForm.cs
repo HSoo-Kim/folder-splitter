@@ -1643,7 +1643,8 @@ public sealed class MainForm : Form, IMessageFilter
                 case 0x200 when m.HWnd == drag.Header: // WM_MOUSEMOVE
                     int minimum = (int)Math.Round(24 * DeviceDpi / 96d);
                     SendMessage(drag.List, 0x101E, drag.Column, Math.Max(minimum, drag.StartWidth + x - drag.StartX)); // LVM_SETCOLUMNWIDTH
-                    UpdateWindow(drag.List);
+                    // The list defers its own repaint, and continuous mouse input keeps it waiting; paint it now.
+                    RedrawWindow(drag.List, 0, 0, 0x0001 | 0x0004 | 0x0080 | 0x0100); // INVALIDATE | ERASE | ALLCHILDREN | UPDATENOW
                     Cursor.Current = Cursors.VSplit;
                     return true;
                 case 0x202 when m.HWnd == drag.Header: // WM_LBUTTONUP
@@ -1684,7 +1685,7 @@ public sealed class MainForm : Form, IMessageFilter
     private static extern nint SendMessage(nint window, int message, nint wParam, ref HeaderHit hit);
 
     [DllImport("user32.dll")]
-    private static extern bool UpdateWindow(nint window);
+    private static extern bool RedrawWindow(nint window, nint rectangle, nint region, uint flags);
 
     [DllImport("user32.dll")]
     private static extern nint SetCapture(nint window);
