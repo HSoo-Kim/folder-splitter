@@ -7,7 +7,8 @@ namespace QuadExplorer;
 internal static class Theme
 {
     private sealed record Palette(Color Canvas, Color Surface, Color Border, Color Text,
-        Color Muted, Color Accent, Color Selected, Color ErrorText, Color Hover, Color Pressed, bool Dark = false);
+        Color Muted, Color Accent, Color Selected, Color ErrorText, Color Hover, Color Pressed, bool Dark = false,
+        Color? SidebarColor = null, Color? ListColor = null, Color? SortColor = null);
 
     private static readonly Palette Light = new(
         Color.FromArgb(246, 247, 249), Color.White, Color.FromArgb(222, 226, 232),
@@ -35,9 +36,61 @@ internal static class Theme
         Color.FromArgb(200, 203, 208), Color.FromArgb(150, 155, 162), Color.FromArgb(125, 170, 215),
         Color.FromArgb(58, 72, 88), Color.FromArgb(230, 150, 140),
         Color.FromArgb(56, 62, 70), Color.FromArgb(64, 80, 98), Dark: true);
+    // Mixed palettes give the sidebar, file list and sorted column their own colors. Color values follow
+    // the public Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin and Nord palettes.
+    private static readonly Palette Solarized = new(
+        Color.FromArgb(238, 232, 213), Color.FromArgb(253, 246, 227), Color.FromArgb(221, 214, 193),
+        Color.FromArgb(88, 110, 117), Color.FromArgb(123, 138, 139), Color.FromArgb(38, 139, 210),
+        Color.FromArgb(228, 220, 195), Color.FromArgb(220, 50, 47),
+        Color.FromArgb(230, 223, 200), Color.FromArgb(221, 213, 188), Dark: false,
+        SidebarColor: Color.FromArgb(238, 232, 213), ListColor: Color.FromArgb(253, 246, 227), SortColor: Color.FromArgb(245, 238, 216));
+    private static readonly Palette Everforest = new(
+        Color.FromArgb(239, 235, 212), Color.FromArgb(244, 240, 217), Color.FromArgb(224, 220, 199),
+        Color.FromArgb(92, 106, 114), Color.FromArgb(130, 145, 129), Color.FromArgb(53, 167, 124),
+        Color.FromArgb(223, 229, 189), Color.FromArgb(208, 62, 58),
+        Color.FromArgb(232, 229, 201), Color.FromArgb(223, 229, 189), Dark: false,
+        SidebarColor: Color.FromArgb(230, 233, 200), ListColor: Color.FromArgb(253, 246, 227), SortColor: Color.FromArgb(244, 240, 217));
+    private static readonly Palette Gruvbox = new(
+        Color.FromArgb(235, 219, 178), Color.FromArgb(249, 245, 215), Color.FromArgb(213, 196, 161),
+        Color.FromArgb(60, 56, 54), Color.FromArgb(124, 111, 100), Color.FromArgb(175, 58, 3),
+        Color.FromArgb(230, 213, 168), Color.FromArgb(157, 0, 6),
+        Color.FromArgb(227, 210, 166), Color.FromArgb(213, 196, 161), Dark: false,
+        SidebarColor: Color.FromArgb(242, 229, 188), ListColor: Color.FromArgb(251, 241, 199), SortColor: Color.FromArgb(242, 229, 188));
+    private static readonly Palette RosePine = new(
+        Color.FromArgb(242, 233, 225), Color.FromArgb(250, 244, 237), Color.FromArgb(223, 218, 217),
+        Color.FromArgb(87, 82, 121), Color.FromArgb(121, 117, 147), Color.FromArgb(180, 99, 122),
+        Color.FromArgb(235, 224, 214), Color.FromArgb(180, 99, 122),
+        Color.FromArgb(235, 224, 214), Color.FromArgb(223, 212, 203), Dark: false,
+        SidebarColor: Color.FromArgb(242, 233, 225), ListColor: Color.FromArgb(255, 250, 243), SortColor: Color.FromArgb(250, 244, 237));
+    private static readonly Palette Latte = new(
+        Color.FromArgb(230, 233, 239), Color.FromArgb(246, 247, 250), Color.FromArgb(204, 208, 218),
+        Color.FromArgb(76, 79, 105), Color.FromArgb(124, 127, 147), Color.FromArgb(136, 57, 239),
+        Color.FromArgb(204, 208, 218), Color.FromArgb(210, 15, 57),
+        Color.FromArgb(221, 225, 234), Color.FromArgb(204, 208, 218), Dark: false,
+        SidebarColor: Color.FromArgb(220, 224, 232), ListColor: Color.FromArgb(239, 241, 245), SortColor: Color.FromArgb(233, 235, 241));
+    private static readonly Palette EverforestDark = new(
+        Color.FromArgb(39, 46, 51), Color.FromArgb(58, 70, 76), Color.FromArgb(71, 82, 88),
+        Color.FromArgb(211, 198, 170), Color.FromArgb(157, 169, 160), Color.FromArgb(167, 192, 128),
+        Color.FromArgb(66, 80, 71), Color.FromArgb(230, 126, 128),
+        Color.FromArgb(61, 72, 77), Color.FromArgb(71, 82, 88), Dark: true,
+        SidebarColor: Color.FromArgb(52, 63, 68), ListColor: Color.FromArgb(45, 53, 59), SortColor: Color.FromArgb(52, 63, 68));
+    private static readonly Palette Nord = new(
+        Color.FromArgb(46, 52, 64), Color.FromArgb(59, 66, 82), Color.FromArgb(67, 76, 94),
+        Color.FromArgb(216, 222, 233), Color.FromArgb(154, 165, 184), Color.FromArgb(136, 192, 208),
+        Color.FromArgb(67, 76, 94), Color.FromArgb(229, 147, 155),
+        Color.FromArgb(59, 66, 82), Color.FromArgb(76, 86, 106), Dark: true,
+        SidebarColor: Color.FromArgb(59, 66, 82), ListColor: Color.FromArgb(46, 52, 64), SortColor: Color.FromArgb(53, 60, 74));
+    private static readonly Palette Mocha = new(
+        Color.FromArgb(24, 24, 37), Color.FromArgb(49, 50, 68), Color.FromArgb(69, 71, 90),
+        Color.FromArgb(205, 214, 244), Color.FromArgb(166, 173, 200), Color.FromArgb(203, 166, 247),
+        Color.FromArgb(49, 50, 68), Color.FromArgb(243, 139, 168),
+        Color.FromArgb(49, 50, 68), Color.FromArgb(69, 71, 90), Dark: true,
+        SidebarColor: Color.FromArgb(30, 30, 46), ListColor: Color.FromArgb(30, 30, 46), SortColor: Color.FromArgb(36, 36, 58));
     private static readonly Dictionary<string, Palette> Palettes = new()
     {
-        ["light"] = Light, ["dark"] = Dark, ["beige"] = Beige, ["green"] = Green, ["dim"] = Dim
+        ["light"] = Light, ["dark"] = Dark, ["beige"] = Beige, ["green"] = Green, ["dim"] = Dim,
+        ["solarized"] = Solarized, ["everforest"] = Everforest, ["gruvbox"] = Gruvbox, ["rosepine"] = RosePine,
+        ["latte"] = Latte, ["everforest-dark"] = EverforestDark, ["nord"] = Nord, ["mocha"] = Mocha
     };
     private static Palette current = Light;
     private static readonly FlatRenderer Renderer = new();
@@ -59,6 +112,13 @@ internal static class Theme
     public static Color Selected => current.Selected;
     public static Color ErrorText => current.ErrorText;
     public static bool IsDark => current.Dark;
+    // Font for the Shell file lists; null keeps Windows' own list font.
+    public static (string Face, float Points)? ListFont { get; set; }
+    public static Color Sidebar => current.SidebarColor ?? Canvas;
+    public static Color ListBack => current.ListColor ?? Surface;
+    public static Color SortColumn => current.SortColor ?? Canvas;
+    // Strips tagged with this show a faint rounded outline around every button, so their commands stand out.
+    public static readonly object OutlineItems = new();
 
     public static void Set(string mode)
     {
@@ -193,9 +253,9 @@ internal static class Theme
         Native.SetWindowTheme(window, theme, null);
         if (className.Equals("SysListView32", StringComparison.OrdinalIgnoreCase))
         {
-            Native.SendMessage(window, 0x1001, 0, ColorRef(Surface)); // LVM_SETBKCOLOR
+            Native.SendMessage(window, 0x1001, 0, ColorRef(ListBack)); // LVM_SETBKCOLOR
             Native.SendMessage(window, 0x1024, 0, ColorRef(Text)); // LVM_SETTEXTCOLOR
-            Native.SendMessage(window, 0x1026, 0, ColorRef(Surface)); // LVM_SETTEXTBKCOLOR
+            Native.SendMessage(window, 0x1026, 0, ColorRef(ListBack)); // LVM_SETTEXTBKCOLOR
         }
         else if (className.Equals("SysTreeView32", StringComparison.OrdinalIgnoreCase))
         {
@@ -246,8 +306,9 @@ internal static class Theme
         return button;
     }
 
-    public static ToolStrip Strip() => new()
+    public static ToolStrip Strip(bool outlineItems = false) => new()
     {
+        Tag = outlineItems ? OutlineItems : null,
         GripStyle = ToolStripGripStyle.Hidden, BackColor = Canvas, ForeColor = Text,
         Renderer = Renderer, Padding = new Padding(6, 3, 6, 3),
         AutoSize = true, Stretch = true, CanOverflow = true
@@ -386,7 +447,8 @@ internal static class Theme
             bool active = e.Item.Enabled && (e.Item.Selected || e.Item.Pressed);
             // Folder tabs keep a faint outline when idle so neighbouring tabs read as separate items.
             bool tab = e.Item is FolderTabButton;
-            bool outlineOnly = (e.Item is OutlinedToolStripButton || tab) && !isChecked && !active;
+            bool outlined = e.Item is OutlinedToolStripButton || ReferenceEquals(e.ToolStrip?.Tag, OutlineItems);
+            bool outlineOnly = (outlined || tab) && !isChecked && !active;
             if (!isChecked && !active && !outlineOnly) return;
             int dpi = e.ToolStrip?.DeviceDpi ?? 96;
             var bounds = new Rectangle(1, 1, e.Item.Width - 3, e.Item.Height - 3);

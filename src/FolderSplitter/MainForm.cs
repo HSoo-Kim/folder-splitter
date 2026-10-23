@@ -66,7 +66,7 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly Button favoritesHeader;
     private bool favoritesExpanded;
     private readonly List<string> favorites;
-    private readonly ToolStrip toolbar = Theme.Strip();
+    private readonly ToolStrip toolbar = Theme.Strip(outlineItems: true);
     private readonly LinkLabel versionLabel = new()
     {
         Dock = DockStyle.Bottom, AutoSize = true, TextAlign = ContentAlignment.MiddleLeft,
@@ -120,6 +120,8 @@ public sealed class MainForm : Form, IMessageFilter
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
         colorTheme = initialState.ColorTheme;
+        fontFamily = initialState.FontFamily is { } face && FontInstalled(face) ? face : null;
+        textSize = initialState.TextSize;
         showFolderTree = initialState.ShowFolderTree;
         folderTreeHeight = initialState.FolderTreeHeight;
         globalHotkey = initialState.GlobalHotkey;
@@ -149,7 +151,8 @@ public sealed class MainForm : Form, IMessageFilter
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
-        Font = new Font("Segoe UI", 9.5f);
+        Font = new Font(UiFace, UiPoints);
+        Theme.ListFont = ListFontChoice();
         UpdateVersionText();
         languageBindings.Add(UpdateVersionText);
         versionLabel.LinkClicked += async (_, _) =>
@@ -243,10 +246,11 @@ public sealed class MainForm : Form, IMessageFilter
         var sideTitle = new Label
         {
             Text = "QUICK ACCESS", Dock = DockStyle.Top, Height = 28,
-            Font = new Font(Font.FontFamily, 8, FontStyle.Bold), ForeColor = Theme.Muted,
+            Font = HeaderFont(), ForeColor = Theme.Muted,
             Padding = new Padding(7, 0, 0, 0)
         };
         BindText(sideTitle, "QUICK ACCESS");
+        sideTitleLabel = sideTitle;
         places = new ListBox
         {
             Dock = DockStyle.Top, Height = 216, BorderStyle = BorderStyle.None, BackColor = Theme.Canvas,
@@ -303,7 +307,7 @@ public sealed class MainForm : Form, IMessageFilter
         favoritesHeader = Theme.Button("", "Collapse favorites", ToggleFavorites);
         favoritesHeader.Dock = DockStyle.Top;
         favoritesHeader.Height = 32;
-        favoritesHeader.Font = new Font("Segoe UI", 8, FontStyle.Bold);
+        favoritesHeader.Font = HeaderFont();
         favoritesHeader.TextAlign = ContentAlignment.MiddleLeft;
         favoritesHeader.ForeColor = Theme.Muted;
         favoritesHeader.FlatAppearance.BorderSize = 0;
@@ -524,7 +528,8 @@ public sealed class MainForm : Form, IMessageFilter
             foreach (var old in themeButton.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
             foreach (string mode in SessionStore.ColorThemes)
             {
-                var item = new ToolStripMenuItem(text.T(ThemeName(mode))) { Checked = mode == colorTheme };
+                if (mode is "solarized" or "everforest-dark") themeButton.DropDownItems.Add(new ToolStripSeparator());
+                var item = new ToolStripMenuItem(ThemeLabel(mode)) { Checked = mode == colorTheme };
                 item.Click += (_, _) => SetColorTheme(mode);
                 themeButton.DropDownItems.Add(item);
             }
@@ -597,6 +602,20 @@ public sealed class MainForm : Form, IMessageFilter
         memoryMenu.DropDownItems.Add("\u2026");
         memoryMenu.DropDownOpening += (_, _) => BuildMemoryMenu();
         settings.DropDownItems.Add(memoryMenu);
+        BindText(fontMenu, "Font and text size");
+        fontMenu.DropDownItems.Add("\u2026");
+        fontMenu.DropDownOpening += (_, _) => BuildFontMenu();
+        settings.DropDownItems.Add(fontMenu);
+        settings.DropDownItems.Add(new ToolStripSeparator());
+        var author = new ToolStripMenuItem { AccessibleName = "Author" };
+        languageBindings.Add(() => author.Text = text.T("Made by {0} (GitHub)", "HSoo-Kim"));
+        author.Text = text.T("Made by {0} (GitHub)", "HSoo-Kim");
+        author.Click += (_, _) =>
+        {
+            try { Process.Start(new ProcessStartInfo(AuthorUrl) { UseShellExecute = true }); }
+            catch (Win32Exception error) { Active.SetStatus(error.Message); }
+        };
+        settings.DropDownItems.Add(author);
         toolbar.Items.Add(settings);
         toolbar.Layout += (_, _) =>
         {
@@ -648,18 +667,95 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void RefreshThemeButton()
     {
-        themeButton.Text = text.T(ThemeName(colorTheme));
+        themeButton.Text = ThemeLabel(colorTheme);
         themeButton.ToolTipText = text.T("Choose a color theme");
     }
 
-    private static string ThemeName(string mode) => mode switch
+    // Palettes named after their design source keep that name in every language.
+    private string ThemeLabel(string mode) => mode switch
     {
-        "dark" => "Dark mode", "beige" => "Beige", "green" => "Soft green", "dim" => "Soft dark", _ => "Light mode"
+        "dark" => text.T("Dark mode"), "beige" => text.T("Beige"), "green" => text.T("Soft green"), "dim" => text.T("Soft dark"),
+        "solarized" => "Solarized Light", "everforest" => "Everforest Light", "gruvbox" => "Gruvbox Light",
+        "rosepine" => "Rosé Pine Dawn", "latte" => "Catppuccin Latte", "everforest-dark" => "Everforest Dark",
+        "nord" => "Nord", "mocha" => "Catppuccin Mocha", _ => text.T("Light mode")
     };
+
+    private readonly List<Control> sidebarSurfaces = [];
+    private string? fontFamily;
+    private string textSize = "normal";
+    private Label? sideTitleLabel;
+    private readonly ToolStripMenuItem fontMenu = new();
+    private static readonly string[] FontCandidates =
+    [
+        "Malgun Gothic", "Pretendard", "Noto Sans KR", "NanumGothic", "NanumBarunGothic", "NanumSquare",
+        "Spoqa Han Sans Neo", "IBM Plex Sans KR", "SUIT", "Arial", "Calibri", "Tahoma", "Verdana"
+    ];
+    private string UiFace => fontFamily ?? "Segoe UI";
+    private float UiPoints => textSize switch { "small" => 9f, "large" => 10.5f, _ => 9.5f };
+    private Font HeaderFont() => new(UiFace, UiPoints - 1.5f, FontStyle.Bold);
+    internal string? UiFontFamily => fontFamily;
+    internal string TextSize => textSize;
+
+    private (string, float)? ListFontChoice() => fontFamily is null && textSize == "normal" ? null
+        : (fontFamily ?? SystemFonts.IconTitleFont!.Name,
+            SystemFonts.IconTitleFont!.SizeInPoints + textSize switch { "small" => -0.75f, "large" => 1.5f, _ => 0f });
+
+    private static bool FontInstalled(string face)
+    {
+        try { using var family = new FontFamily(face); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
+    // A family that is not installed falls back to the standard font; the choice applies to every pane at once.
+    internal void SetUiFont(string? family, string size)
+    {
+        fontFamily = family is not null && FontInstalled(family) ? family : null;
+        textSize = size is "small" or "large" ? size : "normal";
+        Font = new Font(UiFace, UiPoints);
+        favoritesHeader.Font = treeHeader.Font = HeaderFont();
+        if (sideTitleLabel is not null) sideTitleLabel.Font = HeaderFont();
+        Theme.ListFont = ListFontChoice();
+        ApplyAppearance();
+        ScheduleSave();
+    }
+
+    private void BuildFontMenu()
+    {
+        foreach (var old in fontMenu.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
+        var standard = new ToolStripMenuItem(text.T("Standard ({0})", "Segoe UI")) { Checked = fontFamily is null };
+        standard.Click += (_, _) => SetUiFont(null, textSize);
+        fontMenu.DropDownItems.Add(standard);
+        foreach (string face in FontCandidates.Where(FontInstalled))
+        {
+            using var family = new FontFamily(face);
+            var item = new ToolStripMenuItem(family.Name) { Checked = fontFamily == face };
+            item.Click += (_, _) => SetUiFont(face, textSize);
+            fontMenu.DropDownItems.Add(item);
+        }
+        fontMenu.DropDownItems.Add(new ToolStripSeparator());
+        foreach (var (size, key) in new[] { ("small", "Small text"), ("normal", "Normal text"), ("large", "Large text") })
+        {
+            var item = new ToolStripMenuItem(text.T(key)) { Checked = textSize == size };
+            item.Click += (_, _) => SetUiFont(fontFamily, size);
+            fontMenu.DropDownItems.Add(item);
+        }
+        Theme.Apply(toolbar);
+    }
 
     private void ApplyAppearance()
     {
         Theme.Apply(this);
+        // The sidebar may have its own color: everything there that uses the window background follows it.
+        if (sidebarSurfaces.Count == 0)
+        {
+            void Collect(Control control)
+            {
+                if (control.BackColor == Theme.Canvas) sidebarSurfaces.Add(control);
+                foreach (Control child in control.Controls) if (child is not QuadExplorer.FolderTree) Collect(child);
+            }
+            Collect(sidebar);
+        }
+        foreach (var control in sidebarSurfaces) control.BackColor = Theme.Sidebar;
         foreach (var pane in panes) pane.RefreshTheme();
         folderTree.RefreshTheme();
         previewPane.ApplyColors();
@@ -982,6 +1078,8 @@ public sealed class MainForm : Form, IMessageFilter
     }
 
     private bool CanInstallUpdate(ReleaseInfo update) => autoUpdate && update.PackageUrl is not null && update.PackageSha256 is not null;
+
+    internal const string AuthorUrl = "https://github.com/HSoo-Kim";
 
     private void OpenReleasePage(ReleaseInfo update)
     {
@@ -1316,7 +1414,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         if (e.Index < 0) return;
         bool selected = e.State.HasFlag(DrawItemState.Selected);
-        using var background = new SolidBrush(selected ? Theme.Selected : Theme.Canvas);
+        using var background = new SolidBrush(selected ? Theme.Selected : Theme.Sidebar);
         e.Graphics.FillRectangle(background, e.Bounds);
         var place = (Place)((ListBox)sender!).Items[e.Index];
         int iconSize = (int)Math.Round(16 * DeviceDpi / 96d);
@@ -1854,7 +1952,7 @@ public sealed class MainForm : Form, IMessageFilter
             {
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
-                ColorTheme = colorTheme, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
+                ColorTheme = colorTheme, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),

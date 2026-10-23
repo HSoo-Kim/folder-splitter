@@ -429,10 +429,10 @@ internal static partial class Program
                 var status = Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status");
                 var host = pane.ActiveView!;
                 await ItemCount(host, () => { }, 3);
-                Check(status.Text.EndsWith("3 items", StringComparison.Ordinal), "bottom status shows the native item count");
+                Check(status.Text.Contains("  |  3 items", StringComparison.Ordinal), "bottom status shows the native item count");
                 await ItemCount(host, () => File.WriteAllText(Path.Combine(treeRoot, "b.txt"), "b"), 4);
                 await ItemCount(host, () => File.Delete(Path.Combine(treeRoot, "a.txt")), 3);
-                Check(status.Text.EndsWith("3 items", StringComparison.Ordinal), "item count follows created and deleted files");
+                Check(status.Text.Contains("  |  3 items", StringComparison.Ordinal), "item count follows created and deleted files");
                 Check(Descendants(form).OfType<Button>().All(b => b.GetType().Name == "RoundedButton"),
                     "app buttons use rounded rendering");
                 Check(ButtonCornersMatchBackground(pane), "light rounded button corners use the opaque background");
@@ -475,6 +475,53 @@ internal static partial class Program
                         && visual.GetColor(2, out int back) == 0 && back == ColorTranslator.ToWin32(Theme.Surface)
                         && visual.GetColor(1, out int fore) == 0 && fore == ColorTranslator.ToWin32(Theme.Text),
                         $"{mode} theme recolors the app and the file list");
+                }
+                foreach (var (mode, dark) in new[] { ("solarized", false), ("everforest", false), ("gruvbox", false), ("rosepine", false),
+                    ("latte", false), ("everforest-dark", true), ("nord", true), ("mocha", true) })
+                {
+                    form.SetColorTheme(mode);
+                    Check(form.ColorTheme == mode && Theme.IsDark == dark && form.FolderTree.Tree.BackColor == Theme.Sidebar
+                        && visual.GetColor(2, out int back) == 0 && back == ColorTranslator.ToWin32(Theme.ListBack)
+                        && visual.GetColor(3, out int sort) == 0 && sort == ColorTranslator.ToWin32(Theme.SortColumn)
+                        && visual.GetColor(1, out int fore) == 0 && fore == ColorTranslator.ToWin32(Theme.Text),
+                        $"{mode} palette colors the sidebar, file list and sorted column separately");
+                }
+                Check(Theme.Sidebar != Theme.Canvas || Theme.ListBack != Theme.Surface, "mixed palettes use more than one background color");
+                var mainToolbar = (ToolStrip)typeof(MainForm).GetField("toolbar", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(form)!;
+                Check(ReferenceEquals(mainToolbar.Tag, Theme.OutlineItems), "top toolbar buttons are drawn with a rounded outline");
+                string ListFace() => ListWindowFace(pane.ActiveView!.Handle);
+                string standardFace = SystemFonts.IconTitleFont!.Name;
+                form.SetUiFont("Malgun Gothic", "large");
+                // GDI+ reports a family by its localized name (맑은 고딕 on Korean Windows).
+                string malgun;
+                using (var family = new FontFamily("Malgun Gothic")) malgun = family.Name;
+                string chosenFace = ListFace();
+
+                Check(form.Font.Name == malgun && Math.Abs(form.Font.SizeInPoints - 10.5f) < 0.01f && (chosenFace == "Malgun Gothic" || chosenFace == malgun),
+                    "a chosen font and large text apply to the app and the file list");
+                form.SetUiFont(null, "normal");
+                string restoredFace = ListFace();
+                Check(form.Font.Name == "Segoe UI" && Theme.ListFont is null && restoredFace == standardFace,
+                    "the standard font restores the file list's own font");
+                form.SetUiFont("Not An Installed Font", "huge");
+                Check(form.UiFontFamily is null && form.TextSize == "normal", "an unknown font or size falls back to the standard");
+                string sizes = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "fs-size-" + Guid.NewGuid().ToString("N"))).FullName;
+                try
+                {
+                    Check(ExplorerPane.FolderFilesSize(sizes, 10) is null, "an empty folder shows no file total");
+                    File.WriteAllBytes(Path.Combine(sizes, "a.bin"), new byte[1000]);
+                    File.WriteAllBytes(Path.Combine(sizes, "b.bin"), new byte[2000]);
+                    Directory.CreateDirectory(Path.Combine(sizes, "sub"));
+                    File.WriteAllBytes(Path.Combine(sizes, "sub", "c.bin"), new byte[5000]);
+                    Check(ExplorerPane.FolderFilesSize(sizes, 10) == ExplorerPane.FormatSize(3000)
+                        && ExplorerPane.FolderFilesSize(sizes, 1) == ExplorerPane.FormatSize(1000) + "+",
+                        "the folder total adds this folder's files only, and marks a capped count");
+                }
+                finally { Directory.Delete(sizes, true); }
+                if (ExplorerPane.FolderFilesSize(pane.CurrentPath, 50_000) is { } here)
+                {
+                    await pane.UpdateFolderSize();
+                    Check(status.Text.Contains(here), "the status line shows the current folder's file total");
                 }
                 form.SetColorTheme("dark");
                 await WindowRestored(form, () => PostMessage(form.Handle, 0x0312, 0x4653, 0)); // WM_HOTKEY Win+Alt+E

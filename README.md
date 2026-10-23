@@ -2,7 +2,7 @@
 
 # Folder Splitter
 
-[한국어](README.md) · **English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
+**English** · [한국어](README.ko.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
 A **Windows file manager that shows up to 4 folders at once in a single window, with independent tabs in each pane**.
 
@@ -112,7 +112,10 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
   - **Other formats**: Photos use Windows thumbnails; Office, text and other documents use installed Explorer preview handlers. Wheel input over a document goes to its handler rather than the file list; scrolling and paging support depend on the handler.
 
 ### Appearance and settings
-- **Color themes**: Pick `Light`, `Dark` or the easier-on-the-eyes `Beige`, `Soft green` and `Soft dark` (a lower-contrast dark) from the menu at the top right. The file list background and text change too.
+- **Color themes**: Choose from 13 in the menu at the top right: the standard `Light` and `Dark`, the easier-on-the-eyes `Beige`, `Soft green` and `Soft dark`, and eight mixed palettes based on well-known design palettes (Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin, Nord) that give the top bar, sidebar, file list and sorted column their own colors.
+  ![The 13 Folder Splitter color theme palettes](docs/images/folder-splitter-themes-v0.7.27.png)
+- **Font and text size**: In `Settings` → `Font and text size`, pick an installed font (Malgun Gothic, Pretendard, NanumGothic and others) and small, normal or large text; the file lists change too.
+- **Folder file total**: The status line shows the total size of the files directly in the current folder, such as `Files here: 18.4 MB`. Subfolders are not scanned, so it is a single folder read with no load on the PC; network folders are skipped.
 - **Languages**: 한국어, English, 简体中文, 日本語.
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
 - **Workspaces**: `Workspaces` at the top saves the current panes and tabs under a name and opens them again later (up to 20). Handy when switching between projects.
@@ -238,7 +241,7 @@ src/FolderSplitter/
   ShellViewHost.cs      Native Shell view lifetime management
   ShellInterop.cs       Windows SDK COM/PInvoke declarations
   SessionState.cs       Settings validation and atomic saving
-  Theme.cs              Light/dark themes and rounded shared controls
+  Theme.cs              Color themes and rounded shared controls
   FolderTree.cs         Left folder tree
   ShellIconCache.cs     Windows icons for quick access
   Assets/               Source PNG for the app icon and multi-resolution ICO

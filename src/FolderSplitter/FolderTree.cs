@@ -137,7 +137,7 @@ internal sealed class FolderTree : UserControl
     {
         BackColor = Theme.Border;
         ForeColor = Theme.Text;
-        Tree.BackColor = Theme.Canvas;
+        Tree.BackColor = Theme.Sidebar;
         Tree.ForeColor = Theme.Text;
         Tree.LineColor = Theme.Border;
         menu.BackColor = Theme.Canvas;

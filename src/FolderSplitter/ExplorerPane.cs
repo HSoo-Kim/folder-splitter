@@ -40,6 +40,9 @@ public sealed class ExplorerPane : UserControl
     private readonly ToolStrip breadcrumb = Theme.Strip();
     private string? selectionSummary;
     private int selectionGeneration;
+    private (string Path, string Text)? folderSize;
+    private int folderSizeGeneration;
+    private readonly System.Windows.Forms.Timer folderSizeTimer = new() { Interval = 400 };
     private readonly System.Windows.Forms.Timer selectionTimer = new() { Interval = 150 };
     internal event EventHandler? SelectionSummaryChanged;
     internal event Action<ExplorerPane, bool>? TransferRequested;
@@ -146,6 +149,7 @@ public sealed class ExplorerPane : UserControl
         address.Controls.Add(breadcrumb);
         address.GotFocus += (_, _) => breadcrumb.Visible = false;
         selectionTimer.Tick += async (_, _) => { selectionTimer.Stop(); await UpdateSelectionSummary(); };
+        folderSizeTimer.Tick += async (_, _) => { folderSizeTimer.Stop(); await UpdateFolderSize(); };
         languageBindings.Add(RefreshAddressTip);
         RefreshAddressTip();
         var go = Theme.Button("\uE8AD", $"Pane {number} go to address", () => Navigate(address.Text));
@@ -440,6 +444,7 @@ public sealed class ExplorerPane : UserControl
         host.Navigated += (_, _) =>
         {
             Theme.ApplyNative(host.Handle);
+            host.ApplyListFont();
             button.Title = host.DisplayName;
             button.ToolTipText = host.LocationPath;
             LayoutTabs();
@@ -451,7 +456,11 @@ public sealed class ExplorerPane : UserControl
         // Tab removal hides the host while the selected index is still being updated.
         host.ItemCountChanged += (_, _) =>
         {
-            if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host == host) RenderItemCount();
+            if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host == host)
+            {
+                RenderItemCount();
+                ScheduleFolderSize();
+            }
         };
         contents.Controls.Add(host);
     }
@@ -556,12 +565,19 @@ public sealed class ExplorerPane : UserControl
     {
         status.Text = ActiveView is null ? statusMessage : statusMessage + "  |  " + (ActiveView.ItemCount is int value
             ? text.T("{0} items", value) : text.T("Counting items..."))
+            + (folderSize is { } size && size.Path == ActiveView.LocationPath ? "  |  " + size.Text : "")
             + (selectionSummary is null ? "" : "  |  " + selectionSummary);
         tips.SetToolTip(status, status.Text);
     }
     internal void SetLocalizedStatus(string key, params object?[] args) => SetLocalizedStatus(() => text.T(key, args));
     internal void SetLocalizedStatus(Func<string> message) { localizedStatus = message; RenderStatus(message()); }
-    private void UpdateStatus() => SetLocalizedStatus(() => tabs.Count == 1
+    private void UpdateStatus()
+    {
+        ScheduleFolderSize();
+        UpdateStatusText();
+    }
+
+    private void UpdateStatusText() => SetLocalizedStatus(() => tabs.Count == 1
         ? text.T("Pane {0}  |  1 tab  |  {1}", PaneNumber, ActiveView?.DisplayName)
         : text.T("Pane {0}  |  {1} tabs  |  {2}", PaneNumber, tabs.Count, ActiveView?.DisplayName));
     private void ShowEmptyState()
@@ -934,6 +950,44 @@ public sealed class ExplorerPane : UserControl
     internal IReadOnlyList<string> RecentLocationChoices => ActiveView?.RecentLocations
         .Where(place => !string.Equals(place, CurrentPath, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
 
+    private void ScheduleFolderSize()
+    {
+        folderSizeTimer.Stop();
+        folderSizeTimer.Start();
+    }
+
+    // Total size of the files directly in this folder, like File Explorer's status bar without a selection.
+    // Subfolders are not walked, so this stays one directory read; network folders are skipped.
+    internal async Task UpdateFolderSize()
+    {
+        int generation = ++folderSizeGeneration;
+        string? path = ActiveView?.LocationPath;
+        string? result = path is null ? null : await Task.Run(() => FolderFilesSize(path, 50_000));
+        if (generation != folderSizeGeneration || IsDisposed || path != ActiveView?.LocationPath) return;
+        folderSize = result is null ? null : (path!, text.T("Files here: {0}", result));
+        RenderItemCount();
+    }
+
+    internal static string? FolderFilesSize(string path, int limit)
+    {
+        try
+        {
+            if (path.StartsWith(@"\\", StringComparison.Ordinal) || !Directory.Exists(path)) return null;
+            if (new DriveInfo(Path.GetPathRoot(path)!).DriveType == DriveType.Network) return null;
+            long total = 0;
+            int count = 0;
+            var options = new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = 0, RecurseSubdirectories = false };
+            foreach (var file in new DirectoryInfo(path).EnumerateFiles("*", options))
+            {
+                if (++count > limit) return FormatSize(total) + "+";
+                total += file.Length;
+            }
+            return count == 0 ? null : FormatSize(total);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException
+            or System.Security.SecurityException) { return null; }
+    }
+
     private void ScheduleSelectionSummary()
     {
         selectionTimer.Stop();
@@ -1024,6 +1078,7 @@ public sealed class ExplorerPane : UserControl
             if (search is not null) search.IndexChanged -= SearchIndexChanged;
             searchTimer.Dispose();
             selectionTimer.Dispose();
+            folderSizeTimer.Dispose();
             candidates.Dispose();
             tips.Dispose();
             tabMenu.Dispose();

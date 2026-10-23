@@ -2,7 +2,7 @@
 
 # Folder Splitter
 
-[한국어](README.md) · [English](README.en.md) · **简体中文** · [日本語](README.ja.md)
+[English](README.md) · [한국어](README.ko.md) · **简体中文** · [日本語](README.ja.md)
 
 一款 Windows 文件管理器，可在一个窗口中**同时查看最多 4 个文件夹，每个区域都有各自独立的标签页**。
 
@@ -112,7 +112,10 @@
   - **其他格式**：照片使用 Windows 缩略图，Office、文本等使用已安装的资源管理器预览处理程序。文档上的滚轮会传给预览而非文件列表；滚动与翻页支持取决于处理程序。
 
 ### 外观与设置
-- **颜色主题**：在右上角菜单中选择“浅色”“深色”，或更护眼的“米色”“浅绿色”“柔和深色”（降低对比度的深色）。文件列表的背景和文字颜色也会一起改变。
+- **颜色主题**：在右上角菜单中从 13 种中选择：标准的“浅色”“深色”，更护眼的“米色”“浅绿色”“柔和深色”，以及基于知名设计配色（Solarized、Everforest、Gruvbox、Rosé Pine、Catppuccin、Nord）、为顶部栏、侧边栏、文件列表和排序列分别着色的 8 种组合。
+  ![Folder Splitter 的 13 种颜色主题配色](docs/images/folder-splitter-themes-v0.7.27.png)
+- **字体与文字大小**：在“设置”→“字体与文字大小”中选择已安装的字体（Malgun Gothic、Pretendard、NanumGothic 等）和小号、常规、大号文字，文件列表也会一起改变。
+- **文件夹文件合计**：状态栏会显示当前文件夹中直接包含的文件大小合计，例如“此文件夹中的文件 18.4 MB”。不扫描子文件夹，只读取一次文件夹，不会给电脑带来负担；网络文件夹会跳过。
 - **语言**：한국어、English、简体中文、日本語。
 - **恢复工作状态**：标签页、收藏夹、分屏比例、窗口大小、主题和侧边栏状态会延续到下次启动。
 - **工作区**：顶部的“工作区”可将当前分屏与标签页以名称保存并再次打开（最多 20 个），便于在不同项目之间切换。
@@ -238,7 +241,7 @@ src/FolderSplitter/
   ShellViewHost.cs      原生 Shell 视图的生命周期管理
   ShellInterop.cs       Windows SDK COM/PInvoke 声明
   SessionState.cs       设置校验与原子化保存
-  Theme.cs              浅色/深色主题与圆角通用控件
+  Theme.cs              颜色主题与圆角通用控件
   FolderTree.cs         左侧文件夹树
   ShellIconCache.cs     快速访问的 Windows 图标
   Assets/               应用图标源 PNG 与多分辨率 ICO

@@ -25,6 +25,9 @@ public sealed record SessionState
 {
     public string Language { get; init; } = "ko";
     public string ColorTheme { get; init; } = "light";
+    // Null keeps the standard font; TextSize is small, normal or large.
+    public string? FontFamily { get; init; }
+    public string TextSize { get; init; } = "normal";
     public bool ShowFolderTree { get; init; } = true;
     public int FolderTreeHeight { get; init; }
     public bool GlobalHotkey { get; init; } = true;
@@ -170,6 +173,8 @@ public static class SessionStore
         {
             Language = NormalizeLanguage(state.Language),
             ColorTheme = NormalizeColorTheme(state.ColorTheme),
+            FontFamily = string.IsNullOrWhiteSpace(state.FontFamily) || state.FontFamily.Trim().Length > 64 ? null : state.FontFamily.Trim(),
+            TextSize = state.TextSize is "small" or "large" ? state.TextSize : "normal",
             Layout = layout,
             LayoutTree = layoutTree,
             Panes = panes,
@@ -226,7 +231,8 @@ public static class SessionStore
     public static string NormalizeColorTheme(string? theme) =>
         ColorThemes.FirstOrDefault(name => string.Equals(theme?.Trim(), name, StringComparison.OrdinalIgnoreCase)) ?? "light";
 
-    public static readonly string[] ColorThemes = ["light", "dark", "beige", "green", "dim"];
+    public static readonly string[] ColorThemes = ["light", "dark", "beige", "green", "dim",
+        "solarized", "everforest", "gruvbox", "rosepine", "latte", "everforest-dark", "nord", "mocha"];
 
     private static List<string> NormalizeFavorites(List<string>? source)
     {

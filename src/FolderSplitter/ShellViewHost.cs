@@ -166,11 +166,76 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     {
         if (view is not IVisualProperties visual) return;
         visual.SetColor(1, ColorTranslator.ToWin32(Theme.Text));
-        visual.SetColor(2, ColorTranslator.ToWin32(Theme.Surface));
-        visual.SetColor(3, ColorTranslator.ToWin32(Theme.Canvas));
+        visual.SetColor(2, ColorTranslator.ToWin32(Theme.ListBack));
+        visual.SetColor(3, ColorTranslator.ToWin32(Theme.SortColumn));
         visual.SetColor(4, ColorTranslator.ToWin32(Theme.Muted));
-        visual.SetColor(5, ColorTranslator.ToWin32(Theme.Surface));
+        visual.SetColor(5, ColorTranslator.ToWin32(Theme.ListBack));
+        ApplyListFont();
     }
+
+    // The folder view does not implement IVisualProperties.SetFont, so the font goes to its list window,
+    // which keeps it through refreshes and theme changes. Each folder visited gets a new list, so
+    // navigation applies it again.
+    internal void ApplyListFont()
+    {
+        if (Theme.ListFont is null && !customFont) return;
+        nint list = 0;
+        if (IsHandleCreated)
+            EnumChildWindows(Handle, (window, _) =>
+            {
+                var name = new System.Text.StringBuilder(32);
+                GetClassName(window, name, name.Capacity);
+                if (name.ToString() != "SysListView32") return true;
+                list = window;
+                return false;
+            }, 0);
+        if (list == 0) return;
+        var (face, points) = Theme.ListFont ?? (SystemFonts.IconTitleFont!.Name, SystemFonts.IconTitleFont.SizeInPoints);
+        nint font = ListFonts.Get(face, -(int)Math.Round(points * DeviceDpi / 72d));
+        SendMessage(list, 0x0030, font, 1); // WM_SETFONT, redraw
+        SendMessage(SendMessage(list, 0x101F, 0, 0), 0x0030, font, 1); // the column header (LVM_GETHEADER)
+        customFont = Theme.ListFont is not null;
+    }
+
+    private bool customFont;
+
+    // Fonts are shared by every list and kept for the life of the process; a new one is made only when a
+    // different font or size is chosen.
+    private static class ListFonts
+    {
+        private static readonly Dictionary<(string, int), nint> Cache = [];
+
+        public static nint Get(string face, int height)
+        {
+            if (Cache.TryGetValue((face, height), out nint font)) return font;
+            var logFont = new ListLogFont { Height = height, Weight = 400, FontCharSet = 1, Quality = 5, FaceName = face };
+            font = CreateFontIndirect(ref logFont);
+            if (font != 0) Cache[(face, height)] = font;
+            return font;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ListLogFont
+    {
+        public int Height, Width, Escapement, Orientation, Weight;
+        public byte Italic, Underline, StrikeOut, FontCharSet, OutPrecision, ClipPrecision, Quality, PitchAndFamily;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string FaceName;
+    }
+
+    private delegate bool ListWindowCallback(nint window, nint parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumChildWindows(nint parent, ListWindowCallback callback, nint parameter);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(nint window, System.Text.StringBuilder name, int length);
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern nint SendMessage(nint window, int message, nint wParam, nint lParam);
+
+    [DllImport("gdi32.dll", EntryPoint = "CreateFontIndirectW", CharSet = CharSet.Unicode)]
+    private static extern nint CreateFontIndirect(ref ListLogFont logFont);
 
     private void SetItemCount(int? count)
     {
