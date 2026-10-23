@@ -12,6 +12,9 @@ internal sealed class PreviewPane : Panel
     };
     private readonly Panel header = new() { Dock = DockStyle.Top, Height = 30 };
     private readonly Button detachButton;
+    private readonly Button pinButton;
+    private readonly Button windowButton;
+    private bool pinned;
     private readonly Label message = new()
     {
         Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(12),
@@ -36,11 +39,22 @@ internal sealed class PreviewPane : Panel
             () => DetachRequested?.Invoke(this, EventArgs.Empty));
         detachButton.Dock = DockStyle.Right;
         detachButton.AutoSize = true;
+        pinButton = Theme.Button(text.T("Pin"), "Pin preview", () => SetPinned(!pinned));
+        pinButton.Dock = DockStyle.Right;
+        pinButton.AutoSize = true;
+        windowButton = Theme.Button(text.T("New window"), "Open preview in new window", () =>
+        {
+            if (CurrentPath is { } path) NewWindowRequested?.Invoke(path);
+        });
+        windowButton.Dock = DockStyle.Right;
+        windowButton.AutoSize = true;
         AccessibleName = "Preview";
         Controls.Add(host);
         Controls.Add(picture);
         Controls.Add(message);
         header.Controls.Add(title);
+        header.Controls.Add(windowButton);
+        header.Controls.Add(pinButton);
         header.Controls.Add(detachButton);
         Controls.Add(header);
         host.Resize += (_, _) => ResizePreview();
@@ -67,7 +81,30 @@ internal sealed class PreviewPane : Panel
     internal event EventHandler? PreviewChanged;
     internal event Action<Point>? DragRequested;
     internal event EventHandler? DetachRequested;
+    internal event Action<string>? NewWindowRequested;
+    internal event EventHandler? PinChanged;
     internal void SetFloating(bool floating) => detachButton.Visible = !floating;
+
+    // A preview window that shows one file: no pinning, detaching or further windows.
+    internal void SetStandalone() => detachButton.Visible = pinButton.Visible = windowButton.Visible = false;
+
+    // A pinned preview keeps its file while other files are selected.
+    internal bool Pinned => pinned;
+
+    internal void SetPinned(bool value)
+    {
+        if (pinned == value) return;
+        pinned = value;
+        RefreshPinButton();
+        PinChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RefreshPinButton()
+    {
+        pinButton.Text = text.T(pinned ? "Unpin" : "Pin");
+        pinButton.BackColor = pinned ? Theme.Selected : Theme.Canvas;
+        pinButton.ForeColor = pinned ? Theme.Accent : Theme.Text;
+    }
 
     internal void ShowFile(string path)
     {
@@ -134,6 +171,8 @@ internal sealed class PreviewPane : Panel
     {
         message.Text = text.T(messageKey, messageArguments);
         detachButton.Text = text.T("Detach preview");
+        windowButton.Text = text.T("New window");
+        RefreshPinButton();
         pdf?.RefreshLanguage();
         if (CurrentPath is null) title.Text = text.T("Preview");
     }
@@ -173,6 +212,7 @@ internal sealed class PreviewPane : Panel
         BackColor = host.BackColor = picture.BackColor = message.BackColor = title.BackColor = header.BackColor = Theme.Canvas;
         message.ForeColor = Theme.Muted;
         title.ForeColor = Theme.Text;
+        RefreshPinButton();
         pdf?.RefreshTheme();
         if (handler is IPreviewHandlerVisuals visuals)
         {

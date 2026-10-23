@@ -104,6 +104,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer. Grouping, sort order and view mode are remembered per folder, as in File Explorer.
 - **Item count and selection**: Each pane shows how many items it displays and, with a selection, the count and total file size (for example `3 selected · 1.2 GB`).
 - **Preview**: Enable it with `Preview` or `Alt+P`, then click a file. Its visibility and width are remembered.
+- **Pin and new window**: `Pin` at the top of the preview keeps the current file while you select others. `New window` opens that file in its own preview window, so several can sit side by side for comparison (up to 8; PDF wheel paging works there too).
 - **Copy or move to the other pane**: `Ctrl+Alt+C` (copy), `Ctrl+Alt+X` (move) or the pane options (⚙) send the selection to the other pane's folder, meaning the pane you used just before. The same Windows copy dialog as File Explorer handles progress, name conflicts and undo (`Ctrl+Z`).
 - **Copy path, terminal**: `Ctrl+Shift+C` copies the selected items' paths in quotes, like File Explorer (the current folder when nothing is selected). `Open terminal here` in the pane options opens Windows Terminal (or PowerShell) in that folder.
   - **Multi-page PDFs**: No separate PDF app is needed. Wheel down over the preview for the next page, or up for the previous page. The page number and previous/next buttons appear below.

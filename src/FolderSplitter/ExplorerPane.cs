@@ -504,6 +504,12 @@ public sealed class ExplorerPane : UserControl
         if (tab.Host is { } host)
         {
             closedTabs.Push(host.LocationPath);
+            if (closedTabs.Count > 32)
+            {
+                var recent = closedTabs.Take(32).Reverse().ToArray();
+                closedTabs.Clear();
+                foreach (string path in recent) closedTabs.Push(path);
+            }
             contents.Controls.Remove(host);
             host.Dispose();
         }

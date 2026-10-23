@@ -710,6 +710,22 @@ internal static partial class Program
                 await Select(unknown);
                 Check(!form.Preview.HasHandler && !form.Preview.HasImage && form.Preview.MessageText == text.T("No preview is available for this file type."),
                     "a file type without a preview handler shows a hint");
+                form.Preview.SetPinned(true);
+                await Navigate(pane.ActiveView!, () => pane.ActiveView!.NavigateAndSelect(photo));
+                form.UpdatePreview();
+                Check(form.Preview.Pinned && string.Equals(form.Preview.CurrentPath, unknown, StringComparison.OrdinalIgnoreCase),
+                    "a pinned preview keeps its file when another file is selected");
+                form.Preview.SetPinned(false);
+                Check(string.Equals(form.Preview.CurrentPath, photo, StringComparison.OrdinalIgnoreCase),
+                    "unpinning the preview follows the current selection again");
+                form.OpenPreviewWindow(textFile);
+                form.OpenPreviewWindow(photo);
+                Check(form.PreviewWindows.Count == 2 && string.Equals(form.PreviewWindows[0].CurrentPath, textFile, StringComparison.OrdinalIgnoreCase)
+                    && form.PreviewWindows[1].HasImage, "files open in their own preview windows");
+                Check(form.PreviewWindows[0].FindForm() is { Visible: true } && string.Equals(form.Preview.CurrentPath, photo, StringComparison.OrdinalIgnoreCase),
+                    "preview windows show alongside the main preview");
+                form.PreviewWindows[0].FindForm()!.Close();
+                Check(form.PreviewWindows.Count == 1, "closing a preview window removes only that window");
                 form.SetPreviewVisible(false);
                 Check(!form.Preview.Visible && !form.Preview.HasHandler, "hiding the preview pane unloads the preview");
             }

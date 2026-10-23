@@ -29,6 +29,30 @@ internal static partial class Program
                 foreach (var view in new[] { pane.ActiveView!, other.ActiveView! })
                     if (!view.HasNavigated) await NavigationSignal(view).WaitAsync(TimeSpan.FromSeconds(20));
 
+                nint header = 0, list = 0;
+                EnumChildWindows(pane.ActiveView!.Handle, (window, _) =>
+                {
+                    var name = new System.Text.StringBuilder(32);
+                    GetClassName(window, name, name.Capacity);
+                    if (name.ToString() == "SysHeader32") header = window;
+                    else if (name.ToString() == "SysListView32") list = window;
+                    return true;
+                }, 0);
+                var column = new HeaderRect();
+                HeaderItemRect(header, 0x1207, 0, ref column); // HDM_GETITEMRECT
+                nint At(int x) => (nint)(((column.Top + column.Bottom) / 2 << 16) | (x & 0xFFFF));
+                int widthBefore = (int)SendMessage(list, 0x101D, 0, 0); // LVM_GETCOLUMNWIDTH
+                PostMessage(header, 0x201, 1, At(column.Right - 1));
+                PostMessage(header, 0x200, 1, At(column.Right + 90));
+                var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void Idle(object? sender, EventArgs args) { Application.Idle -= Idle; drained.TrySetResult(); }
+                Application.Idle += Idle;
+                await drained.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                int widthDuring = (int)SendMessage(list, 0x101D, 0, 0);
+                bool pendingPaint = GetUpdateRect(list, 0, false);
+                PostMessage(header, 0x202, 0, At(column.Right + 90));
+                Check(widthDuring > widthBefore && !pendingPaint,
+                    "dragging a column divider resizes and repaints the column before the button is released");
                 var segments = ExplorerPane.PathSegments(@"C:\Users\Someone\Data");
                 Check(segments.Select(segment => segment.Label).SequenceEqual(["C:", "Users", "Someone", "Data"])
                     && segments[2].Path == @"C:\Users\Someone", "breadcrumb splits a drive path into folders");
@@ -140,4 +164,13 @@ internal static partial class Program
         Check(SessionStore.Load(session).Workspaces.Select(workspace => workspace.Name).SequenceEqual(["Research"]),
             "saved workspaces persist");
     }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct HeaderRect { public int Left, Top, Right, Bottom; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern nint HeaderItemRect(nint window, uint message, nint index, ref HeaderRect rect);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetUpdateRect(nint window, nint rect, bool erase);
 }

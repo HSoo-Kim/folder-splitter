@@ -87,6 +87,7 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolTip tips = new() { ShowAlways = true, AutoPopDelay = 10000 };
     private int activePane;
     private int previousPane = -1;
+    private readonly List<(Form Window, PreviewPane Pane)> previewWindows = [];
     private readonly List<Workspace> workspaces;
     private readonly ToolStripDropDownButton workspaceButton = new() { AccessibleName = "Workspaces" };
     internal event Action<bool, string?>? FileOperationFinished;
@@ -191,12 +192,25 @@ public sealed class MainForm : Form, IMessageFilter
             previewWindow!.BeginMove(point);
         };
         previewPane.DetachRequested += (_, _) => SetPreviewFloating(true);
+        previewPane.NewWindowRequested += OpenPreviewWindow;
+        previewPane.PinChanged += (_, _) => { if (!previewPane.Pinned) UpdatePreview(); };
         VisibleChanged += (_, _) =>
         {
+            foreach (var (window, _) in previewWindows)
+                if (Visible) window.Show(this);
+                else window.Hide();
             if (previewWindow is null) return;
             if (Visible && showPreview) previewWindow.Show(this);
             else previewWindow.Hide();
         };
+        languageBindings.Add(() =>
+        {
+            foreach (var (window, pane) in previewWindows)
+            {
+                pane.RefreshLanguage();
+                if (pane.CurrentPath is { } path) window.Text = Path.GetFileName(path) + " - " + text.T("Preview");
+            }
+        });
         languageBindings.Add(previewPane.RefreshLanguage);
         languageBindings.Add(() => previewWindow?.RefreshLanguage());
         sidebar = new Panel { Dock = DockStyle.Left, Width = sidebarWidth, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
@@ -615,6 +629,11 @@ public sealed class MainForm : Form, IMessageFilter
         folderTree.RefreshTheme();
         previewPane.ApplyColors();
         previewWindow?.RefreshTheme();
+        foreach (var (window, pane) in previewWindows)
+        {
+            Theme.Apply(window);
+            pane.ApplyColors();
+        }
         previewSplitter.BackColor = Theme.Border;
         RefreshThemeButton();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
@@ -768,6 +787,7 @@ public sealed class MainForm : Form, IMessageFilter
         }
         previewButton.Checked = visible;
         previewTimer.Stop();
+        if (!visible) previewPane.SetPinned(false);
         if (visible) UpdatePreview();
         else previewPane.Unload();
         ScheduleSave();
@@ -831,6 +851,37 @@ public sealed class MainForm : Form, IMessageFilter
         if (dropZone.Contains(point)) SetPreviewFloating(false);
     }
 
+    internal IReadOnlyList<PreviewPane> PreviewWindows => previewWindows.Select(entry => entry.Pane).ToList();
+
+    // Each extra window previews one file and stays put while other files are selected.
+    internal void OpenPreviewWindow(string path)
+    {
+        if (previewWindows.Count >= 8) { Active.SetLocalizedStatus("Up to 8 preview windows can be open."); return; }
+        var pane = new PreviewPane(text) { Dock = DockStyle.Fill };
+        pane.SetStandalone();
+        var offset = 40 * (previewWindows.Count + 1);
+        var window = new Form
+        {
+            Text = Path.GetFileName(path) + " - " + text.T("Preview"), Icon = Icon, ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual, AutoScaleMode = AutoScaleMode.Dpi, Font = Font,
+            Size = new Size(520, 700), MinimumSize = new Size(260, 260)
+        };
+        Rectangle screen = Screen.FromControl(this).WorkingArea;
+        window.Location = new Point(Math.Clamp(Right - window.Width - offset, screen.Left, Math.Max(screen.Left, screen.Right - window.Width)),
+            Math.Clamp(Top + offset, screen.Top, Math.Max(screen.Top, screen.Bottom - window.Height)));
+        window.Controls.Add(pane);
+        window.FormClosed += (_, _) =>
+        {
+            previewWindows.RemoveAll(entry => entry.Window == window);
+            pane.Dispose();
+        };
+        previewWindows.Add((window, pane));
+        Theme.Apply(window);
+        pane.ApplyColors();
+        window.Show(this);
+        pane.ShowFile(path);
+    }
+
     private void SchedulePreview()
     {
         if (!showPreview) return;
@@ -841,7 +892,7 @@ public sealed class MainForm : Form, IMessageFilter
     // Follows the active pane's selection: one file is previewed; folders, several items or nothing show a hint.
     internal void UpdatePreview()
     {
-        if (!showPreview || IsDisposed) return;
+        if (!showPreview || IsDisposed || previewPane.Pinned) return;
         var (path, count) = Active.ActiveView?.SelectionInfo() ?? (null, 0);
         if (count == 0) previewPane.ShowMessage("Select a file to preview it.");
         else if (count > 1) previewPane.ShowMessage("{0} items selected", count);
@@ -1515,7 +1566,11 @@ public sealed class MainForm : Form, IMessageFilter
 
     public bool PreFilterMessage(ref Message m)
     {
-        if ((!ContainsFocus && previewWindow?.ContainsFocus != true) || tabDragging) return false;
+        if ((!ContainsFocus && previewWindow?.ContainsFocus != true && !previewWindows.Any(entry => entry.Window.ContainsFocus))
+            || tabDragging) return false;
+        // Preview windows are owned by this form and always sit above it, so they get the wheel first.
+        foreach (var (window, pane) in previewWindows)
+            if (window.Visible && pane.RouteMouseWheel(ref m)) return true;
         if (showPreview && previewPane.RouteMouseWheel(ref m)) return true;
         if (m.Msg is 0x20A or 0x20E)
             foreach (int i in visiblePanes)
@@ -1539,6 +1594,13 @@ public sealed class MainForm : Form, IMessageFilter
                 panes[visiblePanes[target]].ActiveView?.Travel(button == 1 ? 0x4000u : 0x8000u);
             return button is 1 or 2;
         }
+        // The file list resizes a column while its header divider is dragged, but the repaint can wait
+        // until the button is released. Paint the list right after each drag step instead.
+        if (m.Msg == 0x200 && ((long)m.WParam & 0x1) != 0 && IsColumnHeader(m.HWnd))
+        {
+            nint header = m.HWnd;
+            BeginInvoke(() => { if (GetParent(header) is var list and not 0) RedrawWindow(list, 0, 0, 0x0100 | 0x0080); }); // RDW_UPDATENOW | RDW_ALLCHILDREN
+        }
         if (m.Msg is 0x100 or 0x104)
         {
             Keys key = (Keys)(int)m.WParam | ModifierKeys;
@@ -1549,6 +1611,26 @@ public sealed class MainForm : Form, IMessageFilter
         if (m.Msg >= 0x100 && m.Msg <= 0x109) return Active.ActiveView?.TranslateKey(ref m) ?? false;
         return false;
     }
+
+    private nint lastColumnHeader;
+
+    private bool IsColumnHeader(nint window)
+    {
+        if (window == lastColumnHeader) return true;
+        var name = new System.Text.StringBuilder(16);
+        if (GetClassName(window, name, name.Capacity) == 0 || name.ToString() != "SysHeader32") return false;
+        lastColumnHeader = window;
+        return true;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(nint window, System.Text.StringBuilder name, int length);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetParent(nint window);
+
+    [DllImport("user32.dll")]
+    private static extern bool RedrawWindow(nint window, nint rectangle, nint region, uint flags);
 
     private bool HandleShortcut(Keys key)
     {

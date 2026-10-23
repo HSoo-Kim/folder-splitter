@@ -113,6 +113,19 @@ internal static partial class Program
                     .Single(item => item.AccessibleName == "Next page");
                 await Page(2, next.PerformClick);
                 Check(pdf.PageNumber == 2, "PDF page button also navigates without the mouse wheel");
+                await pdf.Rendering.WaitAsync(TimeSpan.FromSeconds(15));
+                form.OpenPreviewWindow(path);
+                var own = form.PreviewWindows[^1];
+                await own.Pdf!.Rendering.WaitAsync(TimeSpan.FromSeconds(15));
+                var inside = own.PointToScreen(new Point(own.Width / 2, own.Height / 2));
+                var ownWheel = Message.Create(pane.ActiveView!.Handle, 0x20A, -120 << 16, (nint)((inside.X & 0xFFFF) | ((inside.Y & 0xFFFF) << 16)));
+                Check(form.PreFilterMessage(ref ownWheel), "wheel over a preview window is handled by that window");
+                await own.Pdf.Rendering.WaitAsync(TimeSpan.FromSeconds(15));
+                Check(own.Pdf.PageNumber == 2 && pdf.PageNumber == 2, "wheel pages through the PDF in its own window only");
+                own.FindForm()!.Close();
+                // Closing an owned window hands activation back asynchronously; make the main window active again.
+                form.Activate();
+                pane.FocusFiles();
                 Wheel(-120);
                 form.SetPreviewVisible(false);
                 await pdf.Rendering.WaitAsync(TimeSpan.FromSeconds(15));
