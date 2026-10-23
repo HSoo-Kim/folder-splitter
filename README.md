@@ -2,261 +2,261 @@
 
 # Folder Splitter
 
-**한국어** · [English](README.en.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
+[한국어](README.md) · **English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
-한 창에서 최대 **4개 폴더를 동시에 보고, 각 영역에서 독립적인 탭을 사용하는 Windows 파일 관리자**입니다.
+A **Windows file manager that shows up to 4 folders at once in a single window, with independent tabs in each pane**.
 
-Windows 기본 파일 목록(Shell `IExplorerBrowser`)을 사용합니다. 기존 `explorer.exe`를 수정하거나 교체하지 않으며, 별도 앱으로 실행됩니다.
+It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modify or replace the existing `explorer.exe` and runs as a separate app.
 
-## 주소창이 곧 검색창
+## The address bar is a search box
 
-경로를 다 기억하지 못해도 됩니다. 주소창에 **기억나는 이름 조각**을 입력하면 입력하는 즉시 맞는 폴더와 파일이 아래에 펼쳐집니다. `공유용/월별연구계획`처럼 폴더와 파일 이름 조각을 `/`로 이어 쓰면 범위가 좁혀집니다.
+You don't need the full path. Type **any fragment you remember** into the address bar and matching folders and files appear as you type. Join folder and file name fragments with `/`, such as `공유용/월별연구계획`, to narrow the results.
 
-![주소창에 '공유용/월별연구계획'을 입력하자 폴더와 파일 후보가 바로 나타난 화면](docs/images/folder-splitter-search-v0.7.2.png)
+![Typing '공유용/월별연구계획' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-v0.7.2.png)
 
-- **폴더**를 고르면 그 폴더로 이동하고, **파일**을 고르면 파일이 있는 폴더를 열어 그 파일을 바로 선택해 줍니다.
-- ↑/↓와 Enter, 또는 클릭으로 고릅니다. 현재 폴더, 열린 탭, 즐겨찾기, 최근 닫은 탭과 가까운 결과가 먼저 나옵니다.
-- 로컬 드라이브를 자체 색인하므로 Everything 같은 별도 프로그램이 필요 없습니다. 파일 내용은 읽지 않습니다.
+- Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
+- Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
+- Local drives are indexed by the app itself, so no separate tool such as Everything is needed. File contents are never read.
 
-### 이렇게 찾으세요
+### How to search
 
-예를 들어 `D:\연구\KMA500m_15분_자료공유_20261020\Raw_data_15min_rain\rn_15m_2022_08.nc`를 찾는다면:
+Say you are looking for `D:\Research\KMA500m_15min_shared_20261020\Raw_data_15min_rain\rn_15m_2022_08.nc`:
 
-| 입력 | 규칙 | 나오는 것 |
+| Type | Rule | Finds |
 |---|---|---|
-| `rn 2022_08` | 띄어 쓴 조각이 **모두 이름에** 있으면 찾습니다. | `rn_15m_2022_08.nc` |
-| `nc 15m 2022` | 조각의 **순서는 상관없고**, 이름 중간 조각이어도 됩니다. | `rn_15m_2022_08.nc` |
-| `.NC 2022_08` | 대소문자를 구분하지 않습니다. | `rn_15m_2022_08.nc` |
-| `자료공유` | 폴더도 이름 조각으로 찾습니다. | `KMA500m_15분_자료공유_20261020` 폴더 |
-| `15min_rain/rn_15m` | `/`로 이으면 경로를 따라 좁힙니다. 앞 조각은 폴더 이름의 끝, 뒤 조각은 그 안 항목 이름의 앞부분입니다. | `rn_15m_…` 파일들 |
-| `"회의 자료"` | 띄어쓰기가 들어간 이름은 따옴표로 묶습니다. | `회의 자료.pptx` 등 |
+| `rn 2022_08` | Space-separated fragments must **all appear in the name**. | `rn_15m_2022_08.nc` |
+| `nc 15m 2022` | **Order doesn't matter**, and fragments can come from the middle of the name. | `rn_15m_2022_08.nc` |
+| `.NC 2022_08` | Case doesn't matter. | `rn_15m_2022_08.nc` |
+| `shared_2026` | Folders are found by name fragments too. | the `KMA500m_15min_shared_20261020` folder |
+| `15min_rain/rn_15m` | Join with `/` to follow the path: the first fragment is the end of a folder name, the next is the start of an item inside it. | the `rn_15m_…` files |
+| `"meeting notes"` | Wrap names that contain spaces in quotes. | `meeting notes.docx` and so on |
 
-띄어 쓴 조각은 각 파일·폴더 **자기 이름**에서만 찾습니다. 그래서 `자료공유 nc`처럼 상위 폴더 이름과 파일 이름 조각을 섞으면 나오지 않습니다. 이때는 파일 이름 조각만 쓰거나(`rn nc`), `/`로 경로를 이어 주세요.
+Space-separated fragments are matched against each file's or folder's **own name**. Mixing a parent folder's name with a file-name fragment, as in `shared nc`, therefore finds nothing; use only file-name fragments (`rn nc`) or join the path with `/`.
 
-### 검색 속도
+### Search speed
 
-**경로 약 230만 개에서 보통 10ms, 요청의 95%가 31ms 안에 끝납니다.** (0.7.17, 2026-10-23 측정)
+**Across about 2.3 million paths a search typically takes 10 ms, and 95% finish within 31 ms.** (0.7.17, measured 2026-10-23)
 
-| 검색어 종류 | 보통 응답(p50) | 95% 경계(p95) |
+| Query type | Typical (p50) | 95th percentile (p95) |
 |---|---:|---:|
-| 이름 조각 | 9.4ms | 22.2ms |
-| 대소문자를 바꾼 이름 조각 | 9.4ms | 22.0ms |
-| 부분 경로 (`폴더/이름`) | 11.5ms | 12.7ms |
-| 한글 부분 경로 | 16.1ms | 16.5ms |
-| 짧고 결과가 아주 많은 검색어 | 32.8ms | 95.3ms |
-| 결과가 없는 검색어 | 8.0ms | 8.1ms |
-| **전체** | **9.6ms** | **31.0ms** |
+| Name fragments | 9.4 ms | 22.2 ms |
+| Name fragments, different case | 9.4 ms | 22.0 ms |
+| Partial paths (`folder/name`) | 11.5 ms | 12.7 ms |
+| Korean partial path | 16.1 ms | 16.5 ms |
+| Short terms with very many matches | 32.8 ms | 95.3 ms |
+| Terms with no match | 8.0 ms | 8.1 ms |
+| **Overall** | **9.6 ms** | **31.0 ms** |
 
-C: 드라이브 전체(색인 제외 폴더 적용, 경로 2,298,670개)에서 37개 검색어, 상위 100개 결과, 우선 폴더 6개 조건으로 예열 3회 후 5회(총 185회) 측정했습니다. Ryzen 9 9950X, Windows 11 기준입니다. 처음 색인을 만드는 데 약 26초, 저장된 색인을 불러오는 데 0.25초 걸렸습니다.
+Measured over the whole C drive (index exclusions applied, 2,298,670 paths) with 37 queries, top 100 results and 6 priority folders: 3 warm-up passes, then 5 measured passes (185 calls). Ryzen 9 9950X, Windows 11. Building the index took about 26 s and loading the saved index 0.25 s.
 
-**Everything과 비교** (2026-10-21, 이전 엔진, 색인 제외 없이 약 372만 경로): 전체 p95는 Folder Splitter 62.1ms, Everything 연동 164.6ms였고, 짧고 결과가 아주 많은 검색어는 Everything이 더 빨랐습니다(68.8ms 대 7.1ms). 이후 엔진과 색인 범위가 바뀌었으며 Everything 비교는 다시 하지 않았습니다. [측정 조건과 전체 결과](docs/search-evidence/benchmark.md)
+**Compared with Everything** (2026-10-21, earlier engine, about 3.72 million paths without exclusions): overall p95 was 62.1 ms for Folder Splitter and 164.6 ms through Everything, while Everything was faster for short terms with very many matches (68.8 ms vs 7.1 ms). The engine and index scope have changed since, and the Everything comparison has not been repeated. [Method and full results](docs/search-evidence/benchmark.md)
 
-### 가볍게 동작
+### Lightweight
 
-| 항목 | 값 |
+| Item | Value |
 |---|---|
-| 앱 메모리 (켠 직후, 4분할) | 약 280MB |
-| 가만히 있을 때 CPU | 1% 미만 |
-| 검색 색인 메모리 | 약 150MB (경로 약 230만 개) |
-| 새 파일이 검색에 반영되기까지 | 2~3초 |
+| App memory (just after launch, 4 panes) | about 280 MB |
+| CPU while idle | under 1% |
+| Search index memory | about 150 MB (about 2.3 million paths) |
+| New files reach search | in 2–3 seconds |
 
-자주 바뀌는 시스템 폴더(Windows, `ProgramData`, `AppData` 등)는 색인하지 않고, 변경을 모아서 반영하기 때문에 쉬는 동안 CPU를 거의 쓰지 않습니다. 개발자 PC 기준이며 파일 수에 따라 다르고, 오래 켜 두면 메모리가 다소 늘어날 수 있습니다(이 PC에서 몇 시간 뒤 약 460MB). 0.7.14에서는 같은 PC에서 켠 직후 약 1.2GB였습니다.
+Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on) are not indexed, and changes are applied in batches, so the app uses almost no CPU while idle. Figures are from the developer's PC and depend on the number of files; memory can grow somewhat over a long session (about 460 MB after several hours here). 0.7.14 used about 1.2 GB on the same PC just after launch.
 
-## 예시 화면
+## Screenshot
 
-![Folder Splitter의 4분할 화면과 영역별 독립 탭](docs/images/folder-splitter-overview-v0.7.2.png)
+![Folder Splitter showing four panes with independent tabs](docs/images/folder-splitter-overview-v0.7.2.png)
 
-실제 앱에서 샘플 폴더를 연 화면입니다. 각 영역의 탭과 주소창은 독립적으로 동작합니다.
+The actual app with sample folders open. Each pane has independent tabs and an address bar.
 
-## 실행
+## Running
 
-[최신 Windows 실행 파일 다운로드](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
+[Download the latest Windows executable](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
 
-Windows 11과 Windows 10(버전 2004 이상) x64에서 같은 실행 파일로 동작합니다. 개발과 검사는 Windows 11에서 합니다. 릴리스의 `folder-splitter-win-x64.zip`을 풀고 `FolderSplitter.exe`를 실행합니다. 배포 실행 파일에는 .NET 런타임이 포함되므로 별도 런타임 설치가 필요 없습니다.
+The same executable runs on Windows 11 and Windows 10 (version 2004 or later), x64. Development and testing happen on Windows 11. Extract `folder-splitter-win-x64.zip` from the release and run `FolderSplitter.exe`. The distributed executable bundles the .NET runtime, so you don't need to install a runtime separately.
 
-초기 버전은 코드 서명되지 않았습니다. Windows가 다운로드한 앱의 게시자를 확인할 수 없다는 안내를 표시할 수 있습니다.
+Early versions aren't code-signed. Windows may warn that it can't verify the publisher of the downloaded app.
 
-## 기능
+## Features
 
-### 화면 분할과 탭
-- **1~4분할**: 상단 버튼이나 `Ctrl+1`~`Ctrl+4`로 바꿉니다. 3분할은 좌우·상하 2:1 배치도 고를 수 있습니다.
-- **크기 조절**: 경계선을 끌어 조절하고, `균등 분할`로 되돌립니다.
-- **영역별 탭**: 영역마다 탭을 따로 씁니다. `+`나 `Ctrl+T`는 빈 탭을 열어 주소창에 바로 입력하게 하고, 같은 폴더를 하나 더 열려면 탭 우클릭 → `탭 복제`를 씁니다. 닫은 탭 복원도 지원합니다.
-- **탭 끌어서 배치**: 파일 목록 가장자리에 놓으면 그 방향으로 나뉘고, 가운데에 놓으면 그 영역으로 옮겨집니다. 빈 칸에도 놓을 수 있습니다.
-- **탭 너비와 탭 목록**: 탭은 폴더 이름 길이에 맞춰 늘고 줄며, 탭이 하나뿐이면 긴 이름도 더 길게 보여 줍니다. 탭이 많아지면 고르게 줄어들고, 그래도 넘치면 `+` 옆 `▾` 버튼에서 모든 탭을 골라 이동합니다.
-- **빈 칸**: 새로 나눈 영역은 비어 있습니다. 주소를 입력하거나 왼쪽 바로가기를 눌러 폴더를 엽니다.
+### Panes and tabs
+- **1 to 4 panes**: Switch from the top bar or with `Ctrl+1`–`Ctrl+4`. Three panes can also be arranged 2:1 side by side or top and bottom.
+- **Resizing**: Drag the dividers; `Equal size` evens them out again.
+- **Tabs per pane**: Each pane has its own tabs. `+` or `Ctrl+T` opens a blank tab ready for typing; to open the same folder again, right-click the tab → `Duplicate tab`. Closed tabs can be reopened.
+- **Tab width and tab list**: Tabs grow and shrink with the folder name, and a lone tab shows more of a long name. With many tabs they shrink evenly; when they still do not fit, the `▾` button next to `+` lists every tab.
+- **Drag tabs into place**: Drop a tab near a file-list edge to split in that direction, or in the center to move it into that pane. Empty panes accept tabs too.
+- **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
 
-### 탐색과 검색
-- **주소창 검색**: 이름 일부만 입력해도 드라이브 전체에서 바로 찾습니다. [자세히](#주소창이-곧-검색창)
-- **이동**: 경로 입력과 자동완성, 뒤로·앞으로·상위 폴더, 마우스 옆 버튼을 지원합니다.
-- **경로 단추**: 주소창에 `C: › Users › …`처럼 폴더가 단추로 보입니다. 누르면 그 폴더로 가고, `›`를 누르면 하위 폴더 목록이 나옵니다. 빈 곳을 누르거나 `Ctrl+L`이면 지금처럼 경로를 입력하거나 검색합니다.
-- **최근 위치**: 뒤로·앞으로 버튼을 우클릭하면 이 탭에서 다녀온 폴더 목록이 나옵니다.
-- **폴더 찾아보기**: 주소창 옆 폴더 아이콘으로 폴더 선택 창을 엽니다.
+### Navigation and search
+- **Address-bar search**: Type part of a name to find it across all local drives instantly. [Details](#the-address-bar-is-a-search-box)
+- **Moving around**: Path input with autocomplete, back/forward/up, and the mouse side buttons.
+- **Path buttons**: The address bar shows each folder as a button (`C: › Users › …`). Click one to go there, or click `›` for its subfolders. Click an empty spot or press `Ctrl+L` to type a path or search as before.
+- **Recent locations**: Right-click the back or forward button for the folders this tab has visited.
+- **Browse for a folder**: The folder icon beside the address bar opens a folder picker.
 
-### 사이드바
-- **빠른 접근**: 사용자 폴더, 바탕화면, 다운로드, 문서, 최근 항목, 내 PC, 휴지통. 누르면 활성 영역(위쪽 파란 선)에 열립니다. `최근 항목`은 Windows 파일 탐색기처럼 최근에 연 파일과 폴더를 최신순으로 보여 줍니다.
-- **즐겨찾기**: `Ctrl+D`로 추가하고 우클릭으로 뺍니다. 처음 실행할 때 탐색기의 고정 폴더를 가져오며, `관리...`에서 다시 가져오기·전체 제거·복원을 합니다. 탐색기 쪽에는 영향이 없습니다.
-- **폴더 트리**: 활성 영역의 위치를 따라갑니다. 클릭은 현재 영역, 가운데 클릭·Ctrl+클릭은 새 탭, 우클릭은 새 영역이나 탐색기로 엽니다. `Ctrl+Shift+E`로 접습니다.
-- **크기**: 사이드바 폭과 즐겨찾기·트리 높이를 경계선으로 조절하고, `사이드바` 버튼으로 숨깁니다.
+### Sidebar
+- **Quick access**: User folder, Desktop, Downloads, Documents, Recent items, This PC and Recycle Bin. Clicking opens in the active pane (blue line at the top). `Recent items` lists recently opened files and folders, newest first, as in File Explorer.
+- **Favorites**: Add with `Ctrl+D`, remove by right-click. File Explorer's pinned folders are imported on first launch; `Manage...` re-imports, removes all or restores. Explorer itself is not changed.
+- **Folder tree**: Follows the active pane. Click opens in the current pane, middle-click or Ctrl+click in a new tab, right-click in a new pane or File Explorer. `Ctrl+Shift+E` collapses it.
+- **Size**: Drag to set the sidebar width and the favorites/tree height; `Sidebar` hides it.
 
-### 파일 작업
-- **Windows 기본 동작**: 우클릭 메뉴, 복사·잘라내기·붙여넣기, 이름 변경, 삭제, 영역 간 끌어 놓기를 Windows가 그대로 처리합니다.
-- **보기**: 영역 옵션에서 자세히·목록·아이콘을 고르거나 같은 폴더를 Windows 파일 탐색기로 엽니다. 분류 방법(그룹화)·정렬·보기 방식은 탐색기처럼 폴더마다 기억합니다.
-- **항목 수와 선택 정보**: 영역 아래에 항목 수를 보여 주고, 선택하면 `3개 선택 · 1.2GB`처럼 개수와 파일 크기 합계도 보여 줍니다.
-- **미리보기**: 상단 `미리보기` 버튼이나 `Alt+P`로 켜고 파일을 클릭합니다. 켜짐 상태와 칸 너비를 기억합니다.
-- **미리보기 고정, 새 창**: 미리보기 위쪽 `고정`을 누르면 다른 파일을 골라도 그 미리보기가 그대로 남습니다. `새 창`을 누르면 그 파일만 보는 미리보기 창이 따로 열려, 여러 개를 나란히 놓고 비교할 수 있습니다(최대 8개, PDF 휠 넘기기도 됩니다).
-- **다른 영역으로 복사·이동**: `Ctrl+Alt+C`(복사), `Ctrl+Alt+X`(이동)이나 영역 옵션(⚙)에서 선택 항목을 다른 영역의 폴더로 보냅니다. 다른 영역은 바로 전에 쓰던 영역입니다. 진행 표시, 이름 충돌, 되돌리기(`Ctrl+Z`)는 Windows 탐색기와 같은 Windows 복사 창이 처리합니다.
-- **경로 복사, 터미널**: `Ctrl+Shift+C`는 선택 항목의 경로를 탐색기처럼 따옴표로 묶어 복사합니다(선택이 없으면 현재 폴더). 영역 옵션의 `여기서 터미널 열기`는 그 폴더에서 Windows 터미널(없으면 PowerShell)을 엽니다.
-  - **PDF 여러 쪽**: 별도 PDF 프로그램 없이 표시합니다. 미리보기 위에서 휠을 내리면 다음 쪽, 올리면 이전 쪽으로 이동합니다. 아래쪽의 쪽 번호와 이전·다음 버튼도 사용할 수 있습니다.
-  - **분리 창**: 미리보기 상단의 파일 이름 부분을 끌거나 `분리`를 누르면 별도 창으로 볼 수 있습니다. 본창 오른쪽으로 다시 끌어 놓거나 `다시 붙이기`를 누르면 원래 위치로 돌아오며, 보고 있던 PDF 쪽도 유지됩니다.
-  - **다른 형식**: 사진은 Windows 축소 이미지로, Office·텍스트 등은 설치된 탐색기 미리보기 표시기로 보여 줍니다. 문서 위의 휠은 파일 목록이 아닌 표시기로 전달하며, 스크롤·페이지 이동 지원 범위는 표시기에 따릅니다.
+### Files
+- **Native Windows actions**: Right-click menu, copy/cut/paste, rename, delete and drag and drop between panes are handled by Windows as usual.
+- **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer. Grouping, sort order and view mode are remembered per folder, as in File Explorer.
+- **Item count and selection**: Each pane shows how many items it displays and, with a selection, the count and total file size (for example `3 selected · 1.2 GB`).
+- **Preview**: Enable it with `Preview` or `Alt+P`, then click a file. Its visibility and width are remembered.
+- **Pin and new window**: `Pin` at the top of the preview keeps the current file while you select others. `New window` opens that file in its own preview window, so several can sit side by side for comparison (up to 8; PDF wheel paging works there too).
+- **Copy or move to the other pane**: `Ctrl+Alt+C` (copy), `Ctrl+Alt+X` (move) or the pane options (⚙) send the selection to the other pane's folder, meaning the pane you used just before. The same Windows copy dialog as File Explorer handles progress, name conflicts and undo (`Ctrl+Z`).
+- **Copy path, terminal**: `Ctrl+Shift+C` copies the selected items' paths in quotes, like File Explorer (the current folder when nothing is selected). `Open terminal here` in the pane options opens Windows Terminal (or PowerShell) in that folder.
+  - **Multi-page PDFs**: No separate PDF app is needed. Wheel down over the preview for the next page, or up for the previous page. The page number and previous/next buttons appear below.
+  - **Separate window**: Drag the file-name header or click `Detach preview`. Drag it back over the main window's right side or click `Dock preview` to put it back; the current PDF page is preserved.
+  - **Other formats**: Photos use Windows thumbnails; Office, text and other documents use installed Explorer preview handlers. Wheel input over a document goes to its handler rather than the file list; scrolling and paging support depend on the handler.
 
-### 화면과 설정
-- **색 테마**: 상단 오른쪽 메뉴에서 `낮`·`밤`과 눈이 편한 `베이지`·`연녹색`·`은은한 밤`(대비를 낮춘 어두운 색) 중에서 고릅니다. 파일 목록 배경과 글자색까지 함께 바뀝니다.
-- **언어**: 한국어, English, 简体中文, 日本語.
-- **작업 복원**: 탭, 즐겨찾기, 분할 비율, 창 크기, 테마, 사이드바 상태를 다음 실행에 그대로 이어 갑니다.
-- **작업 구성**: 상단 `작업 구성`에서 지금의 분할과 탭을 이름 붙여 저장하고 다시 불러옵니다(최대 20개). 과제별로 폴더 묶음을 바꿔 가며 쓸 때 편합니다.
-- **버전과 업데이트**: 왼쪽 아래에 현재 버전을 표시하고, 새 릴리스가 나오면 옆에 `업데이트`가 뜹니다. 누르면 새 버전을 받아 교체하고 다시 실행하며, 탭과 설정은 그대로입니다. 누르기 전에는 아무것도 설치하지 않습니다.
-- **메모리 정리**: 파일 목록으로 쓰는 Windows 탐색기 부품은 폴더를 오갈수록 메모리를 조금씩 쌓고, 앱이 꺼질 때만 돌려줍니다. 그래서 메모리가 기준(기본 100MB) 이상 늘면 창이 숨겨져 있거나 최소화돼 있을 때 탭·분할·설정을 저장하고 조용히 다시 시작합니다. `설정` → `메모리 정리`에서 기준(100·200·300·500MB, 끄기)을 고르거나 `지금 메모리 정리`로 바로 다시 시작할 수 있습니다.
+### Appearance and settings
+- **Color themes**: Pick `Light`, `Dark` or the easier-on-the-eyes `Beige`, `Soft green` and `Soft dark` (a lower-contrast dark) from the menu at the top right. The file list background and text change too.
+- **Languages**: 한국어, English, 简体中文, 日本語.
+- **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
+- **Workspaces**: `Workspaces` at the top saves the current panes and tabs under a name and opens them again later (up to 20). Handy when switching between projects.
+- **Version and updates**: The lower left shows the current version and, when a new release is out, `Update` beside it. Clicking it downloads the new version, swaps it in and restarts, keeping your tabs and settings. Nothing is installed until you click.
+- **Memory cleanup**: The Windows File Explorer component used for the file lists keeps a little memory for every folder visited and only returns it when the app exits. Once memory grew past a threshold (100 MB by default), the app saves its tabs, layout and settings and restarts quietly while the window is hidden or minimized. In `Settings` → `Memory cleanup` choose 100, 200, 300 or 500 MB or Off, or restart right away with `Clean up memory now`.
 
-파일 목록은 Windows 기본 목록이라 열 정렬과 우클릭 메뉴를 Windows Shell이 처리합니다. Windows 11 탐색기의 상단 명령 모음과 탭 UI 자체를 넣은 것은 아닙니다.
+File lists are native Windows lists, so column sorting and right-click menus are handled by the Windows Shell. The Windows 11 Explorer command bar and tab UI are not embedded.
 
-## 빠르게 불러오기
+## Summoning the app
 
-| 상황 | 동작 |
+| Situation | What happens |
 |---|---|
-| `Win+Alt+E` | 어디서든 창을 앞으로 가져옵니다. 다시 누르면 알림 영역으로 숨깁니다. |
-| 창 닫기(X) | 종료하지 않고 알림 영역(숨겨진 아이콘)에 남습니다. 처음 한 번 안내가 뜹니다. |
-| `Win+E` | `설정`에서 켠 경우에만 Folder Splitter가 열립니다. 기본은 파일 탐색기입니다. 앱이 앞에 있을 때 다시 누르면 Win+Alt+E처럼 숨깁니다. |
-| 다시 실행 | 새 창 대신 기존 창을 불러옵니다. |
+| `Win+Alt+E` | Brings the window to the front from any app; press again to hide it to the notification area. |
+| Closing the window (X) | The app keeps running among the hidden icons in the notification area. A one-time notice explains this. |
+| `Win+E` | Opens Folder Splitter only if turned on in `Settings`; otherwise File Explorer opens. Pressing it again while the app is in front hides it, like Win+Alt+E. |
+| Launching it again | Brings the existing window back instead of opening another. |
 
-- **완전히 끄기**: 알림 영역 아이콘 우클릭 → `종료`.
-- **`설정`에서 바꿀 수 있는 것**: Win+Alt+E 사용, 닫을 때 알림 영역에 남기기, Win+E 대체, 새 버전 확인, 업데이트 자동 설치.
-- 알림 영역 옵션을 끄면 X는 종료, Win+Alt+E 재입력은 최소화로 바뀝니다.
-- Win+E 설정은 현재 사용자 레지스트리(HKCU) 항목 하나만 만들고 지웁니다. 관리자 권한은 필요 없습니다.
+- **Quit completely**: Right-click the notification-area icon → `Exit`.
+- **In `Settings`**: Win+Alt+E, keeping running in the notification area, Win+E replacement, update checks and automatic update install.
+- With the notification-area option off, X quits and a second Win+Alt+E minimizes.
+- The Win+E setting only creates and removes one entry in your user registry (HKCU) and needs no administrator rights.
 
-## Q-Dir과 비교
+## Compared with Q-Dir
 
-두 프로그램은 파일을 찾는 방식이 다릅니다.
+The two apps find files in different ways.
 
 | | Q-Dir | Folder Splitter |
 |---|---|---|
-| 검색 위치 | 별도 검색창 (Windows 탐색기 검색, `F3`·`Ctrl+F`) | 주소창에 바로 입력 |
-| 검색 범위 | 현재 폴더와 그 하위 | 모든 로컬 드라이브 |
-| 속도 | Windows 검색 색인 여부에 따라 다르고, 색인되지 않은 위치는 느릴 수 있음 | 자체 파일 이름 색인으로 입력 즉시 결과 표시 (첫 색인 약 50초) |
-| 외부 도구 | 기본 Everything 연동 없음 | 필요 없음 |
+| Where you search | A separate search box (Windows Explorer search, `F3`/`Ctrl+F`) | Directly in the address bar |
+| Scope | The current folder and its subfolders | All local drives |
+| Speed | Depends on Windows Search indexing; unindexed locations can be slow | Results as you type from its own file-name index (first indexing about 50 s) |
+| External tools | No built-in Everything integration | None needed |
 
-> **기준**: 2026-10-22에 Q-Dir 12.81(2026-10-18 공개)을 대상으로 정리했습니다. 공식 FAQ(검색 항목은 2024-04-29 갱신)와 공식 도움말을 참고했고, Q-Dir을 직접 설치해 확인하지는 않았습니다. 공식 문서에는 자체 검색 기능을 개발 중이라고 적혀 있어 이후 버전에서 달라질 수 있습니다. 틀린 내용은 이슈로 알려 주세요.
+> **Basis**: Compiled on 2026-10-22 for Q-Dir 12.81 (released 2026-10-18) from the official FAQ (search entry updated 2024-04-29) and the official help, without installing Q-Dir. The official documents say a search function of its own is in development, so later versions may differ. Please open an issue if something is wrong.
 >
-> 출처: [Q-Dir 공식 사이트](https://www.softwareok.com/?seite=Freeware/Q-Dir) · [검색 기능 FAQ](https://www.softwareok.com/?seite=faq-Q-DIR&faq=37) · [도움말](http://www.q-dir.com/?en-us-q-q-dir-file-explorer-help.-for-windows-10-11-12-7)
+> Sources: [Q-Dir official site](https://www.softwareok.com/?seite=Freeware/Q-Dir) · [search FAQ](https://www.softwareok.com/?seite=faq-Q-DIR&faq=37) · [help](http://www.q-dir.com/?en-us-q-q-dir-file-explorer-help.-for-windows-10-11-12-7)
 
-## 사용법
+## Usage
 
-1. 상단에서 분할 수를 고릅니다.
-2. 각 영역 주소창에 경로나 이름 일부를 입력하고 Enter를 누릅니다.
-3. `+`로 탭을 추가하고, 탭을 끌어 원하는 칸에 배치합니다.
-4. 파일 목록에서 Windows와 같은 단축키를 사용합니다.
+1. Choose the number of panes at the top.
+2. Type a path or part of a name into a pane's address bar and press Enter.
+3. Add tabs with `+` and drag them into the panes you want.
+4. Use the usual Windows shortcuts in the file list.
 
-### 단축키
+### Keyboard shortcuts
 
-| 키 | 동작 |
+| Key | Action |
 |---|---|
-| `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | 분할 방식 전환 |
-| `F6` | 다음 영역으로 이동 |
-| `Ctrl+T`, `+` | 빈 새 탭 |
-| `Ctrl+W`, 탭의 ×, 탭 가운데 클릭 | 탭 닫기 |
-| `Ctrl+Shift+T` | 닫은 탭 복원 |
-| `Ctrl+Tab`, `Ctrl+Shift+Tab` | 다음/이전 탭 |
-| 탭 줄 위에서 마우스 휠, 좌우 휠(틸트) | 이전/다음 탭 |
-| `Ctrl+L`, `Alt+D` | 주소창 선택 |
-| `Alt+Left`, `Alt+Right`, `Alt+Up` | 뒤로/앞으로/상위 폴더 |
-| 마우스 뒤로/앞으로 버튼 | 포인터가 있는 영역에서 뒤로/앞으로 |
-| `Ctrl+D` | 현재 폴더 즐겨찾기 |
-| `Ctrl+Shift+C` | 선택 항목 경로 복사 (선택이 없으면 현재 폴더) |
-| `Ctrl+Alt+C`, `Ctrl+Alt+X` | 선택 항목을 다른 영역으로 복사 / 이동 |
-| 뒤로·앞으로 버튼 우클릭 | 최근 위치 목록 |
-| `Ctrl+Shift+E` | 폴더 트리 접기/펼치기 |
-| `Alt+P` | 미리보기 칸 표시/숨기기 |
-| `Win+Alt+E` | Folder Splitter 불러오기 / 다시 누르면 알림 영역으로 숨기기 |
-| `F5` | 새로고침 |
-| `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | 선택 파일 복사/잘라내기/붙여넣기 |
-| `F2` | 선택 파일 이름 변경 |
-| `Delete` | 선택 항목 삭제: Windows Shell 정책 적용 |
-| `Ctrl+Shift+N` | 새 폴더 |
-| `F1` | 단축키 도움말 |
+| `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | Switch layout |
+| `F6` | Move to the next pane |
+| `Ctrl+T`, `+` | New blank tab |
+| `Ctrl+W`, tab ×, middle-click a tab | Close tab |
+| `Ctrl+Shift+T` | Reopen closed tab |
+| `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next/previous tab |
+| Mouse wheel or wheel tilt over the tab row | Previous/next tab |
+| `Ctrl+L`, `Alt+D` | Select the address bar |
+| `Alt+Left`, `Alt+Right`, `Alt+Up` | Back/forward/parent folder |
+| Mouse back/forward buttons | Back/forward in the pane under the pointer |
+| `Ctrl+D` | Add the current folder to favorites |
+| `Ctrl+Shift+C` | Copy the selected items' paths (current folder if nothing is selected) |
+| `Ctrl+Alt+C`, `Ctrl+Alt+X` | Copy / move the selection to the other pane |
+| Right-click back or forward | Recent locations |
+| `Ctrl+Shift+E` | Collapse or expand the folder tree |
+| `Alt+P` | Show / hide the preview pane |
+| `Win+Alt+E` | Bring Folder Splitter to the front / again to hide it |
+| `F5` | Refresh |
+| `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy/cut/paste selected files |
+| `F2` | Rename selected file |
+| `Delete` | Delete selected items: Windows Shell policy applies |
+| `Ctrl+Shift+N` | New folder |
+| `F1` | Shortcut help |
 
-## 데이터와 호환성
+## Data and compatibility
 
-- 새 버전 확인: 앱을 켤 때와 켜져 있는 동안 하루 한 번 GitHub(`api.github.com`)에서 최신 릴리스 정보만 읽습니다. 파일·사용자 정보는 보내지 않습니다. `설정` → `새 버전 확인`으로 끌 수 있습니다.
-- 업데이트: `업데이트`를 누를 때만 GitHub 릴리스의 ZIP을 받습니다. GitHub가 알려 주는 SHA256과 맞는지 확인한 뒤 실행 파일을 바꾸고, 이전 파일은 다음 실행 때 지웁니다. 확인에 실패하면 아무것도 바꾸지 않습니다. 실행 파일이 쓰기 권한이 없는 위치에 있거나 `설정` → `업데이트를 누르면 자동으로 설치`를 끄면 릴리스 페이지를 엽니다. 이 두 가지 외의 인터넷 접속은 없습니다.
-- 설정 위치: `%LOCALAPPDATA%\QuadExplorer\session.json`
-- 이전 QuadExplorer 버전의 탭과 즐겨찾기를 유지하기 위해 설정 경로는 그대로 사용합니다.
-- 같은 설정 파일을 사용하는 앱은 한 번에 하나만 실행합니다.
-- 최대 영역당 32개 탭, 즐겨찾기 100개입니다.
-- 연결이 끊긴 드라이브나 사라진 폴더는 오류를 표시하고 주소창으로 다른 폴더를 선택할 수 있습니다.
-- 파일 삭제·덮어쓰기·충돌 처리는 Windows Shell에 위임합니다. 앱 자체가 사용자 파일을 재귀 삭제하지 않습니다.
-- OneDrive/Dropbox 상태 표시, 제3자 Shell 확장, 네트워크 공유는 해당 공급자의 설치 상태와 권한에 영향을 받습니다.
-- 준비된 로컬 고정 드라이브의 파일·폴더 이름과 경로를 백그라운드에서 색인합니다. 첫 실행은 색인 준비 표시가 나타나며, 다음 실행은 저장된 색인을 먼저 사용하고 변경 사항을 확인합니다. 파일 내용은 읽지 않습니다.
-- 검색 제외: Windows 폴더, `ProgramData`, 각 사용자 폴더의 `AppData`, 휴지통, `System Volume Information`은 **안의 내용을 색인하지 않습니다.** 프로그램 내부 파일이 대부분이고 쉬지 않고 바뀌는 곳이라, 빼면 메모리와 CPU 사용이 크게 줄어듭니다. 폴더 이름 자체는 검색되고, 경로를 입력하면 그대로 열립니다.
-- 새로 생기거나 바뀐 파일은 변경이 잠잠해진 뒤 보통 2~3초 안에(계속 바뀌는 중에도 최대 약 10초마다) 검색에 반영됩니다.
-- 색인 캐시: `%LOCALAPPDATA%\FolderSplitter\Search\paths.v1.index`. 별도 `--session`은 설정 파일 옆의 `.search.index`를 사용합니다. 접근 권한이 없는 경로와 정션·심볼릭 링크의 내부는 검색하지 않습니다. 네트워크·이동식 드라이브는 기존 직접 경로 탐색을 사용합니다.
-- 기본 탐색기 교체와 기존 탐색기 탭 가져오기는 포함하지 않습니다. 검색 비교와 한계는 [측정 기록](docs/search-evidence/benchmark.md)을 참고하세요.
+- Update check: On launch and once a day while running, the app reads only the latest release information from GitHub (`api.github.com`). No file or user information is sent. Turn it off under `Settings` → `Check for new versions`.
+- Updating: Only when you click `Update`, the app downloads the ZIP from the GitHub release, checks it against the SHA-256 GitHub reports, then replaces the executable; the previous file is deleted on the next start. If the check fails, nothing changes. If the executable sits where you can't write, or `Settings` → `Install automatically when Update is clicked` is off, the release page opens instead. The app makes no other network connections.
+- Settings location: `%LOCALAPPDATA%\QuadExplorer\session.json`
+- The settings path is unchanged so tabs and favorites from earlier QuadExplorer versions carry over.
+- Run only one app instance at a time against the same settings file.
+- Limits: up to 32 tabs per pane and 100 favorites.
+- For a disconnected drive or a folder that no longer exists, the app shows an error and you can pick another folder from the address bar.
+- Deleting, overwriting, and conflict handling are delegated to the Windows Shell. The app itself never recursively deletes user files.
+- OneDrive/Dropbox status indicators, third-party Shell extensions, and network shares depend on the provider's installation state and permissions.
+- Ready local fixed drives are indexed in the background by file/folder name and path, not file contents. The first run shows index preparation; later runs use the saved snapshot while reconciling changes.
+- Not indexed: the contents of the Windows folder, `ProgramData`, every profile's `AppData`, the recycle bin and `System Volume Information`. These hold mostly program internals that change constantly, so leaving them out greatly reduces memory and CPU use. The folders themselves are still found by name, and typing their path opens them as usual.
+- New or changed files reach search about 2–3 seconds after changes settle (at least every 10 seconds while they keep changing).
+- Cache: `%LOCALAPPDATA%\FolderSplitter\Search\paths.v1.index`. An explicit `--session` uses an adjacent `.search.index` file. Inaccessible paths and junction/symlink contents are excluded. Network and removable drives retain direct-path navigation.
+- Replacing File Explorer and importing its existing tabs aren't included. See the [benchmark and limitations](docs/search-evidence/benchmark.md).
 
-별도 작업 세션이나 테스트용으로 설정 경로를 지정할 수 있습니다.
+You can point to a different settings path for a separate work session or for testing.
 
 ```powershell
 .\FolderSplitter.exe --session C:\Work\folder-session.json C:\Projects D:\Research
 ```
 
-추가 폴더 인수는 활성 영역의 새 탭으로 열립니다.
+Extra folder arguments open as new tabs in the active pane.
 
-## 소스 빌드
+## Building from source
 
-필수: Windows 10(2004 이상) 또는 11 x64, .NET 10 SDK.
+Requirements: Windows 10 (2004 or later) or 11 x64, .NET 10 SDK.
 
 ```powershell
-.\build.ps1                 # Release 빌드 + 세션 회귀 테스트
-.\build.ps1 -UiTests        # 실제 네이티브 창 통합 테스트 추가
-.\build.ps1 -Publish        # 런타임 포함 실행 파일과 ZIP 생성
+.\build.ps1                 # Release build + session regression tests
+.\build.ps1 -UiTests        # Add integration tests against real native windows
+.\build.ps1 -Publish        # Produce runtime-bundled executable and ZIP
 ```
 
-UI 통합 테스트는 `tools/PrivateDesktopQa`가 만든 별도의 비공개 Windows 데스크톱에서 실행하므로, 사용 중인 화면에 창을 띄우거나 마우스·키보드를 건드리지 않습니다. 로그인된 Windows 세션이 필요합니다. 테스트는 임시 폴더만 사용하며 탐색 완료 이벤트를 기다립니다. 고정 시간 지연에 의존하지 않습니다.
+The UI integration tests run on a separate private Windows desktop created by `tools/PrivateDesktopQa`, so they never open windows on the screen you're using or touch your mouse and keyboard. A signed-in Windows session is required. The tests only use temporary folders and wait for navigation-complete events. They don't rely on fixed time delays.
 
-출력:
+Output:
 
 ```text
 artifacts/FolderSplitter/FolderSplitter.exe
 artifacts/folder-splitter-win-x64.zip
 ```
 
-## 구성
+## Project layout
 
 ```text
 src/FolderSplitter/
-  MainForm.cs           창, 분할, 빠른 접근, 단축키
-  ExplorerPane.cs       영역별 탭과 주소창
-  ShellViewHost.cs      네이티브 Shell 보기 수명 관리
-  ShellInterop.cs       Windows SDK COM/PInvoke 선언
-  SessionState.cs       설정 검증과 원자적 저장
-  Theme.cs              낮/밤 테마와 둥근 공통 컨트롤
-  FolderTree.cs         왼쪽 폴더 트리
-  ShellIconCache.cs     빠른 접근 Windows 아이콘
-  Assets/               앱 아이콘 원본 PNG와 다중 해상도 ICO
+  MainForm.cs           Window, splits, quick access, shortcuts
+  ExplorerPane.cs       Per-pane tabs and address bar
+  ShellViewHost.cs      Native Shell view lifetime management
+  ShellInterop.cs       Windows SDK COM/PInvoke declarations
+  SessionState.cs       Settings validation and atomic saving
+  Theme.cs              Light/dark themes and rounded shared controls
+  FolderTree.cs         Left folder tree
+  ShellIconCache.cs     Windows icons for quick access
+  Assets/               Source PNG for the app icon and multi-resolution ICO
 tests/
-  QuadExplorer.Tests/   설정 모델 회귀 테스트
-  QuadExplorer.UiTests/ 실제 Shell 보기 통합 테스트
+  QuadExplorer.Tests/   Settings model regression tests
+  QuadExplorer.UiTests/ Integration tests with real Shell views
 tools/
-  PrivateDesktopQa/     비공개 데스크톱 UI 테스트 실행기
+  PrivateDesktopQa/     Private-desktop UI test launcher
 ```
 
-앱 코드에는 외부 NuGet 패키지 의존성이 없습니다(UI 테스트만 Lib.Harmony 사용). Windows Shell과 .NET Windows Forms를 사용합니다.
+The app code has no external NuGet package dependencies (only the UI tests use Lib.Harmony). It uses the Windows Shell and .NET Windows Forms.
 
-아이콘 원본을 교체할 때는 아래 명령으로 Windows용 ICO를 다시 생성합니다.
+When you replace the source icon, regenerate the Windows ICO with the command below.
 
 ```powershell
 .\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
 ```
 
-## 라이선스
+## License
 
-[MIT 라이선스](LICENSE)입니다. 개인과 회사 모두 무료로 사용·수정·배포할 수 있으며, 배포할 때는 저작권 및 라이선스 고지를 함께 포함하면 됩니다.
+[MIT License](LICENSE). Free for personal and commercial use, modification and distribution; keep the copyright and license notice in copies you distribute.
