@@ -6,7 +6,7 @@ namespace QuadExplorer.Search;
 internal static class IndexStore
 {
     private const int Magic = 0x58495146;
-    private const int Version = 1;
+    private const int Version = 2; // 2: entries stored as one packed string per folder
     private const int DigestLength = 32;
 
     internal static void Save(string path, string[] configuredRoots, FileIndex index,
@@ -32,12 +32,8 @@ internal static class IndexStore
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         writer.Write(directory.Path);
-                        writer.Write(directory.Entries.Length);
-                        foreach (var entry in directory.Entries)
-                        {
-                            writer.Write(entry.Name);
-                            writer.Write(entry.IsDirectory);
-                        }
+                        writer.Write(directory.Count);
+                        writer.Write(directory.Packed);
                     }
                 }
                 var length = stream.Position;
@@ -86,10 +82,10 @@ internal static class IndexStore
                 cancellationToken.ThrowIfCancellationRequested();
                 var directory = reader.ReadString();
                 var entryCount = ReadCount(reader);
-                var entries = new IndexEntry[entryCount];
-                for (var j = 0; j < entryCount; j++)
-                    entries[j] = new IndexEntry(reader.ReadString(), reader.ReadBoolean());
-                directories[i] = new IndexDirectory(directory, entries);
+                var packed = reader.ReadString();
+                if (!IndexDirectory.IsWellFormed(packed, entryCount))
+                    return null;
+                directories[i] = new IndexDirectory(directory, packed, entryCount);
             }
             return stream.Position == payloadLength ? new FileIndex(roots, directories, denied, built) : null;
         }

@@ -176,6 +176,7 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
             Publish(index);
             Notify(RescanCompleted);
             _initial.TrySetResult();
+            ReleaseBuildGarbage();
             var lastSaved = Stopwatch.GetTimestamp();
             Task<bool>? next = null;
             while (await (next ??= watcher.WaitAsync(token).AsTask()).ConfigureAwait(false))
@@ -215,7 +216,10 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
                 }
                 Publish(index);
                 if (invalidations > 0)
+                {
                     Notify(RescanCompleted);
+                    ReleaseBuildGarbage();
+                }
                 // Startup always reconciles the snapshot. Bound write amplification on busy volumes.
                 if (Stopwatch.GetElapsedTime(lastSaved) >= TimeSpan.FromSeconds(30))
                 {
@@ -240,6 +244,14 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
             _ready = false;
             Notify(IndexChanged);
         }
+    }
+
+    // A full scan leaves hundreds of MB of short-lived enumeration objects behind; without a compacting
+    // collection they linger in gen2 and the process keeps that memory long after the scan.
+    private static void ReleaseBuildGarbage()
+    {
+        System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 
     private void Publish(FileIndex index)

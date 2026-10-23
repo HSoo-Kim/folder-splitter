@@ -15,6 +15,7 @@ internal sealed class IndexBuilder
     private readonly Dictionary<string, IndexDirectory> _directories = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _denied = new(StringComparer.OrdinalIgnoreCase);
     private readonly IndexScope _scope;
+    private readonly System.Text.StringBuilder _packed = new();
 
     internal IndexBuilder(string[] roots, string storePath, IndexScope? scope = null)
     {
@@ -150,7 +151,7 @@ internal sealed class IndexBuilder
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
                     if (_roots.Contains(directory, StringComparer.OrdinalIgnoreCase))
-                        _directories[directory] = new IndexDirectory(directory, []);
+                        _directories[directory] = new IndexDirectory(directory, "", 0);
                     continue;
                 }
                 foreach (var child in ReadDirectory(directory, cancellationToken))
@@ -159,7 +160,7 @@ internal sealed class IndexBuilder
             catch (UnauthorizedAccessException)
             {
                 _denied.Add(directory);
-                _directories[directory] = new IndexDirectory(directory, []);
+                _directories[directory] = new IndexDirectory(directory, "", 0);
             }
             catch (IOException)
             {
@@ -170,7 +171,8 @@ internal sealed class IndexBuilder
 
     private List<string> ReadDirectory(string path, CancellationToken cancellationToken)
     {
-        var entries = new List<IndexEntry>();
+        _packed.Clear();
+        var count = 0;
         var children = new List<string>();
         _denied.Remove(path);
         try
@@ -181,7 +183,8 @@ internal sealed class IndexBuilder
                 if (IsExcluded(info.FullName))
                     continue;
                 var isDirectory = (info.Attributes & FileAttributes.Directory) != 0;
-                entries.Add(new IndexEntry(info.Name, isDirectory));
+                IndexDirectory.Append(_packed, info.Name, isDirectory);
+                count++;
                 if (isDirectory && ((info.Attributes & FileAttributes.ReparsePoint) == 0 || info.LinkTarget is null)
                     && !_scope.SkipsContentsOf(info.FullName))
                     children.Add(info.FullName);
@@ -200,7 +203,7 @@ internal sealed class IndexBuilder
         {
             _denied.Add(path);
         }
-        _directories[path] = new IndexDirectory(path, entries.ToArray());
+        _directories[path] = new IndexDirectory(path, _packed.ToString(), count);
         return children;
     }
 

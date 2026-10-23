@@ -1,9 +1,58 @@
 using System.Buffers;
+using System.Text;
 
 namespace QuadExplorer.Search;
 
 internal readonly record struct IndexEntry(string Name, bool IsDirectory);
-internal sealed record IndexDirectory(string Path, IndexEntry[] Entries);
+// A folder's entries are packed into one string: a type mark ('d' folder, 'f' file), the name and a
+// '\0' separator for each entry. One string per folder instead of one per entry saves the per-object
+// overhead of millions of names; Windows file names never contain '\0'.
+internal sealed class IndexDirectory
+{
+    internal const char FolderMark = 'd';
+    internal const char FileMark = 'f';
+    internal const char Separator = '\0';
+    internal string Path { get; }
+    internal string Packed { get; }
+    internal int Count { get; }
+
+    internal IndexDirectory(string path, string packed, int count)
+    {
+        Path = path;
+        Packed = packed;
+        Count = count;
+    }
+
+    internal IndexDirectory(string path, IReadOnlyCollection<IndexEntry> entries)
+        : this(path, Pack(entries), entries.Count) { }
+
+    internal IEnumerable<IndexEntry> Entries
+    {
+        get
+        {
+            for (int position = 0; position < Packed.Length;)
+            {
+                int end = Packed.IndexOf(Separator, position + 1);
+                yield return new IndexEntry(Packed[(position + 1)..end], Packed[position] == FolderMark);
+                position = end + 1;
+            }
+        }
+    }
+
+    internal static void Append(StringBuilder packed, string name, bool isDirectory) =>
+        packed.Append(isDirectory ? FolderMark : FileMark).Append(name).Append(Separator);
+
+    internal static bool IsWellFormed(string packed, int count) =>
+        packed.Length == 0 ? count == 0 : packed[^1] == Separator && packed.AsSpan().Count(Separator) == count;
+
+    private static string Pack(IEnumerable<IndexEntry> entries)
+    {
+        var packed = new StringBuilder();
+        foreach (var entry in entries)
+            Append(packed, entry.Name, entry.IsDirectory);
+        return packed.ToString();
+    }
+}
 
 internal sealed class FileIndex
 {
@@ -20,7 +69,7 @@ internal sealed class FileIndex
         Directories = directories;
         DeniedPaths = deniedPaths;
         BuiltUtc = builtUtc;
-        Count = roots.Length + directories.Sum(directory => directory.Entries.Length);
+        Count = roots.Length + directories.Sum(directory => directory.Count);
     }
 
     internal IReadOnlyList<SearchHit> Search(SearchQuery query, IReadOnlyList<string> priorityRoots,
@@ -69,15 +118,20 @@ internal sealed class FileIndex
                 if (separator != 0)
                     buffer[parentLength] = '\\';
                 var checkedEntries = 0;
-                foreach (var entry in directory.Entries)
+                var packed = directory.Packed.AsSpan();
+                for (int position = 0; position < packed.Length;)
                 {
                     if ((checkedEntries++ & 255) == 0)
                         cancellationToken.ThrowIfCancellationRequested();
-                    if (!query.MatchesName(entry.Name.AsSpan(), anchorsOnly))
+                    var isDirectory = packed[position] == IndexDirectory.FolderMark;
+                    var rest = packed[(position + 1)..];
+                    var name = rest[..rest.IndexOf(IndexDirectory.Separator)];
+                    position += name.Length + 2;
+                    if (!query.MatchesName(name, anchorsOnly))
                         continue;
-                    EnsureCapacity(prefixLength + entry.Name.Length);
-                    entry.Name.AsSpan().CopyTo(buffer.AsSpan(prefixLength));
-                    Add(buffer.AsSpan(0, prefixLength + entry.Name.Length), entry.IsDirectory);
+                    EnsureCapacity(prefixLength + name.Length);
+                    name.CopyTo(buffer.AsSpan(prefixLength));
+                    Add(buffer.AsSpan(0, prefixLength + name.Length), isDirectory);
                 }
             }
             return all is not null ? all : top!.Results();
