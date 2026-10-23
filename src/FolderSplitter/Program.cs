@@ -14,9 +14,12 @@ internal static class Program
         string sessionPath = SessionStore.DefaultPath;
         var text = new UiText(SessionStore.Load(sessionPath).Language);
         var folders = new List<string>();
+        bool toggle = false;
         for (int i = 0; i < args.Length; i++)
         {
-            if (args[i] == "--wait-pid" && i + 1 < args.Length)
+            if (args[i] == "--toggle")
+                toggle = true;
+            else if (args[i] == "--wait-pid" && i + 1 < args.Length)
                 WaitForExit(args[++i]);
             else if (args[i] == "--session" && i + 1 < args.Length)
             {
@@ -39,7 +42,7 @@ internal static class Program
         {
             // A second launch (for example Win+E) hands the foreground to the running window instead.
             AllowSetForegroundWindow(-1);
-            PostMessage(0xFFFF, ActivationMessage(sessionPath), 0, 0);
+            PostMessage(0xFFFF, ActivationMessage(sessionPath), toggle ? 1 : 0, 0);
             return;
         }
         UpdateInstaller.RemovePrevious(Environment.ProcessPath);

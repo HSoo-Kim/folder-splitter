@@ -486,6 +486,8 @@ public sealed class MainForm : Form, IMessageFilter
         hotkeyItem.CheckedChanged += (_, _) => SetGlobalHotkey(hotkeyItem.Checked);
         winEItem.Click += (_, _) => SetWinEShortcut(winEItem.Checked);
         settings.DropDownOpening += (_, _) => winEItem.Checked = winE.IsEnabled;
+        try { winE.UpgradeLegacy(); }
+        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
         settings.DropDownItems.Add(hotkeyItem);
         settings.DropDownItems.Add(winEItem);
         BindText(trayItem, "Keep running in the notification area when closed");
@@ -721,7 +723,7 @@ public sealed class MainForm : Form, IMessageFilter
         winEItem.Checked = winE.IsEnabled;
     }
 
-    // Win+Alt+E and a second launch both bring this window forward; the hotkey puts it away when it is already in front.
+    // Win+Alt+E and Win+E bring this window forward and put it away when it is already in front.
     internal void ToggleFromHotkey()
     {
         if (Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) DismissFromHotkey();
@@ -764,7 +766,12 @@ public sealed class MainForm : Form, IMessageFilter
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == 0x0312 && m.WParam == HotkeyId) { ToggleFromHotkey(); return; } // WM_HOTKEY
-        if (activationMessage != 0 && m.Msg == (int)activationMessage) { Summon(); return; }
+        if (activationMessage != 0 && m.Msg == (int)activationMessage) // wParam 1: Win+E toggles like Win+Alt+E
+        {
+            if (m.WParam == 1) ToggleFromHotkey();
+            else Summon();
+            return;
+        }
         base.WndProc(ref m);
     }
 

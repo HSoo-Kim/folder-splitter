@@ -84,7 +84,7 @@ File lists are native Windows lists, so column sorting and right-click menus are
 |---|---|
 | `Win+Alt+E` | Brings the window to the front from any app; press again to hide it to the notification area. |
 | Closing the window (X) | The app keeps running among the hidden icons in the notification area. A one-time notice explains this. |
-| `Win+E` | Opens Folder Splitter only if turned on in `Settings`; otherwise File Explorer opens. |
+| `Win+E` | Opens Folder Splitter only if turned on in `Settings`; otherwise File Explorer opens. Pressing it again while the app is in front hides it, like Win+Alt+E. |
 | Launching it again | Brings the existing window back instead of opening another. |
 
 - **Quit completely**: Right-click the notification-area icon → `Exit`.

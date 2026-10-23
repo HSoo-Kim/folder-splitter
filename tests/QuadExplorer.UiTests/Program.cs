@@ -549,6 +549,14 @@ internal static class Program
                 await reshown.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 form.VisibleChanged -= Reshown;
                 Check(form.Visible, "Win+Alt+E shows the hidden window again");
+                form.DismissFromHotkey();
+                var toggledIn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void ToggledIn(object? sender, EventArgs e) { if (form.Visible) toggledIn.TrySetResult(); }
+                form.VisibleChanged += ToggledIn;
+                PostMessage(form.Handle, QuadExplorer.Program.ActivationMessage(session), 1, 0); // Win+E toggle while hidden
+                await toggledIn.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                form.VisibleChanged -= ToggledIn;
+                Check(form.Visible, "Win+E toggle shows the hidden window");
                 form.SetCloseToTray(false);
                 form.DismissFromHotkey();
                 Check(form.Visible && form.WindowState == FormWindowState.Minimized,
@@ -691,8 +699,15 @@ internal static class Program
             Check(!shortcut.IsEnabled, "Win+E replacement is off by default");
             shortcut.Enable();
             using (var command = root.OpenSubKey(WinEShortcut.ClassKey + @"\shell\opennewwindow\command"))
-                Check(shortcut.IsEnabled && command?.GetValue("") as string == "\"C:\\Apps\\Folder Splitter\\FolderSplitter.exe\""
+                Check(shortcut.IsEnabled && command?.GetValue("") as string == "\"C:\\Apps\\Folder Splitter\\FolderSplitter.exe\" --toggle"
                     && command.GetValue("DelegateExecute") as string == "", "Win+E replacement registers the quoted executable");
+            using (var legacy = root.CreateSubKey(WinEShortcut.ClassKey + @"\shell\opennewwindow\command"))
+                legacy.SetValue("", "\"C:\\Apps\\Folder Splitter\\FolderSplitter.exe\"");
+            Check(shortcut.IsEnabled, "a Win+E entry from an earlier version still counts as on");
+            shortcut.UpgradeLegacy();
+            using (var command = root.OpenSubKey(WinEShortcut.ClassKey + @"\shell\opennewwindow\command"))
+                Check(command?.GetValue("") as string == "\"C:\\Apps\\Folder Splitter\\FolderSplitter.exe\" --toggle",
+                    "an earlier Win+E entry is upgraded so Win+E can hide the window");
             shortcut.Disable();
             Check(!shortcut.IsEnabled && root.OpenSubKey(WinEShortcut.ClassKey) is null, "turning Win+E off removes only its own keys");
             using (var icon = root.CreateSubKey(WinEShortcut.ClassKey + @"\DefaultIcon")) icon.SetValue("", "kept");

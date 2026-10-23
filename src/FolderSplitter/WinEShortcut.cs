@@ -9,7 +9,9 @@ internal sealed class WinEShortcut(RegistryKey root, string executable)
 {
     internal const string ClassKey = @"Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}";
     private const string VerbKey = ClassKey + @"\shell\opennewwindow";
-    private string Command => $"\"{executable}\"";
+    // --toggle lets Win+E hide the window again like Win+Alt+E; the bare form is what 0.7.4–0.7.13 wrote.
+    private string Command => $"\"{executable}\" --toggle";
+    private string LegacyCommand => $"\"{executable}\"";
 
     public static WinEShortcut ForCurrentUser() =>
         new(Registry.CurrentUser, Environment.ProcessPath ?? Application.ExecutablePath);
@@ -19,8 +21,16 @@ internal sealed class WinEShortcut(RegistryKey root, string executable)
         get
         {
             using var command = root.OpenSubKey(VerbKey + @"\command");
-            return command?.GetValue("") is string value && value.Equals(Command, StringComparison.OrdinalIgnoreCase);
+            return command?.GetValue("") is string value && (value.Equals(Command, StringComparison.OrdinalIgnoreCase)
+                || value.Equals(LegacyCommand, StringComparison.OrdinalIgnoreCase));
         }
+    }
+
+    public void UpgradeLegacy()
+    {
+        using (var command = root.OpenSubKey(VerbKey + @"\command"))
+            if (command?.GetValue("") is not string value || !value.Equals(LegacyCommand, StringComparison.OrdinalIgnoreCase)) return;
+        Enable();
     }
 
     public void Enable()
