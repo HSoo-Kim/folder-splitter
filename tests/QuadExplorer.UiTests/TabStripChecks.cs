@@ -31,6 +31,28 @@ internal static partial class Program
                 Check(pane.TabButtons[0].Width <= Scaled(240) && pane.TabButtons[0].Text!.EndsWith('\u2026'),
                     "with more tabs a long name returns to the normal maximum with an ellipsis");
                 Check(pane.TabButtons[1].Width >= Scaled(110), "a short name keeps a readable minimum width");
+                using (var image = new Bitmap(strip.Width, strip.Height))
+                {
+                    strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
+                    var idle = pane.TabButtons[0].Bounds;
+                    Color edge = image.GetPixel(idle.Left + 1, idle.Top + idle.Height / 2);
+                    Color inside = image.GetPixel(idle.Left + idle.Width / 2, idle.Top + 2);
+                    Check(!pane.TabButtons[0].Checked && edge.ToArgb() != inside.ToArgb(),
+                        "a tab that is not being viewed draws a faint outline");
+                }
+                if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_TAB_CAPTURE") is { Length: > 0 } captures)
+                {
+                    for (int i = 0; i < 4; i++) pane.AddTab(shortFolder, select: false);
+                    foreach (string mode in new[] { "light", "dark" })
+                    {
+                        form.SetColorTheme(mode);
+                        form.Refresh();
+                        using var shot = PrintForm(form, 2);
+                        shot.Save(Path.Combine(captures, $"tabs-{mode}.png"));
+                    }
+                    form.SetColorTheme("light");
+                    while (pane.TabCount > 2) pane.CloseTab(pane.TabCount - 1);
+                }
 
                 for (int i = 0; i < 22; i++) pane.AddTab(shortFolder, select: false);
                 var plus = strip.Items.Cast<ToolStripItem>().Single(item => item.AccessibleName == "Pane 1 new tab");

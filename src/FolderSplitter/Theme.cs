@@ -368,7 +368,9 @@ internal static class Theme
         {
             bool isChecked = e.Item is ToolStripButton { Checked: true } or ToolStripMenuItem { Checked: true };
             bool active = e.Item.Enabled && (e.Item.Selected || e.Item.Pressed);
-            bool outlineOnly = e.Item is OutlinedToolStripButton && !isChecked && !active;
+            // Folder tabs keep a faint outline when idle so neighbouring tabs read as separate items.
+            bool tab = e.Item is FolderTabButton;
+            bool outlineOnly = (e.Item is OutlinedToolStripButton || tab) && !isChecked && !active;
             if (!isChecked && !active && !outlineOnly) return;
             int dpi = e.ToolStrip?.DeviceDpi ?? 96;
             var bounds = new Rectangle(1, 1, e.Item.Width - 3, e.Item.Height - 3);
@@ -379,7 +381,7 @@ internal static class Theme
             using var brush = new SolidBrush(!e.Item.Enabled ? Surface
                 : e.Item.Pressed ? current.Pressed : isChecked ? Selected : current.Hover);
             using var pen = new Pen(e.Item.Enabled && (isChecked || e.Item.Pressed) ? Accent
-                : outlineOnly ? Blend(Border, Muted) : Border);
+                : outlineOnly ? (tab ? Border : Blend(Border, Muted)) : tab ? Blend(Border, Muted) : Border);
             if (!outlineOnly) e.Graphics.FillPath(brush, path);
             e.Graphics.DrawPath(pen, path);
             e.Graphics.SmoothingMode = smoothing;
