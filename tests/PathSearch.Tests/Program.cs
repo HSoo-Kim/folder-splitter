@@ -70,6 +70,16 @@ internal static class Program
         Check(SearchQuery.Parse("plan/2026 child").IsAnchor(@"C:\plan\2026\child.txt"), "AND name touches leaf");
         Check(SearchQuery.Parse("plan/2026").IsAnchor(@"C:\plan\2026\plan\2026.txt"), "Later occurrence anchors");
         Check(!SearchQuery.Parse("plan/").IsAnchor(@"C:\plan\child.txt"), "Ancestor separator does not touch leaf");
+        const string readmeFolder = @"D:\연구\KMA500m_15분_자료공유_20261020";
+        const string readmeFile = readmeFolder + @"\Raw_data_15min_rain\rn_15m_2022_08.nc";
+        Check(SearchQuery.Parse("rn 2022_08").IsAnchor(readmeFile) && SearchQuery.Parse("nc 15m 2022").IsAnchor(readmeFile)
+            && SearchQuery.Parse(".NC 2022_08").IsAnchor(readmeFile) && SearchQuery.Parse("rn nc").IsAnchor(readmeFile),
+            "README examples: name fragments in any order and case");
+        Check(SearchQuery.Parse("자료공유").IsAnchor(readmeFolder) && !SearchQuery.Parse("자료공유").Matches(readmeFile),
+            "README example: folder name fragment finds the folder");
+        Check(SearchQuery.Parse("15min_rain/rn_15m").IsAnchor(readmeFile), "README example: slash follows the path");
+        Check(SearchQuery.Parse("\"회의 자료\"").IsAnchor(@"C:\x\회의 자료.pptx"), "README example: quoted name with a space");
+        Check(!SearchQuery.Parse("자료공유 nc").Matches(readmeFile), "README example: parent and file fragments do not mix");
         Check(SearchQuery.Parse(@"C:\plan\2026").Matches(@"C:\plan\2026.txt"), "Rooted benchmark term supported");
         Check(!SearchQuery.Parse("  \"\" ").Matches(@"C:\anything"), "Empty terms never match");
         Check(SearchQuery.Parse("  notes \t \"two words\" ").Normalized == "notes \"two words\"",

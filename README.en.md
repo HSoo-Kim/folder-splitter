@@ -18,6 +18,21 @@ You don't need the full path. Type **any fragment you remember** into the addres
 - Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
 - Local drives are indexed by the app itself, so no separate tool such as Everything is needed. File contents are never read.
 
+### How to search
+
+Say you are looking for `D:\Research\KMA500m_15min_shared_20261020\Raw_data_15min_rain\rn_15m_2022_08.nc`:
+
+| Type | Rule | Finds |
+|---|---|---|
+| `rn 2022_08` | Space-separated fragments must **all appear in the name**. | `rn_15m_2022_08.nc` |
+| `nc 15m 2022` | **Order doesn't matter**, and fragments can come from the middle of the name. | `rn_15m_2022_08.nc` |
+| `.NC 2022_08` | Case doesn't matter. | `rn_15m_2022_08.nc` |
+| `shared_2026` | Folders are found by name fragments too. | the `KMA500m_15min_shared_20261020` folder |
+| `15min_rain/rn_15m` | Join with `/` to follow the path: the first fragment is the end of a folder name, the next is the start of an item inside it. | the `rn_15m_…` files |
+| `"meeting notes"` | Wrap names that contain spaces in quotes. | `meeting notes.docx` and so on |
+
+Space-separated fragments are matched against each file's or folder's **own name**. Mixing a parent folder's name with a file-name fragment, as in `shared nc`, therefore finds nothing; use only file-name fragments (`rn nc`) or join the path with `/`.
+
 ### Search speed
 
 **p95 of 62 ms across about 3.72 million paths.** Both the overall median and p95 beat the Everything adapter; Everything is faster for very short terms with many matches.
