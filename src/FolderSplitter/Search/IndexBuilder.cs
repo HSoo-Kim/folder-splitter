@@ -14,11 +14,13 @@ internal sealed class IndexBuilder
     private readonly string _storePath;
     private readonly Dictionary<string, IndexDirectory> _directories = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _denied = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IndexScope _scope;
 
-    internal IndexBuilder(string[] roots, string storePath)
+    internal IndexBuilder(string[] roots, string storePath, IndexScope? scope = null)
     {
         _roots = roots;
         _storePath = storePath;
+        _scope = (scope ?? IndexScope.ForSystem(roots)).Without(roots);
     }
 
     internal FileIndex Build(CancellationToken cancellationToken)
@@ -44,9 +46,11 @@ internal sealed class IndexBuilder
                 continue;
             if (_directories.ContainsKey(path) || IsTraversableDirectory(path))
             {
-                RemoveTree(path);
-                ReadTree(path, cancellationToken);
-                refreshedTrees.Add(path);
+                // A batch can hold a renamed folder under its old spelling too; read it as it is on disk.
+                var current = OnDiskName(path);
+                RemoveTree(current);
+                ReadTree(current, cancellationToken);
+                refreshedTrees.Add(current);
             }
             var parent = Path.GetDirectoryName(path);
             if (parent is not null && IsInScope(parent))
@@ -64,7 +68,8 @@ internal sealed class IndexBuilder
     }
 
     internal bool IsExcluded(string path) =>
-        path.Equals(_storePath, StringComparison.OrdinalIgnoreCase)
+        _scope.IsInsideSkipped(path)
+        || path.Equals(_storePath, StringComparison.OrdinalIgnoreCase)
         || path.StartsWith(_storePath + ".", StringComparison.OrdinalIgnoreCase)
         && path.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase);
 
@@ -91,6 +96,22 @@ internal sealed class IndexBuilder
         || path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
         && (root.EndsWith('\\') || path.Length > root.Length && path[root.Length] == '\\');
 
+    private static string OnDiskName(string path)
+    {
+        var parent = Path.GetDirectoryName(path);
+        var name = Path.GetFileName(path);
+        if (parent is null || name.Length == 0)
+            return path;
+        try
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(parent, name))
+                return Path.Combine(parent, Path.GetFileName(entry));
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        return path;
+    }
+
     private static bool IsTraversableDirectory(string path)
     {
         try
@@ -116,6 +137,11 @@ internal sealed class IndexBuilder
         while (pending.TryPop(out var directory))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (_scope.SkipsContentsOf(directory) && !_roots.Contains(directory, StringComparer.OrdinalIgnoreCase))
+            {
+                _directories.Remove(directory);
+                continue;
+            }
             try
             {
                 var attributes = File.GetAttributes(directory);
@@ -156,7 +182,8 @@ internal sealed class IndexBuilder
                     continue;
                 var isDirectory = (info.Attributes & FileAttributes.Directory) != 0;
                 entries.Add(new IndexEntry(info.Name, isDirectory));
-                if (isDirectory && ((info.Attributes & FileAttributes.ReparsePoint) == 0 || info.LinkTarget is null))
+                if (isDirectory && ((info.Attributes & FileAttributes.ReparsePoint) == 0 || info.LinkTarget is null)
+                    && !_scope.SkipsContentsOf(info.FullName))
                     children.Add(info.FullName);
             }
         }

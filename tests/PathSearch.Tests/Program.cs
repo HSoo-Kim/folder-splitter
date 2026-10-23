@@ -20,6 +20,7 @@ internal static class Program
             QuerySemantics();
             Ranking();
             await CompactIndex();
+            ScopeExclusions(root);
             await RealIndex(root);
             Console.WriteLine($"PASS: {_assertions} assertions; elapsed_ms={elapsed.Elapsed.TotalMilliseconds:F1}");
             return 0;
@@ -439,6 +440,36 @@ internal static class Program
         await process.WaitForExitAsync().WaitAsync(Deadline);
         Check(process.ExitCode == 0 && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0,
             "Real unprivileged junction fixture");
+    }
+
+    private static void ScopeExclusions(string workspace)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(workspace, "scope")).FullName;
+        var appData = Path.Combine(root, "Users", "alice", "AppData");
+        Write(Path.Combine(appData, "Local", "cache-entry.bin"));
+        Write(Path.Combine(root, "Users", "alice", "Documents", "scope-report.txt"));
+        Write(Path.Combine(root, "Win", "System32", "scope-kernel.dll"));
+        var builder = new IndexBuilder([root], Path.Combine(workspace, "scope.index"),
+            new IndexScope([Path.Combine(root, "Win")], Path.Combine(root, "Users")));
+        var index = builder.Build(CancellationToken.None);
+        int Count(FileIndex snapshot, string text) =>
+            snapshot.Search(SearchQuery.Parse(text), [], int.MaxValue, false, CancellationToken.None).Count;
+        Check(Count(index, "scope-report.txt") == 1 && Count(index, "AppData") == 1 && Count(index, "Win") >= 1,
+            "Excluded folders stay findable by name");
+        Check(Count(index, "cache-entry.bin") == 0 && Count(index, "scope-kernel.dll") == 0 && Count(index, "System32") == 0,
+            "Contents of AppData and system folders are not indexed");
+        var added = Path.Combine(appData, "Local", "late-cache.bin");
+        Write(added);
+        Check(builder.IsExcluded(added) && !builder.IsExcluded(Path.Combine(root, "Users", "alice", "Documents", "new.txt")),
+            "Changes inside excluded folders are ignored by the watcher");
+        index = builder.Reconcile([added, appData], CancellationToken.None);
+        Check(Count(index, "late-cache.bin") == 0 && Count(index, "AppData") == 1 && Count(index, "scope-report.txt") == 1,
+            "Reconciling an excluded folder keeps its contents out");
+        var nested = new IndexScope([Path.Combine(root, "Win")], Path.Combine(root, "Users"))
+            .Without([Path.Combine(appData, "Local"), Path.Combine(root, "Win", "System32")]);
+        Check(!nested.IsInsideSkipped(Path.Combine(appData, "Local", "x.txt"))
+            && !nested.IsInsideSkipped(Path.Combine(root, "Win", "System32", "x.dll")),
+            "An index root inside an excluded folder is still indexed");
     }
 
     private static bool Has(IndependentSearchBackend backend, string text) =>

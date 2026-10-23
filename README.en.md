@@ -164,6 +164,8 @@ The two apps find files in different ways.
 - Deleting, overwriting, and conflict handling are delegated to the Windows Shell. The app itself never recursively deletes user files.
 - OneDrive/Dropbox status indicators, third-party Shell extensions, and network shares depend on the provider's installation state and permissions.
 - Ready local fixed drives are indexed in the background by file/folder name and path, not file contents. The first run shows index preparation; later runs use the saved snapshot while reconciling changes.
+- Not indexed: the contents of the Windows folder, `ProgramData`, every profile's `AppData`, the recycle bin and `System Volume Information`. These hold mostly program internals that change constantly, so leaving them out greatly reduces memory and CPU use. The folders themselves are still found by name, and typing their path opens them as usual.
+- New or changed files reach search about 2–3 seconds after changes settle (at least every 10 seconds while they keep changing).
 - Cache: `%LOCALAPPDATA%\FolderSplitter\Search\paths.v1.index`. An explicit `--session` uses an adjacent `.search.index` file. Inaccessible paths and junction/symlink contents are excluded. Network and removable drives retain direct-path navigation.
 - Replacing File Explorer and importing its existing tabs aren't included. See the [benchmark and limitations](docs/search-evidence/benchmark.md).
 

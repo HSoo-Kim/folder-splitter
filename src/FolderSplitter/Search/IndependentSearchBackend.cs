@@ -7,6 +7,8 @@ public sealed record IndexStats(int Entries, int DeniedDirectories, DateTime Bui
 
 public sealed class IndependentSearchBackend : IPathSearchBackend
 {
+    private static readonly TimeSpan QuietPeriod = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan MaxBatchDelay = TimeSpan.FromSeconds(10);
     private readonly object _gate = new();
     private readonly string[] _roots;
     private readonly string _storePath;
@@ -175,10 +177,32 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
             Notify(RescanCompleted);
             _initial.TrySetResult();
             var lastSaved = Stopwatch.GetTimestamp();
-            while (await watcher.WaitAsync(token).ConfigureAwait(false))
+            Task<bool>? next = null;
+            while (await (next ??= watcher.WaitAsync(token).AsTask()).ConfigureAwait(false))
             {
                 token.ThrowIfCancellationRequested();
-                pending = watcher.Drain(out invalidations);
+                next = null;
+                // Busy folders change many times a second. Collect changes until they pause for
+                // QuietPeriod (at most MaxBatchDelay) so one rebuild covers the whole burst.
+                var batch = new HashSet<string>(watcher.Drain(out invalidations), StringComparer.OrdinalIgnoreCase);
+                var started = Stopwatch.GetTimestamp();
+                while (invalidations == 0)
+                {
+                    var left = MaxBatchDelay - Stopwatch.GetElapsedTime(started);
+                    if (left <= TimeSpan.Zero)
+                        break;
+                    next = watcher.WaitAsync(token).AsTask();
+                    var quiet = Task.Delay(left < QuietPeriod ? left : QuietPeriod, token);
+                    if (await Task.WhenAny(next, quiet).ConfigureAwait(false) != next)
+                        break;
+                    if (!await next.ConfigureAwait(false))
+                        break;
+                    next = null;
+                    batch.UnionWith(watcher.Drain(out var more));
+                    invalidations += more;
+                }
+                token.ThrowIfCancellationRequested();
+                pending = batch.ToArray();
                 if (invalidations > 0)
                 {
                     Interlocked.Add(ref _overflows, invalidations);
