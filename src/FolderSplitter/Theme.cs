@@ -7,7 +7,7 @@ namespace QuadExplorer;
 internal static class Theme
 {
     private sealed record Palette(Color Canvas, Color Surface, Color Border, Color Text,
-        Color Muted, Color Accent, Color Selected, Color ErrorText, Color Hover, Color Pressed);
+        Color Muted, Color Accent, Color Selected, Color ErrorText, Color Hover, Color Pressed, bool Dark = false);
 
     private static readonly Palette Light = new(
         Color.FromArgb(246, 247, 249), Color.White, Color.FromArgb(222, 226, 232),
@@ -18,7 +18,27 @@ internal static class Theme
         Color.FromArgb(27, 30, 35), Color.FromArgb(35, 39, 45), Color.FromArgb(66, 73, 83),
         Color.FromArgb(237, 240, 245), Color.FromArgb(172, 181, 194), Color.FromArgb(112, 183, 255),
         Color.FromArgb(39, 65, 92), Color.FromArgb(255, 154, 143),
-        Color.FromArgb(44, 53, 64), Color.FromArgb(49, 79, 110));
+        Color.FromArgb(44, 53, 64), Color.FromArgb(49, 79, 110), Dark: true);
+    // Softer choices for long sessions: warm beige, muted green, and a dark theme with less contrast.
+    private static readonly Palette Beige = new(
+        Color.FromArgb(240, 234, 222), Color.FromArgb(250, 246, 238), Color.FromArgb(222, 212, 194),
+        Color.FromArgb(58, 50, 40), Color.FromArgb(118, 106, 90), Color.FromArgb(150, 92, 36),
+        Color.FromArgb(238, 226, 204), Color.FromArgb(150, 45, 35),
+        Color.FromArgb(244, 236, 222), Color.FromArgb(232, 220, 198));
+    private static readonly Palette Green = new(
+        Color.FromArgb(230, 238, 230), Color.FromArgb(242, 247, 241), Color.FromArgb(205, 220, 204),
+        Color.FromArgb(36, 52, 40), Color.FromArgb(92, 112, 96), Color.FromArgb(40, 118, 74),
+        Color.FromArgb(220, 236, 222), Color.FromArgb(150, 45, 35),
+        Color.FromArgb(230, 242, 231), Color.FromArgb(210, 230, 212));
+    private static readonly Palette Dim = new(
+        Color.FromArgb(40, 42, 46), Color.FromArgb(48, 51, 56), Color.FromArgb(70, 74, 80),
+        Color.FromArgb(200, 203, 208), Color.FromArgb(150, 155, 162), Color.FromArgb(125, 170, 215),
+        Color.FromArgb(58, 72, 88), Color.FromArgb(230, 150, 140),
+        Color.FromArgb(56, 62, 70), Color.FromArgb(64, 80, 98), Dark: true);
+    private static readonly Dictionary<string, Palette> Palettes = new()
+    {
+        ["light"] = Light, ["dark"] = Dark, ["beige"] = Beige, ["green"] = Green, ["dim"] = Dim
+    };
     private static Palette current = Light;
     private static readonly FlatRenderer Renderer = new();
     private const int CornerRadius = 7;
@@ -38,16 +58,12 @@ internal static class Theme
     public static Color Accent => current.Accent;
     public static Color Selected => current.Selected;
     public static Color ErrorText => current.ErrorText;
-    public static bool IsDark => ReferenceEquals(current, Dark);
+    public static bool IsDark => current.Dark;
 
     public static void Set(string mode)
     {
-        current = mode?.Trim().ToLowerInvariant() switch
-        {
-            "light" => Light,
-            "dark" => Dark,
-            _ => throw new ArgumentException("Theme must be light or dark.", nameof(mode))
-        };
+        current = Palettes.TryGetValue(mode?.Trim().ToLowerInvariant() ?? "", out var palette) ? palette
+            : throw new ArgumentException("Unknown color theme.", nameof(mode));
     }
 
     // Does not create handles, activate a control, or change any system theme setting.
@@ -120,7 +136,7 @@ internal static class Theme
 
     private static Color Recolor(Color value, bool foreground, Color fallback)
     {
-        foreach (Palette palette in new[] { Light, Dark })
+        foreach (Palette palette in Palettes.Values)
         {
             int argb = value.ToArgb();
             if (foreground)

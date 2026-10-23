@@ -103,6 +103,8 @@ internal static class Program
         foreach (string? invalid in new string?[] { null, "", " ", "unsupported", "system" })
             Equal("light", SessionStore.Normalize(new SessionState { ColorTheme = invalid! }).ColorTheme);
         Equal("dark", SessionStore.Normalize(new SessionState { ColorTheme = " DARK " }).ColorTheme);
+        foreach (string theme in new[] { "beige", "green", "dim" })
+            Equal(theme, SessionStore.Normalize(new SessionState { ColorTheme = theme.ToUpperInvariant() }).ColorTheme);
         var path = FilePath("appearance", "session.json");
         File.WriteAllText(path, "{}");
         var legacy = SessionStore.Load(path);

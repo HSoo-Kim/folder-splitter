@@ -112,7 +112,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
   - **Other formats**: Photos use Windows thumbnails; Office, text and other documents use installed Explorer preview handlers. Wheel input over a document goes to its handler rather than the file list; scrolling and paging support depend on the handler.
 
 ### Appearance and settings
-- **Light/dark theme**: Toggle at the top right; the file lists follow too.
+- **Color themes**: Pick `Light`, `Dark` or the easier-on-the-eyes `Beige`, `Soft green` and `Soft dark` (a lower-contrast dark) from the menu at the top right. The file list background and text change too.
 - **Languages**: 한국어, English, 简体中文, 日本語.
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
 - **Workspaces**: `Workspaces` at the top saves the current panes and tabs under a name and opens them again later (up to 20). Handy when switching between projects.

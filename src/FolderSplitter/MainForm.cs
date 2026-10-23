@@ -38,7 +38,7 @@ public sealed class MainForm : Form, IMessageFilter
     private bool closeToTray;
     private bool exiting;
     private bool trayNoticeShown;
-    private readonly ToolStripButton themeButton = new() { AccessibleName = "Color theme" };
+    private readonly ToolStripDropDownButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
     private bool showFolderTree;
     private readonly List<Action> languageBindings = [];
@@ -518,7 +518,18 @@ public sealed class MainForm : Form, IMessageFilter
         toolbar.Items.Add(workspaceButton);
         languageBindings.Add(RefreshThemeButton);
         RefreshThemeButton();
-        themeButton.Click += (_, _) => SetColorTheme(colorTheme == "dark" ? "light" : "dark");
+        themeButton.DropDownItems.Add("\u2026");
+        themeButton.DropDownOpening += (_, _) =>
+        {
+            foreach (var old in themeButton.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
+            foreach (string mode in SessionStore.ColorThemes)
+            {
+                var item = new ToolStripMenuItem(text.T(ThemeName(mode))) { Checked = mode == colorTheme };
+                item.Click += (_, _) => SetColorTheme(mode);
+                themeButton.DropDownItems.Add(item);
+            }
+            Theme.Apply(toolbar);
+        };
         themeButton.Alignment = ToolStripItemAlignment.Right;
         themeButton.Overflow = ToolStripItemOverflow.Never;
         var help = new ToolStripButton
@@ -637,10 +648,14 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void RefreshThemeButton()
     {
-        themeButton.Text = text.T(colorTheme == "dark" ? "Dark mode" : "Light mode");
-        themeButton.ToolTipText = text.T(colorTheme == "dark" ? "Switch to light mode" : "Switch to dark mode");
-        themeButton.Checked = colorTheme == "dark";
+        themeButton.Text = text.T(ThemeName(colorTheme));
+        themeButton.ToolTipText = text.T("Choose a color theme");
     }
+
+    private static string ThemeName(string mode) => mode switch
+    {
+        "dark" => "Dark mode", "beige" => "Beige", "green" => "Soft green", "dim" => "Soft dark", _ => "Light mode"
+    };
 
     private void ApplyAppearance()
     {

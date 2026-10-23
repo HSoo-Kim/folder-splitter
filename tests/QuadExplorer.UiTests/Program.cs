@@ -467,6 +467,16 @@ internal static partial class Program
                     && visual.GetColor(1, out int listText) == 0 && listText == ColorTranslator.ToWin32(Theme.Text),
                     "dark theme sets the Shell folder view's own text, background and sorted-column colors");
                 CaptureLanguage(form, "theme-dark");
+                foreach (var (mode, dark) in new[] { ("beige", false), ("green", false), ("dim", true) })
+                {
+                    form.SetColorTheme(mode);
+                    Check(form.ColorTheme == mode && Theme.IsDark == dark && form.BackColor == Theme.Canvas
+                        && form.FolderTree.Tree.BackColor == Theme.Canvas
+                        && visual.GetColor(2, out int back) == 0 && back == ColorTranslator.ToWin32(Theme.Surface)
+                        && visual.GetColor(1, out int fore) == 0 && fore == ColorTranslator.ToWin32(Theme.Text),
+                        $"{mode} theme recolors the app and the file list");
+                }
+                form.SetColorTheme("dark");
                 await WindowRestored(form, () => PostMessage(form.Handle, 0x0312, 0x4653, 0)); // WM_HOTKEY Win+Alt+E
                 Check(form.WindowState != FormWindowState.Minimized, "Win+Alt+E hotkey restores a minimized window");
                 await WindowRestored(form, () => PostMessage(form.Handle, QuadExplorer.Program.ActivationMessage(session), 0, 0));
