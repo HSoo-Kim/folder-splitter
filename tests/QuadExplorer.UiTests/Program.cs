@@ -719,6 +719,11 @@ internal static partial class Program
                 Check(string.Equals(form.Preview.CurrentPath, photo, StringComparison.OrdinalIgnoreCase),
                     "unpinning the preview follows the current selection again");
                 form.OpenPreviewWindow(textFile);
+                var mainPreview = form.Preview.RectangleToScreen(form.Preview.ClientRectangle);
+                var firstWindow = form.PreviewWindows[0].FindForm()!.Bounds;
+                var work = Screen.FromControl(form).WorkingArea;
+                bool room = work.Right - form.Right >= firstWindow.Width || form.Left - work.Left >= firstWindow.Width;
+                Check(!room || !firstWindow.IntersectsWith(mainPreview), "a new preview window opens beside the main window, not over its preview");
                 form.OpenPreviewWindow(photo);
                 Check(form.PreviewWindows.Count == 2 && string.Equals(form.PreviewWindows[0].CurrentPath, textFile, StringComparison.OrdinalIgnoreCase)
                     && form.PreviewWindows[1].HasImage, "files open in their own preview windows");

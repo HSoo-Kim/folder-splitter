@@ -14,11 +14,15 @@ internal static class Program
         string sessionPath = SessionStore.DefaultPath;
         var text = new UiText(SessionStore.Load(sessionPath).Language);
         var folders = new List<string>();
-        bool toggle = false;
+        bool toggle = false, hidden = false, minimized = false;
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--toggle")
                 toggle = true;
+            else if (args[i] == "--hidden")
+                hidden = true;
+            else if (args[i] == "--minimized")
+                minimized = true;
             else if (args[i] == "--wait-pid" && i + 1 < args.Length)
                 WaitForExit(args[++i]);
             else if (args[i] == "--session" && i + 1 < args.Length)
@@ -53,7 +57,10 @@ internal static class Program
         var search = new IndependentSearchBackend(roots, storePath);
         _ = search.BuildOrLoadAsync().ContinueWith(task => System.Diagnostics.Debug.WriteLine(task.Exception),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-        Application.Run(new MainForm(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync));
+        Application.Run(new MainForm(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync)
+        {
+            StartMinimized = hidden || minimized, StartHidden = hidden
+        });
     }
 
     // After an update the new executable starts before the old one has exited.

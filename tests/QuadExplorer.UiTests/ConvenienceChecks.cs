@@ -50,9 +50,17 @@ internal static partial class Program
                 await drained.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 int widthDuring = (int)SendMessage(list, 0x101D, 0, 0);
                 bool pendingPaint = GetUpdateRect(list, 0, false);
-                PostMessage(header, 0x202, 0, At(column.Right + 90));
-                Check(widthDuring > widthBefore && !pendingPaint,
+                bool tracking = form.ColumnDividerDragging;
+                PostMessage(header, 0x200, 1, At(column.Right + 40));
+                PostMessage(header, 0x202, 0, At(column.Right + 40));
+                var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void Released(object? sender, EventArgs args) { Application.Idle -= Released; released.TrySetResult(); }
+                Application.Idle += Released;
+                await released.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                int widthAfter = (int)SendMessage(list, 0x101D, 0, 0);
+                Check(tracking && widthDuring == widthBefore + 91 && !pendingPaint,
                     "dragging a column divider resizes and repaints the column before the button is released");
+                Check(!form.ColumnDividerDragging && widthAfter == widthBefore + 41, "releasing the divider keeps the width where the mouse stopped");
                 var segments = ExplorerPane.PathSegments(@"C:\Users\Someone\Data");
                 Check(segments.Select(segment => segment.Label).SequenceEqual(["C:", "Users", "Someone", "Data"])
                     && segments[2].Path == @"C:\Users\Someone", "breadcrumb splits a drive path into folders");
@@ -144,6 +152,20 @@ internal static partial class Program
                 await Transfer(move: true);
                 Check(File.Exists(Path.Combine(right, "move-me.txt")) && !File.Exists(moveMe), "move takes the item to the other pane's folder");
 
+                Check(MainForm.ShouldRestartForMemory(101L << 20, 100, TimeSpan.FromHours(1), unobtrusive: true)
+                    && !MainForm.ShouldRestartForMemory(99L << 20, 100, TimeSpan.FromHours(1), unobtrusive: true)
+                    && !MainForm.ShouldRestartForMemory(500L << 20, 100, TimeSpan.FromMinutes(10), unobtrusive: true)
+                    && !MainForm.ShouldRestartForMemory(500L << 20, 100, TimeSpan.FromHours(1), unobtrusive: false)
+                    && !MainForm.ShouldRestartForMemory(500L << 20, 0, TimeSpan.FromHours(1), unobtrusive: true),
+                    "automatic restart waits for the memory threshold, uptime and a hidden or minimized window, and can be off");
+                Check(form.AutoRestartMemory == 100 && SessionStore.Normalize(new SessionState { AutoRestartMemory = 7 }).AutoRestartMemory == 100,
+                    "automatic restart defaults to 100 MB");
+                form.SetAutoRestartMemory(300);
+                IReadOnlyList<string>? restartArguments = null;
+                form.RestartLauncher = arguments => { restartArguments = arguments; return false; };
+                form.RestartApplication();
+                Check(restartArguments is { } given && given[0] == "--wait-pid" && given.Contains("--session") && given.Contains(session)
+                    && !given.Contains("--hidden") && !form.IsDisposed, "cleaning up memory restarts with the same session and state");
                 form.SaveWorkspace("Research");
                 form.SaveWorkspace("Scratch");
                 form.DeleteWorkspace("Scratch");
@@ -163,6 +185,7 @@ internal static partial class Program
         Application.Run(form);
         Check(SessionStore.Load(session).Workspaces.Select(workspace => workspace.Name).SequenceEqual(["Research"]),
             "saved workspaces persist");
+        Check(SessionStore.Load(session).AutoRestartMemory == 300, "the automatic restart threshold persists");
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]

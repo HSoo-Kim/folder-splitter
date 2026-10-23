@@ -117,6 +117,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
 - **Workspaces**: `Workspaces` at the top saves the current panes and tabs under a name and opens them again later (up to 20). Handy when switching between projects.
 - **Version and updates**: The lower left shows the current version and, when a new release is out, `Update` beside it. Clicking it downloads the new version, swaps it in and restarts, keeping your tabs and settings. Nothing is installed until you click.
+- **Memory cleanup**: The Windows File Explorer component used for the file lists keeps a little memory for every folder visited and only returns it when the app exits. Once memory grew past a threshold (100 MB by default), the app saves its tabs, layout and settings and restarts quietly while the window is hidden or minimized. In `Settings` → `Memory cleanup` choose 100, 200, 300 or 500 MB or Off, or restart right away with `Clean up memory now`.
 
 File lists are native Windows lists, so column sorting and right-click menus are handled by the Windows Shell. The Windows 11 Explorer command bar and tab UI are not embedded.
 

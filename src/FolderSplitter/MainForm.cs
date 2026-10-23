@@ -88,6 +88,17 @@ public sealed class MainForm : Form, IMessageFilter
     private int activePane;
     private int previousPane = -1;
     private readonly List<(Form Window, PreviewPane Pane)> previewWindows = [];
+    private int autoRestartMemory;
+    private long memoryBaseline;
+    private bool restarting;
+    private readonly DateTime startedAt = DateTime.UtcNow;
+    private readonly System.Windows.Forms.Timer memoryTimer = new() { Interval = 5 * 60 * 1000 };
+    private readonly ToolStripMenuItem memoryMenu = new();
+    private (nint Header, nint List, int Column, int StartX, int StartWidth)? columnDrag;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartMinimized { get; init; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartHidden { get; init; }
+    // Tests replace the process launch; it receives the arguments and reports whether a new instance started.
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal Func<IReadOnlyList<string>, bool>? RestartLauncher { get; set; }
     private readonly List<Workspace> workspaces;
     private readonly ToolStripDropDownButton workspaceButton = new() { AccessibleName = "Workspaces" };
     internal event Action<bool, string?>? FileOperationFinished;
@@ -125,6 +136,8 @@ public sealed class MainForm : Form, IMessageFilter
         favorites = [.. initialState.Favorites];
         deletedFavorites = [.. initialState.DeletedFavorites];
         workspaces = [.. initialState.Workspaces];
+        autoRestartMemory = initialState.AutoRestartMemory;
+        memoryTimer.Tick += (_, _) => CheckMemory();
         explorerFavoritesImported = initialState.ExplorerFavoritesImported;
         sidebarWidth = initialState.SidebarWidth;
         favoritesExpanded = initialState.FavoritesExpanded;
@@ -358,9 +371,12 @@ public sealed class MainForm : Form, IMessageFilter
         sidebar.Visible = initialState.ShowSidebar;
         sidebarSplitter.Visible = initialState.ShowSidebar;
         saveTimer.Tick += (_, _) => { saveTimer.Stop(); SaveSession(); };
+        Load += (_, _) => { if (StartMinimized) WindowState = FormWindowState.Minimized; };
         Shown += (_, _) =>
         {
-            if (initialState.Maximized) WindowState = FormWindowState.Maximized;
+            if (StartHidden && closeToTray) BeginInvoke(Hide);
+            memoryTimer.Start();
+            if (initialState.Maximized && !StartMinimized) WindowState = FormWindowState.Maximized;
             UpdateMinimumSize();
             if (WindowState == FormWindowState.Normal)
             {
@@ -566,6 +582,10 @@ public sealed class MainForm : Form, IMessageFilter
         autoUpdateItem.Checked = autoUpdate;
         autoUpdateItem.CheckedChanged += (_, _) => SetAutoUpdate(autoUpdateItem.Checked);
         settings.DropDownItems.Add(autoUpdateItem);
+        BindText(memoryMenu, "Memory cleanup");
+        memoryMenu.DropDownItems.Add("\u2026");
+        memoryMenu.DropDownOpening += (_, _) => BuildMemoryMenu();
+        settings.DropDownItems.Add(memoryMenu);
         toolbar.Items.Add(settings);
         toolbar.Layout += (_, _) =>
         {
@@ -866,9 +886,14 @@ public sealed class MainForm : Form, IMessageFilter
             StartPosition = FormStartPosition.Manual, AutoScaleMode = AutoScaleMode.Dpi, Font = Font,
             Size = new Size(520, 700), MinimumSize = new Size(260, 260)
         };
+        // Open beside the main window when there is room, so the new window never hides the preview it came from.
         Rectangle screen = Screen.FromControl(this).WorkingArea;
-        window.Location = new Point(Math.Clamp(Right - window.Width - offset, screen.Left, Math.Max(screen.Left, screen.Right - window.Width)),
-            Math.Clamp(Top + offset, screen.Top, Math.Max(screen.Top, screen.Bottom - window.Height)));
+        window.Height = Math.Min(Math.Max(window.Height, Height), screen.Height);
+        int left = Right + 8 + offset - 40 <= screen.Right - window.Width ? Right + 8 + offset - 40
+            : Left - window.Width - 8 - offset + 40 >= screen.Left ? Left - window.Width - 8 - offset + 40
+            : Left + offset;
+        window.Location = new Point(Math.Clamp(left, screen.Left, Math.Max(screen.Left, screen.Right - window.Width)),
+            Math.Clamp(Top + offset - 40, screen.Top, Math.Max(screen.Top, screen.Bottom - window.Height)));
         window.Controls.Add(pane);
         window.FormClosed += (_, _) =>
         {
@@ -1566,6 +1591,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     public bool PreFilterMessage(ref Message m)
     {
+        if (TrackColumnDivider(ref m)) return true;
         if ((!ContainsFocus && previewWindow?.ContainsFocus != true && !previewWindows.Any(entry => entry.Window.ContainsFocus))
             || tabDragging) return false;
         // Preview windows are owned by this form and always sit above it, so they get the wheel first.
@@ -1594,13 +1620,6 @@ public sealed class MainForm : Form, IMessageFilter
                 panes[visiblePanes[target]].ActiveView?.Travel(button == 1 ? 0x4000u : 0x8000u);
             return button is 1 or 2;
         }
-        // The file list resizes a column while its header divider is dragged, but the repaint can wait
-        // until the button is released. Paint the list right after each drag step instead.
-        if (m.Msg == 0x200 && ((long)m.WParam & 0x1) != 0 && IsColumnHeader(m.HWnd))
-        {
-            nint header = m.HWnd;
-            BeginInvoke(() => { if (GetParent(header) is var list and not 0) RedrawWindow(list, 0, 0, 0x0100 | 0x0080); }); // RDW_UPDATENOW | RDW_ALLCHILDREN
-        }
         if (m.Msg is 0x100 or 0x104)
         {
             Keys key = (Keys)(int)m.WParam | ModifierKeys;
@@ -1610,6 +1629,144 @@ public sealed class MainForm : Form, IMessageFilter
         }
         if (m.Msg >= 0x100 && m.Msg <= 0x109) return Active.ActiveView?.TranslateKey(ref m) ?? false;
         return false;
+    }
+
+    // The hosted file list waits until the button is released to resize a column. Track the divider
+    // here instead and set the width on every mouse move, as File Explorer does.
+    private bool TrackColumnDivider(ref Message m)
+    {
+        if (columnDrag is { } drag)
+        {
+            int x = unchecked((short)(long)m.LParam);
+            switch (m.Msg)
+            {
+                case 0x200 when m.HWnd == drag.Header: // WM_MOUSEMOVE
+                    int minimum = (int)Math.Round(24 * DeviceDpi / 96d);
+                    SendMessage(drag.List, 0x101E, drag.Column, Math.Max(minimum, drag.StartWidth + x - drag.StartX)); // LVM_SETCOLUMNWIDTH
+                    UpdateWindow(drag.List);
+                    Cursor.Current = Cursors.VSplit;
+                    return true;
+                case 0x202 when m.HWnd == drag.Header: // WM_LBUTTONUP
+                    columnDrag = null;
+                    ReleaseCapture();
+                    return true;
+                case 0x100 when (Keys)(int)m.WParam == Keys.Escape:
+                    SendMessage(drag.List, 0x101E, drag.Column, drag.StartWidth);
+                    columnDrag = null;
+                    ReleaseCapture();
+                    return true;
+                case 0x215: // WM_CAPTURECHANGED
+                    columnDrag = null;
+                    return false;
+            }
+            return false;
+        }
+        if (m.Msg != 0x201 || !IsColumnHeader(m.HWnd)) return false; // WM_LBUTTONDOWN
+        var hit = new HeaderHit { X = unchecked((short)(long)m.LParam), Y = unchecked((short)((long)m.LParam >> 16)) };
+        SendMessage(m.HWnd, 0x1206, 0, ref hit); // HDM_HITTEST
+        if ((hit.Flags & 0x4) == 0 || hit.Item < 0) return false; // HHT_ONDIVIDER
+        nint list = GetParent(m.HWnd);
+        columnDrag = (m.HWnd, list, hit.Item, hit.X, (int)SendMessage(list, 0x101D, hit.Item, 0)); // LVM_GETCOLUMNWIDTH
+        SetCapture(m.HWnd);
+        Cursor.Current = Cursors.VSplit;
+        return true;
+    }
+
+    internal bool ColumnDividerDragging => columnDrag is not null;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HeaderHit { public int X, Y; public uint Flags; public int Item; }
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern nint SendMessage(nint window, int message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern nint SendMessage(nint window, int message, nint wParam, ref HeaderHit hit);
+
+    [DllImport("user32.dll")]
+    private static extern bool UpdateWindow(nint window);
+
+    [DllImport("user32.dll")]
+    private static extern nint SetCapture(nint window);
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    // Memory inside Windows' hosted file list grows with every folder visited and is only returned when the
+    // process ends. Once it grew past the chosen amount, restart quietly while the window is out of the way.
+    internal static bool ShouldRestartForMemory(long growth, int thresholdMb, TimeSpan uptime, bool unobtrusive) =>
+        thresholdMb > 0 && uptime >= TimeSpan.FromMinutes(30) && unobtrusive && growth > thresholdMb * 1024L * 1024L;
+
+    private void CheckMemory()
+    {
+        if (restarting || updating || autoRestartMemory == 0) return;
+        long current;
+        using (var process = Process.GetCurrentProcess()) current = process.PrivateMemorySize64;
+        var uptime = DateTime.UtcNow - startedAt;
+        if (memoryBaseline == 0)
+        {
+            // The search index fills memory once at startup; measure growth from after that.
+            if (uptime >= TimeSpan.FromMinutes(5) && search?.IsReady != false) memoryBaseline = current;
+            return;
+        }
+        bool unobtrusive = (!Visible || WindowState == FormWindowState.Minimized) && previewWindows.Count == 0
+            && !tabDragging && columnDrag is null && OwnedForms.All(form => !form.Visible || form == previewWindow);
+        if (ShouldRestartForMemory(current - memoryBaseline, autoRestartMemory, uptime, unobtrusive)) RestartApplication();
+    }
+
+    internal int AutoRestartMemory => autoRestartMemory;
+
+    internal void SetAutoRestartMemory(int megabytes)
+    {
+        autoRestartMemory = megabytes is 0 or 100 or 200 or 300 or 500 ? megabytes : 100;
+        ScheduleSave();
+    }
+
+    private void BuildMemoryMenu()
+    {
+        foreach (var old in memoryMenu.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
+        memoryMenu.DropDownItems.Add(text.T("Clean up memory now (restart)"), null, (_, _) => RestartApplication());
+        memoryMenu.DropDownItems.Add(new ToolStripSeparator());
+        memoryMenu.DropDownItems.Add(new ToolStripMenuItem(text.T("Restart automatically when hidden or minimized")) { Enabled = false });
+        foreach (int megabytes in new[] { 100, 200, 300, 500, 0 })
+        {
+            int choice = megabytes;
+            var item = new ToolStripMenuItem(choice == 0 ? text.T("Off") : text.T("After {0} MB more memory", choice))
+            {
+                Checked = autoRestartMemory == choice
+            };
+            item.Click += (_, _) => SetAutoRestartMemory(choice);
+            memoryMenu.DropDownItems.Add(item);
+        }
+        Theme.Apply(toolbar);
+    }
+
+    // Saves the session and starts a fresh instance in the same state (hidden, minimized or shown).
+    internal void RestartApplication()
+    {
+        if (restarting || updating) return;
+        var arguments = new List<string> { "--wait-pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        if (!sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase)) arguments.AddRange(["--session", sessionPath]);
+        if (!Visible) arguments.Add("--hidden");
+        else if (WindowState == FormWindowState.Minimized) arguments.Add("--minimized");
+        saveTimer.Stop();
+        SaveSession();
+        bool started;
+        if (RestartLauncher is { } launch) started = launch(arguments);
+        else
+        {
+            try
+            {
+                string exe = Environment.ProcessPath!;
+                var info = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! };
+                foreach (string argument in arguments) info.ArgumentList.Add(argument);
+                started = Process.Start(info) is not null;
+            }
+            catch (Win32Exception) { started = false; }
+        }
+        if (!started) { Active.SetLocalizedStatus("Could not restart Folder Splitter."); return; }
+        restarting = true;
+        ExitApplication();
     }
 
     private nint lastColumnHeader;
@@ -1629,8 +1786,6 @@ public sealed class MainForm : Form, IMessageFilter
     [DllImport("user32.dll")]
     private static extern nint GetParent(nint window);
 
-    [DllImport("user32.dll")]
-    private static extern bool RedrawWindow(nint window, nint rectangle, nint region, uint flags);
 
     private bool HandleShortcut(Keys key)
     {
@@ -1693,7 +1848,7 @@ public sealed class MainForm : Form, IMessageFilter
                 ExplorerFavoritesImported = explorerFavoritesImported,
                 WindowWidth = bounds.Width, WindowHeight = bounds.Height,
                 Maximized = WindowState == FormWindowState.Maximized,
-                ColumnRatio = layoutTree.Ratio,
+                ColumnRatio = layoutTree.Ratio, AutoRestartMemory = autoRestartMemory,
                 LeftRowRatio = layoutTree.First?.Ratio ?? .5, RightRowRatio = layoutTree.Second?.Ratio ?? .5
             });
             saveError = null;
@@ -1743,6 +1898,7 @@ public sealed class MainForm : Form, IMessageFilter
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
             previewTimer.Dispose();
+            memoryTimer.Dispose();
             tips.Dispose();
             trayIcon.Visible = false;
             trayIcon.ContextMenuStrip?.Dispose();
