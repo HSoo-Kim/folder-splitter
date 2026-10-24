@@ -272,16 +272,16 @@ public sealed class MainForm : Form, IMessageFilter
         sidebarSplitter.DoubleClick += (_, _) => SetSidebarVisible(false);
         var sideTitle = new Label
         {
-            Text = "QUICK ACCESS", Dock = DockStyle.Top, Height = 28,
+            Text = "Quick access", Dock = DockStyle.Top, Height = 28,
             Font = HeaderFont(), ForeColor = Theme.Muted,
             Padding = new Padding(7, 0, 0, 0)
         };
-        BindText(sideTitle, "QUICK ACCESS");
+        BindText(sideTitle, "Quick access");
         sideTitleLabel = sideTitle;
         places = new ListBox
         {
             Dock = DockStyle.Top, Height = 216, BorderStyle = BorderStyle.None, BackColor = Theme.Canvas,
-            ForeColor = Theme.Text, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 36,
+            ForeColor = Theme.Text, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 32,
             IntegralHeight = false, AccessibleName = "Quick access"
         };
         places.DrawItem += DrawPlace;
@@ -308,7 +308,7 @@ public sealed class MainForm : Form, IMessageFilter
         favoritePlaces = new ListBox
         {
             Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Theme.Canvas,
-            ForeColor = Theme.Text, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 36,
+            ForeColor = Theme.Text, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 32,
             IntegralHeight = false, AccessibleName = "Favorites"
         };
         favoritePlaces.DrawItem += DrawPlace;
@@ -334,25 +334,31 @@ public sealed class MainForm : Form, IMessageFilter
         favoritePlaces.ContextMenuStrip = favoriteMenu;
         favoritePlaces.MouseDown += (_, e) =>
         { if (e.Button == MouseButtons.Right) favoritePlaces.SelectedIndex = favoritePlaces.IndexFromPoint(e.Location); };
-        favoritesHeader = Theme.Button("", "Collapse favorites", ToggleFavorites);
+        favoritesHeader = Theme.Button("", "Collapse favorites", ToggleFavorites, quiet: true);
         favoritesHeader.Dock = DockStyle.Top;
         favoritesHeader.Height = 32;
         favoritesHeader.Font = HeaderFont();
         favoritesHeader.TextAlign = ContentAlignment.MiddleLeft;
         favoritesHeader.ForeColor = Theme.Muted;
         favoritesHeader.FlatAppearance.BorderSize = 0;
+        favoritesHeader.BackColor = Theme.Canvas;
         BindTip(favoritesHeader, "Collapse / expand favorites");
         BindTip(sidebarSplitter, "Drag to resize quick access; double-click to hide");
         favoritesHeader.ContextMenuStrip = favoriteMenu;
-        var manage = Theme.Button("Manage...", "Manage favorites", () => favoriteMenu.Show(Cursor.Position));
+        var manage = Theme.Button("Manage...", "Manage favorites", () => favoriteMenu.Show(Cursor.Position), quiet: true);
         manage.Dock = DockStyle.Bottom;
+        manage.BackColor = Theme.Canvas;
+        manage.TextAlign = ContentAlignment.MiddleLeft;
+        manage.Padding = new Padding(6, 0, 0, 0);
         manage.AutoSize = true;
         BindText(manage, "Manage...");
         BindTip(manage, "Manage favorites: import, remove all, restore");
-        var pin = Theme.Button("+  Pin folder", "Pin current folder to favorites", () => AddFavorite(Active.CurrentPath), 152);
+        var pin = Theme.Button("+  Pin folder", "Pin current folder to favorites", () => AddFavorite(Active.CurrentPath), 152, quiet: true);
         pin.Dock = DockStyle.Bottom;
         pin.Height = 36;
         pin.BackColor = Theme.Canvas;
+        pin.TextAlign = ContentAlignment.MiddleLeft;
+        pin.Padding = new Padding(6, 0, 0, 0);
         BindText(pin, "+  Pin folder");
         BindTip(pin, "Pin current folder to favorites (Ctrl+D)");
         sidebar.Controls.Add(favoritePlaces);
@@ -368,13 +374,14 @@ public sealed class MainForm : Form, IMessageFilter
         };
         folderTree.OpenRequested += OpenTreeFolder;
         // The splitter resizes this bottom panel; the favorites list fills the space left above it.
-        treeHeader = Theme.Button("", "Collapse folder tree", () => SetFolderTreeVisible(!showFolderTree));
+        treeHeader = Theme.Button("", "Collapse folder tree", () => SetFolderTreeVisible(!showFolderTree), quiet: true);
         treeHeader.Dock = DockStyle.Top;
         treeHeader.Height = 32;
         treeHeader.Font = favoritesHeader.Font;
         treeHeader.TextAlign = ContentAlignment.MiddleLeft;
         treeHeader.ForeColor = Theme.Muted;
         treeHeader.FlatAppearance.BorderSize = 0;
+        treeHeader.BackColor = Theme.Canvas;
         BindTip(treeHeader, "Collapse / expand folder tree (Ctrl+Shift+E)");
         languageBindings.Add(UpdateTreeHeader);
         UpdateTreeHeader();
@@ -393,9 +400,9 @@ public sealed class MainForm : Form, IMessageFilter
         UpdateSidebarContent();
 
         BuildToolbar();
-        // A little air between the outlined top buttons, so each outline reads as its own button.
+        // Adjacent top buttons touch, so each run reads as one rounded group.
         foreach (ToolStripItem item in toolbar.Items)
-            if (item is ToolStripButton or ToolStripDropDownButton) item.Margin = new Padding(2, 1, 2, 2);
+            if (item is ToolStripButton or ToolStripDropDownButton) item.Margin = new Padding(0, 1, 0, 2);
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
         workspace.Controls.Add(paneHost);
         workspace.Controls.Add(previewSplitter);
@@ -492,7 +499,7 @@ public sealed class MainForm : Form, IMessageFilter
     private void BuildToolbar()
     {
         toolbar.Padding = new Padding(10, 7, 10, 7);
-        var brand = new ToolStripLabel("Folder Splitter") { Font = new Font(Font, FontStyle.Bold), Margin = new Padding(5, 0, 18, 0) };
+        var brand = new ToolStripLabel("Folder Splitter") { Font = new Font(Theme.TitleFace, Font.SizeInPoints + 0.5f), Margin = new Padding(5, 0, 18, 0) };
         toolbar.Items.Add(brand);
         sidebarButton.CheckOnClick = true;
         sidebarButton.Checked = initialState.ShowSidebar;
@@ -529,8 +536,9 @@ public sealed class MainForm : Form, IMessageFilter
             toolbar.Items.Add(button);
             if (count == 3)
             {
-                var arrangements = new ToolStripDropDownButton("\u25BE")
+                var arrangements = new ToolStripDropDownButton("\uE70D")
                 {
+                    Font = new Font(Theme.IconFont, 8),
                     AccessibleName = "Three pane arrangements",
                     ToolTipText = text.T("Choose three-pane arrangement: left/right or top/bottom 2:1"),
                     ShowDropDownArrow = false
@@ -601,6 +609,18 @@ public sealed class MainForm : Form, IMessageFilter
         };
         languageBindings.Add(() => languageSelector.ToolTipText = text.T("Choose UI language"));
         languageSelector.ToolTipText = text.T("Choose UI language");
+        // Drawn by the app, so the box follows the theme's colors instead of staying a white system box.
+        languageSelector.ComboBox.DrawMode = DrawMode.OwnerDrawFixed;
+        Theme.ThemeComboBox(languageSelector.ComboBox);
+        languageSelector.ComboBox.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0) return;
+            bool highlighted = e.State.HasFlag(DrawItemState.Selected) && !e.State.HasFlag(DrawItemState.ComboBoxEdit);
+            using var back = new SolidBrush(highlighted ? Theme.Selected : Theme.Surface);
+            e.Graphics.FillRectangle(back, e.Bounds);
+            TextRenderer.DrawText(e.Graphics, languageSelector.Items[e.Index]?.ToString(), e.Font ?? Font, e.Bounds, Theme.Text,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        };
         toolbar.Items.Add(languageSelector);
         toolbar.Items.Add(languageLabel);
         toolbar.Items.Add(themeButton); // Right-aligned items run right to left: theme sits left of the language label.
@@ -713,9 +733,9 @@ public sealed class MainForm : Form, IMessageFilter
         "Malgun Gothic", "Pretendard", "Noto Sans KR", "NanumGothic", "NanumBarunGothic", "NanumSquare",
         "Spoqa Han Sans Neo", "IBM Plex Sans KR", "SUIT", "Arial", "Calibri", "Tahoma", "Verdana"
     ];
-    private string UiFace => fontFamily ?? "Segoe UI";
+    private string UiFace => fontFamily ?? Theme.UiFace;
     private float UiPoints => textSize switch { "small" => 9f, "large" => 10.5f, _ => 9.5f };
-    private Font HeaderFont() => new(UiFace, UiPoints - 1.5f, FontStyle.Bold);
+    private Font HeaderFont() => fontFamily is null ? new(Theme.TitleFace, UiPoints - 0.5f) : new(fontFamily, UiPoints - 0.5f, FontStyle.Bold);
     internal string? UiFontFamily => fontFamily;
     internal string TextSize => textSize;
 
@@ -745,7 +765,7 @@ public sealed class MainForm : Form, IMessageFilter
     private void BuildFontMenu()
     {
         foreach (var old in fontMenu.DropDownItems.Cast<ToolStripItem>().ToArray()) old.Dispose();
-        var standard = new ToolStripMenuItem(text.T("Standard ({0})", "Segoe UI")) { Checked = fontFamily is null };
+        var standard = new ToolStripMenuItem(text.T("Standard ({0})", Theme.UiFace)) { Checked = fontFamily is null };
         standard.Click += (_, _) => SetUiFont(null, textSize);
         fontMenu.DropDownItems.Add(standard);
         foreach (string face in FontCandidates.Where(FontInstalled))
@@ -1336,7 +1356,11 @@ public sealed class MainForm : Form, IMessageFilter
     {
         double scale = DeviceDpi / 96d;
         double height = sidebar.ClientSize.Height / scale;
-        places.Height = (int)Math.Round(Math.Clamp(height / 4, 108, 216) * scale);
+        // Rows follow the screen scale; quick access is as tall as its items, within a third of the sidebar.
+        int row = (int)Math.Round(28 * scale);
+        if (places.ItemHeight != row) places.ItemHeight = row;
+        if (favoritePlaces.ItemHeight != row) favoritePlaces.ItemHeight = row;
+        places.Height = Math.Min(Math.Max(1, places.Items.Count) * row, (int)Math.Round(Math.Clamp(height / 3, 108, 256) * scale));
         double tree = folderTreeHeight > 0 ? folderTreeHeight : Math.Clamp(height / 3, 120, 280);
         double room = Math.Max(80, height - places.Height / scale - 200);
         treePanel.Height = treeHeader.Height + (showFolderTree ? (int)Math.Round(Math.Clamp(tree, 80, room) * scale) : 0);
@@ -1479,8 +1503,10 @@ public sealed class MainForm : Form, IMessageFilter
     {
         if (e.Index < 0) return;
         bool selected = e.State.HasFlag(DrawItemState.Selected);
-        using var background = new SolidBrush(selected ? Theme.Selected : Theme.Sidebar);
+        using var background = new SolidBrush(Theme.Sidebar);
         e.Graphics.FillRectangle(background, e.Bounds);
+        // The selected row is a soft rounded wash, inset from the list edges.
+        if (selected) Theme.FillRounded(e.Graphics, Rectangle.Inflate(e.Bounds, -2, -2), Theme.Selected, DeviceDpi);
         var place = (Place)((ListBox)sender!).Items[e.Index];
         int iconSize = (int)Math.Round(16 * DeviceDpi / 96d);
         int gap = (int)Math.Round(10 * DeviceDpi / 96d);
@@ -1492,7 +1518,6 @@ public sealed class MainForm : Form, IMessageFilter
         TextRenderer.DrawText(e.Graphics, place.Label, Font, rect,
             selected ? Theme.Accent : Theme.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        e.DrawFocusRectangle();
     }
 
     private void OpenPlace()

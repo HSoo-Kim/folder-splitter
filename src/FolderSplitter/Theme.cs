@@ -114,8 +114,13 @@ internal static class Theme
     private static readonly Color FolderFront = Color.FromArgb(245, 192, 66);
 
     // Segoe Fluent Icons ships only with Windows 11; Windows 10 has the same glyphs in Segoe MDL2 Assets.
-    public static readonly string IconFont = new System.Drawing.Text.InstalledFontCollection().Families
-        .Any(family => family.Name == "Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
+    private static readonly HashSet<string> Installed = new System.Drawing.Text.InstalledFontCollection().Families
+        .Select(family => family.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    public static readonly string IconFont = Installed.Contains("Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
+    // Windows 11's UI typeface; Windows 10 keeps Segoe UI. Section titles use the semibold cut instead of bold.
+    public static readonly string UiFace = Installed.Contains("Segoe UI Variable Text") ? "Segoe UI Variable Text" : "Segoe UI";
+    public static readonly string TitleFace = Installed.Contains("Segoe UI Variable Text Semibold") ? "Segoe UI Variable Text Semibold"
+        : Installed.Contains("Segoe UI Semibold") ? "Segoe UI Semibold" : UiFace;
 
     public static Color Canvas => current.Canvas;
     public static Color Surface => current.Surface;
@@ -131,8 +136,11 @@ internal static class Theme
     public static Color Sidebar => current.SidebarColor ?? Canvas;
     public static Color ListBack => current.ListColor ?? Surface;
     public static Color SortColumn => current.SortColor ?? Canvas;
-    // Strips tagged with this show a faint rounded outline around every button, so their commands stand out.
+    // Strips tagged with this draw each run of adjacent buttons inside one quiet rounded group, so commands stay
+    // easy to find without an outline around every single button.
     public static readonly object OutlineItems = new();
+    // A ToolStripTextBox tagged with this is drawn as a rounded search field with a magnifier.
+    public static readonly object SearchField = new();
 
     public static void Set(string mode)
     {
@@ -194,10 +202,12 @@ internal static class Theme
     private static void ApplyStrip(ToolStrip strip)
     {
         strip.Renderer = Renderer;
-        strip.BackColor = strip is ToolStripDropDown ? Surface : Canvas;
+        strip.BackColor = strip is ToolStripDropDown || strip.AccessibleName?.EndsWith(" commands") == true
+            || strip.AccessibleName?.EndsWith(" breadcrumb") == true ? Surface : Canvas;
         strip.ForeColor = Text;
         foreach (ToolStripItem item in strip.Items)
         {
+            if (item is ToolStripSeparator && ReferenceEquals(strip.Tag, OutlineItems)) item.Margin = new Padding(3, 0, 3, 0);
             item.BackColor = strip.BackColor;
             item.ForeColor = Recolor(item.ForeColor, true, Text);
             if (item is ToolStripControlHost host) ApplyControl(host.Control);
@@ -273,7 +283,7 @@ internal static class Theme
         }
         else if (className.Equals("SysTreeView32", StringComparison.OrdinalIgnoreCase))
         {
-            Native.SendMessage(window, 0x111D, 0, ColorRef(Surface)); // TVM_SETBKCOLOR
+            Native.SendMessage(window, 0x111D, 0, ColorRef(Sidebar)); // TVM_SETBKCOLOR: the folder tree sits in the sidebar
             Native.SendMessage(window, 0x111E, 0, ColorRef(Text)); // TVM_SETTEXTCOLOR
         }
         if (Native.GetAncestor(window, 2) != window) return; // GA_ROOT, never an ancestor.
@@ -292,6 +302,94 @@ internal static class Theme
     private static int ColorRef(Color color) => color.R | color.G << 8 | color.B << 16;
     private static int Scale(int value, int dpi) => Math.Max(1, (int)Math.Round(value * dpi / 96d));
 
+    // A drop-down list box keeps its system frame and arrow, which stay white in dark themes. This paints the
+    // app's own rounded field and chevron over them after every system paint; the owner-drawn text stays.
+    internal static void ThemeComboBox(ComboBox box)
+    {
+        var frame = new ComboFrame(box);
+        if (box.IsHandleCreated) frame.AssignHandle(box.Handle);
+        box.HandleCreated += (_, _) => frame.AssignHandle(box.Handle);
+        box.HandleDestroyed += (_, _) => frame.ReleaseHandle();
+    }
+
+    private sealed class ComboFrame(ComboBox box) : NativeWindow
+    {
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (box.IsDisposed || !box.IsHandleCreated) return;
+            if (m.Msg is 0x000F or 0x0007 or 0x0008 or 0x02A3) // paint, focus changes, mouse leave
+            {
+                using var g = Graphics.FromHwnd(box.Handle);
+                Paint(g);
+            }
+            else if (m.Msg is 0x0317 or 0x0318 && m.WParam != 0) // WM_PRINT / WM_PRINTCLIENT, e.g. DrawToBitmap
+            {
+                using var g = Graphics.FromHdc(m.WParam);
+                Paint(g);
+            }
+        }
+
+        private void Paint(Graphics g)
+        {
+            int dpi = box.DeviceDpi;
+            var client = box.ClientRectangle;
+            int arrow = Scale(20, dpi), edge = Scale(2, dpi);
+            using (var surface = new SolidBrush(Surface))
+            {
+                g.FillRectangle(surface, client.Left, client.Top, client.Width, edge);
+                g.FillRectangle(surface, client.Left, client.Bottom - edge, client.Width, edge);
+                g.FillRectangle(surface, client.Left, client.Top, edge, client.Height);
+                g.FillRectangle(surface, client.Right - arrow - edge, client.Top, arrow + edge, client.Height);
+            }
+            using (var parent = new SolidBrush(box.Parent?.BackColor ?? Canvas))
+            using (var outside = new Region(client))
+            using (var path = Rounded(new Rectangle(0, 0, client.Width - 1, client.Height - 1), Scale(CornerRadius - 2, dpi)))
+            {
+                outside.Exclude(path);
+                g.FillRegion(parent, outside);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using var pen = new Pen(box.Focused ? Accent : Blend(Border, Muted));
+                g.DrawPath(pen, path);
+            }
+            using var glyph = new Font(IconFont, 8);
+            TextRenderer.DrawText(g, "\uE70D", glyph, new Rectangle(client.Right - arrow - edge, client.Top, arrow, client.Height), Muted,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+    }
+
+    // Draws a rounded input field (address or search box) on its parent; the text box itself has no border.
+    internal static void PaintField(Graphics g, Rectangle bounds, bool focused, int dpi)
+    {
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = Rounded(bounds, Scale(CornerRadius, dpi));
+        using var fill = new SolidBrush(Surface);
+        using var pen = new Pen(focused ? Accent : Blend(Border, Muted));
+        g.FillPath(fill, path);
+        g.DrawPath(pen, path);
+        g.SmoothingMode = smoothing;
+    }
+
+    // The rounded field drawn around a search box, with room for the magnifier on its left.
+    internal static Rectangle SearchFieldBounds(ToolStripItem item)
+    {
+        int dpi = item.Owner?.DeviceDpi ?? 96;
+        var b = item.Bounds;
+        return new Rectangle(b.Left - Scale(28, dpi), b.Top - Scale(4, dpi), b.Width + Scale(34, dpi), b.Height + Scale(7, dpi));
+    }
+
+    // Fills a rounded selection wash, for owner-drawn lists.
+    internal static void FillRounded(Graphics g, Rectangle bounds, Color color, int dpi)
+    {
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = Rounded(bounds, Scale(CornerRadius - 2, dpi));
+        using var brush = new SolidBrush(color);
+        g.FillPath(brush, path);
+        g.SmoothingMode = smoothing;
+    }
+
     private static GraphicsPath Rounded(Rectangle bounds, int radius)
     {
         var path = new GraphicsPath();
@@ -305,10 +403,12 @@ internal static class Theme
         return path;
     }
 
-    public static Button Button(string text, string accessibleName, Action action, int width = 34)
+    // Quiet buttons show no outline until they are hovered or focused, like toolbar and sidebar controls.
+    public static Button Button(string text, string accessibleName, Action action, int width = 34, bool quiet = false)
     {
         var button = new RoundedButton
         {
+            Quiet = quiet,
             Text = text, AccessibleName = accessibleName, Width = width, Height = 30,
             Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat,
             Margin = new Padding(2), BackColor = Surface, ForeColor = Text,
@@ -345,6 +445,8 @@ internal static class Theme
     {
         private bool hovered;
         private bool pressed;
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool Quiet { get; init; }
 
         public RoundedButton()
         {
@@ -403,8 +505,9 @@ internal static class Theme
             var smoothing = e.Graphics.SmoothingMode;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using (var brush = new SolidBrush(fill)) e.Graphics.FillPath(brush, shape);
-            using (var pen = new Pen(Enabled && (Focused || IsDefault) ? Accent : Border))
-                e.Graphics.DrawPath(pen, shape);
+            if (!Quiet || hovered || Focused)
+                using (var pen = new Pen(Enabled && (Focused || IsDefault) ? Accent : Border))
+                    e.Graphics.DrawPath(pen, shape);
             if (Focused && ShowFocusCues)
             {
                 var focus = Rectangle.Inflate(bounds, -inset, -inset);
@@ -450,6 +553,62 @@ internal static class Theme
     {
         public FlatRenderer() : base(new Colors()) { RoundedEdges = false; }
         protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            base.OnRenderToolStripBackground(e);
+            var strip = e.ToolStrip;
+            if (strip is ToolStripDropDown) return;
+            int dpi = strip.DeviceDpi;
+            var smoothing = e.Graphics.SmoothingMode;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            if (ReferenceEquals(strip.Tag, OutlineItems))
+                foreach (var group in Groups(strip))
+                {
+                    using var path = Rounded(group, Scale(CornerRadius, dpi));
+                    using var fill = new SolidBrush(Surface);
+                    using var pen = new Pen(Border);
+                    e.Graphics.FillPath(fill, path);
+                    e.Graphics.DrawPath(pen, path);
+                }
+            foreach (ToolStripItem item in strip.Items)
+            {
+                if (!item.Available || !ReferenceEquals(item.Tag, SearchField)) continue;
+                var field = SearchFieldBounds(item);
+                using var path = Rounded(field, Scale(CornerRadius, dpi));
+                using var fill = new SolidBrush(Surface);
+                bool focused = item is ToolStripControlHost { Control.Focused: true };
+                using var pen = new Pen(focused ? Accent : Blend(Border, Muted));
+                e.Graphics.FillPath(fill, path);
+                e.Graphics.DrawPath(pen, path);
+                using var glyph = new Font(IconFont, 9);
+                var icon = new Rectangle(field.Left + Scale(6, dpi), field.Top, Scale(18, dpi), field.Height);
+                TextRenderer.DrawText(e.Graphics, "\uE721", glyph, icon, Muted,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            }
+            e.Graphics.SmoothingMode = smoothing;
+        }
+
+        // Runs of adjacent buttons; separators, labels, boxes and gaps end a run.
+        private static IEnumerable<Rectangle> Groups(ToolStrip strip)
+        {
+            int gap = Scale(4, strip.DeviceDpi);
+            Rectangle? group = null;
+            foreach (var item in strip.Items.Cast<ToolStripItem>()
+                .Where(item => item.Available && item.Placement == ToolStripItemPlacement.Main).OrderBy(item => item.Bounds.Left))
+            {
+                bool button = item is ToolStripButton or ToolStripDropDownButton && item is not FolderTabButton;
+                if (button && group is { } open && item.Bounds.Left - open.Right <= gap)
+                {
+                    group = Rectangle.Union(open, item.Bounds);
+                    continue;
+                }
+                if (group is { } done) yield return Shrink(done);
+                group = button ? item.Bounds : null;
+            }
+            if (group is { } last) yield return Shrink(last);
+            Rectangle Shrink(Rectangle r) => new(r.Left, r.Top + 1, r.Width - 1, r.Height - 3);
+        }
         protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e) => PaintItem(e);
         protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs e) => PaintItem(e);
         protected override void OnRenderSplitButtonBackground(ToolStripItemRenderEventArgs e) => PaintItem(e);
@@ -459,40 +618,86 @@ internal static class Theme
         {
             bool isChecked = e.Item is ToolStripButton { Checked: true } or ToolStripMenuItem { Checked: true };
             bool active = e.Item.Enabled && (e.Item.Selected || e.Item.Pressed);
-            // Folder tabs keep a faint outline when idle so neighbouring tabs read as separate items.
-            bool tab = e.Item is FolderTabButton;
-            bool outlined = ReferenceEquals(e.ToolStrip?.Tag, OutlineItems);
-            bool outlineOnly = (outlined || tab) && !isChecked && !active;
-            if (!isChecked && !active && !outlineOnly) return;
             int dpi = e.ToolStrip?.DeviceDpi ?? 96;
-            var bounds = new Rectangle(1, 1, e.Item.Width - 3, e.Item.Height - 3);
-            if (bounds.Width <= 0 || bounds.Height <= 0) return;
             var smoothing = e.Graphics.SmoothingMode;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using var path = Rounded(bounds, Scale(CornerRadius, dpi));
-            using var brush = new SolidBrush(!e.Item.Enabled ? Surface
-                : e.Item.Pressed ? current.Pressed : isChecked ? Selected : current.Hover);
-            using var pen = new Pen(e.Item.Enabled && (isChecked || e.Item.Pressed) ? Accent
-                : outlineOnly ? (tab ? Border : Blend(Border, Muted)) : tab ? Blend(Border, Muted) : Border);
-            if (!outlineOnly) e.Graphics.FillPath(brush, path);
-            e.Graphics.DrawPath(pen, path);
+            if (e.Item is FolderTabButton tab) PaintTab(e.Graphics, tab, active, dpi);
+            else if (isChecked || active)
+            {
+                // A soft wash marks hover, press and the checked state; only hover adds a faint edge.
+                var bounds = new Rectangle(2, 2, e.Item.Width - 5, e.Item.Height - 5);
+                if (bounds.Width > 0 && bounds.Height > 0)
+                {
+                    using var path = Rounded(bounds, Scale(CornerRadius - 2, dpi));
+                    using var brush = new SolidBrush(!e.Item.Enabled ? Surface
+                        : e.Item.Pressed ? current.Pressed : isChecked ? Selected : current.Hover);
+                    e.Graphics.FillPath(brush, path);
+                    if (active && !e.Item.Pressed)
+                    {
+                        using var pen = new Pen(Border);
+                        e.Graphics.DrawPath(pen, path);
+                    }
+                }
+            }
             e.Graphics.SmoothingMode = smoothing;
+        }
+
+        // The viewed tab is a raised piece of the content surface; other tabs are plain text with a thin divider.
+        private static void PaintTab(Graphics g, FolderTabButton tab, bool active, int dpi)
+        {
+            int radius = Scale(CornerRadius, dpi);
+            if (tab.Checked)
+            {
+                var body = new Rectangle(0, 0, tab.Width - 1, tab.Height + radius);
+                using var path = Rounded(body, radius);
+                using var fill = new SolidBrush(Surface);
+                using var pen = new Pen(Border);
+                var clip = g.Clip;
+                g.SetClip(new Rectangle(0, 0, tab.Width, tab.Height));
+                g.FillPath(fill, path);
+                g.DrawPath(pen, path);
+                g.Clip = clip;
+                return;
+            }
+            if (active)
+            {
+                var hover = new Rectangle(1, Scale(3, dpi), tab.Width - 3, tab.Height - Scale(6, dpi));
+                using var path = Rounded(hover, Scale(CornerRadius - 2, dpi));
+                using var fill = new SolidBrush(tab.Pressed ? current.Pressed : current.Hover);
+                g.FillPath(fill, path);
+                return;
+            }
+            if (tab.Owner is { } owner && owner.Items.IndexOf(tab) is int index && index + 1 < owner.Items.Count
+                && owner.Items[index + 1] is FolderTabButton { Checked: true }) return;
+            using var divider = new Pen(Border);
+            int inset = tab.Height / 4;
+            g.DrawLine(divider, tab.Width - 1, inset, tab.Width - 1, tab.Height - inset);
         }
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
-            e.TextColor = e.Item.Enabled ? Recolor(e.Item.ForeColor, true, Text) : Muted;
+            bool isChecked = e.Item is ToolStripButton { Checked: true } && e.Item is not FolderTabButton;
+            e.TextColor = !e.Item.Enabled ? Muted : isChecked ? Accent : Recolor(e.Item.ForeColor, true, Text);
             base.OnRenderItemText(e);
         }
 
+        // Drop-down arrows use the icon font's chevron, matching the other glyphs.
         protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
         {
-            e.ArrowColor = e.Item?.Enabled == false ? Muted : Text;
-            base.OnRenderArrow(e);
+            if (e.Direction != ArrowDirection.Down)
+            {
+                e.ArrowColor = e.Item?.Enabled == false ? Muted : Text;
+                base.OnRenderArrow(e);
+                return;
+            }
+            using var glyph = new Font(IconFont, 6.5f);
+            TextRenderer.DrawText(e.Graphics, "\uE70D", glyph, e.ArrowRectangle, e.Item?.Enabled == false ? Muted : Text,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
 
         protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
         {
+            if (ReferenceEquals(e.ToolStrip?.Tag, OutlineItems)) return; // grouped strips use the gap itself
             using var pen = new Pen(Border);
             if (e.Vertical) e.Graphics.DrawLine(pen, e.Item.Width / 2, 3, e.Item.Width / 2, e.Item.Height - 4);
             else e.Graphics.DrawLine(pen, 4, e.Item.Height / 2, e.Item.Width - 5, e.Item.Height / 2);

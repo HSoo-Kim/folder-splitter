@@ -91,6 +91,7 @@ internal sealed class FolderTabButton : ToolStripButton
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        if (!Checked && !Selected) return; // the close mark shows on the viewed tab and under the pointer
         float scale = (Owner?.DeviceDpi ?? 96) / 96f;
         using var pen = new Pen(Selected ? Theme.Text : Theme.Muted, 1.2f * scale);
         float x = CloseBounds.Left + CloseBounds.Width / 2f;

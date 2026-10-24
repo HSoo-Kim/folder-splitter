@@ -45,15 +45,22 @@ internal static partial class Program
                 closeTab.PerformClick();
                 Check(pane.TabCount == 1, "clicking the expanded close target closes its tab");
                 pane.AddTab(shortFolder);
+                pane.AddTab(shortFolder, select: false);
                 using (var image = new Bitmap(strip.Width, strip.Height))
                 {
                     strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
-                    var idle = pane.TabButtons[0].Bounds;
-                    Color edge = image.GetPixel(idle.Left + 1, idle.Top + idle.Height / 2);
+                    var idle = pane.TabButtons[^1].Bounds;
+                    int middle = idle.Top + idle.Height / 2;
+                    Color divider = image.GetPixel(idle.Right - 1, middle);
+                    Color edge = image.GetPixel(idle.Left + 1, middle);
                     Color inside = image.GetPixel(idle.Left + idle.Width / 2, idle.Top + 2);
-                    Check(!pane.TabButtons[0].Checked && edge.ToArgb() != inside.ToArgb(),
-                        "a tab that is not being viewed draws a faint outline");
+                    Check(!pane.TabButtons[^1].Checked && divider.ToArgb() != inside.ToArgb() && edge.ToArgb() == inside.ToArgb(),
+                        "tabs that are not being viewed have no outline, only a thin divider");
+                    var viewed = pane.TabButtons.Single(button => button.Checked).Bounds;
+                    Color viewedFill = image.GetPixel(viewed.Left + viewed.Width / 2, viewed.Bottom - 1);
+                    Check(viewedFill.ToArgb() == QuadExplorer.Theme.Surface.ToArgb(), "the viewed tab is drawn in the content surface color down to its bottom");
                 }
+                pane.CloseTab(pane.TabCount - 1);
                 if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_TAB_CAPTURE") is { Length: > 0 } captures)
                 {
                     for (int i = 0; i < 4; i++) pane.AddTab(shortFolder, select: false);

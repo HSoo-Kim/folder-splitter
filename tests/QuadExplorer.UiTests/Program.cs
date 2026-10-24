@@ -41,6 +41,9 @@ internal static partial class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        // Design review: captures the app chrome in several themes instead of running the checks.
+        if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_DESIGN_CAPTURE") is { Length: > 0 } designOutput)
+            return RunDesignCapture(designOutput);
         string root = Path.Combine(Path.GetTempPath(), "QuadExplorer.UiTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
@@ -126,12 +129,12 @@ internal static partial class Program
                     using (var image = new Bitmap(strip.Width, strip.Height))
                     {
                         strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
-                        Color edge = image.GetPixel(plus.Bounds.Left + 1, plus.Bounds.Top + plus.Bounds.Height / 2);
+                        Color edge = image.GetPixel(plus.Bounds.Left + 3, plus.Bounds.Top + plus.Bounds.Height / 2);
                         Color gapColor = image.GetPixel(plus.Bounds.Left - 5, plus.Bounds.Top + plus.Bounds.Height / 2);
                         Check(edge.ToArgb() == gapColor.ToArgb(), "new tab button has no outline when idle");
                         plus.Select();
                         strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
-                        Color hoverEdge = image.GetPixel(plus.Bounds.Left + 1, plus.Bounds.Top + plus.Bounds.Height / 2);
+                        Color hoverEdge = image.GetPixel(plus.Bounds.Left + 3, plus.Bounds.Top + plus.Bounds.Height / 2);
                         Check(plus.Selected && hoverEdge.ToArgb() != gapColor.ToArgb(),
                             "new tab button shows an outline when selected by pointer or keyboard");
                     }
@@ -542,7 +545,7 @@ internal static partial class Program
                     && plus.Height == tabButtons[0].Height, "tabs and the new-tab button grow with a larger font instead of clipping");
                 form.SetUiFont(null, "normal");
                 string restoredFace = ListFace();
-                Check(form.Font.Name == "Segoe UI" && Theme.ListFont is null && restoredFace == standardFace,
+                Check(form.Font.Name == Theme.UiFace && Theme.ListFont is null && restoredFace == standardFace,
                     "the standard font restores the file list's own font");
                 form.SetUiFont("Not An Installed Font", "huge");
                 Check(form.UiFontFamily is null && form.TextSize == "normal", "an unknown font or size falls back to the standard");

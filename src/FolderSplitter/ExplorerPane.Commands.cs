@@ -9,7 +9,7 @@ public sealed partial class ExplorerPane
     private readonly ToolStripTextBox filter = new()
     {
         AutoSize = false, Width = 160, Alignment = ToolStripItemAlignment.Right,
-        BorderStyle = BorderStyle.FixedSingle
+        BorderStyle = BorderStyle.None, Tag = Theme.SearchField
     };
     private readonly System.Windows.Forms.Timer filterTimer = new() { Interval = 250 };
     private ToolStripDropDownButton sortMenu = null!, viewMenu = null!;
@@ -39,7 +39,7 @@ public sealed partial class ExplorerPane
         commands.Items.Add(new ToolStripSeparator());
         sortMenu = AddMenu("\uE8CB", "Sort", BuildSortMenu);
         viewMenu = AddMenu("\uE890", "View", BuildViewMenu);
-        compare = new ToolStripButton("\u21C4") { Alignment = ToolStripItemAlignment.Right, AccessibleName = $"Pane {PaneNumber} Compare" };
+        compare = new ToolStripButton("\uE8AB") { Font = new Font(Theme.IconFont, 10), Alignment = ToolStripItemAlignment.Right, AccessibleName = $"Pane {PaneNumber} Compare" };
         compare.Click += (_, _) => CompareRequested?.Invoke(this, EventArgs.Empty);
         languageBindings.Add(() => compare.ToolTipText = text.T("Compare with the other pane"));
         commands.Items.Add(compare);
@@ -183,6 +183,8 @@ public sealed partial class ExplorerPane
 
     private void FitFilter()
     {
+        int Scaled(int value) => (int)Math.Round(value * commands.DeviceDpi / 96d);
+        filter.Margin = new Padding(Scaled(30), Scaled(6), Scaled(12), Scaled(5)); // room for the magnifier and rounded edge
         int used = commands.Padding.Horizontal + 8;
         foreach (ToolStripItem item in commands.Items)
             if (item != filter && item.Available) used += item.Width + item.Margin.Horizontal;

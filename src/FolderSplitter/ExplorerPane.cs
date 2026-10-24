@@ -107,8 +107,8 @@ public sealed partial class ExplorerPane : UserControl
         AddButton(navigation, 2, "\uE74A", "Up (Alt+Up)", () => ActiveView?.Travel(0x2000));
         address = new TextBox
         {
-            Dock = DockStyle.Fill, Margin = new Padding(4, 5, 4, 2),
-            BorderStyle = BorderStyle.FixedSingle, AccessibleName = $"Pane {number} address",
+            Dock = DockStyle.Fill, Margin = new Padding(12, 9, 10, 8),
+            BorderStyle = BorderStyle.None, AccessibleName = $"Pane {number} address",
             AutoCompleteMode = AutoCompleteMode.SuggestAppend,
             AutoCompleteSource = AutoCompleteSource.FileSystemDirectories
         };
@@ -134,6 +134,11 @@ public sealed partial class ExplorerPane : UserControl
             else if (e.KeyCode == Keys.Tab) CloseCandidates();
         };
         navigation.Controls.Add(address, 3, 0);
+        // The address box is drawn as the same rounded field as the folder search box.
+        navigation.Paint += (_, e) => Theme.PaintField(e.Graphics,
+            Rectangle.Inflate(address.Bounds, (int)Math.Round(7 * DeviceDpi / 96d), (int)Math.Round(5 * DeviceDpi / 96d)), address.Focused, DeviceDpi);
+        address.GotFocus += (_, _) => navigation.Invalidate();
+        address.LostFocus += (_, _) => navigation.Invalidate();
         // The breadcrumb sits inside the address box and gives way to plain text while it has focus.
         breadcrumb.Dock = DockStyle.Fill;
         breadcrumb.AutoSize = false;
@@ -152,7 +157,7 @@ public sealed partial class ExplorerPane : UserControl
         folderSizeTimer.Tick += async (_, _) => { folderSizeTimer.Stop(); await UpdateFolderSize(); };
         languageBindings.Add(RefreshAddressTip);
         RefreshAddressTip();
-        var go = Theme.Button("\uE8AD", $"Pane {number} go to address", () => Navigate(address.Text));
+        var go = Theme.Button("\uE8AD", $"Pane {number} go to address", () => Navigate(address.Text), quiet: true);
         go.Font = new Font(Theme.IconFont, 10);
         go.AutoSize = true;
         go.AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -162,8 +167,9 @@ public sealed partial class ExplorerPane : UserControl
         AddButton(navigation, 5, "\uE838", "Choose folder", ChooseFolder);
         AddButton(navigation, 6, "\uE713", "Pane options", ShowOptions);
 
-        newTab = new ToolStripButton("+")
+        newTab = new ToolStripButton("\uE710")
         {
+            Font = new Font(Theme.IconFont, 9),
             AutoSize = false, Width = 30, Margin = new Padding(12, 1, 0, 2), // gap keeps it away from the last tab's close button
             AccessibleName = $"Pane {number} new tab", ToolTipText = this.text.T("New tab (Ctrl+T)"),
             Overflow = ToolStripItemOverflow.Never
@@ -174,6 +180,7 @@ public sealed partial class ExplorerPane : UserControl
         tabList = new ToolStripDropDownButton
         {
             AccessibleName = $"Pane {number} tab list", ToolTipText = this.text.T("All tabs"),
+            Text = "\uE70D", Font = new Font(Theme.IconFont, 8), ShowDropDownArrow = false,
             Overflow = ToolStripItemOverflow.Never, Visible = false, Margin = new Padding(4, 1, 0, 2)
         };
         languageBindings.Add(() => tabList.ToolTipText = this.text.T("All tabs"));
@@ -181,6 +188,7 @@ public sealed partial class ExplorerPane : UserControl
         tabStrip.Items.Add(tabList);
         // Tabs are sized and windowed here, so nothing is ever pushed into the hidden overflow menu.
         tabStrip.CanOverflow = false;
+        tabStrip.Padding = new Padding(6, 4, 6, 0); // the viewed tab meets the address row below it
         tabStrip.SizeChanged += (_, _) => LayoutTabs();
         tabStrip.FontChanged += (_, _) => LayoutTabs();
         tabStrip.DpiChangedAfterParent += (_, _) => LayoutTabs();
@@ -328,7 +336,7 @@ public sealed partial class ExplorerPane : UserControl
 
     private Button AddButton(TableLayoutPanel row, int column, string glyph, string name, Action action)
     {
-        var button = Theme.Button(glyph, $"Pane {PaneNumber} {name}", action);
+        var button = Theme.Button(glyph, $"Pane {PaneNumber} {name}", action, quiet: true);
         button.Font = new Font(Theme.IconFont, 10);
         button.AutoSize = true;
         button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -384,7 +392,7 @@ public sealed partial class ExplorerPane : UserControl
         address.ForeColor = Theme.Text;
         foreach (var tab in tabs)
         {
-            tab.Button.ForeColor = tab == tabs.ElementAtOrDefault(selectedIndex) ? Theme.Accent : Theme.Text;
+            tab.Button.ForeColor = tab == tabs.ElementAtOrDefault(selectedIndex) ? Theme.Text : Theme.Muted;
             if (tab.Host is not { } host) continue;
             if (host.IsHandleCreated) Theme.ApplyNative(host.Handle);
             host.ApplyThemeColors();
@@ -485,7 +493,7 @@ public sealed partial class ExplorerPane : UserControl
         for (int i = 0; i < tabs.Count; i++)
         {
             tabs[i].Button.Checked = i == index;
-            tabs[i].Button.ForeColor = i == index ? Theme.Accent : Theme.Text;
+            tabs[i].Button.ForeColor = i == index ? Theme.Text : Theme.Muted;
         }
         selectionSummary = null;
         var current = tabs[index].Host;

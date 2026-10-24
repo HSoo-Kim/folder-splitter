@@ -68,8 +68,17 @@ internal static partial class Program
                 // Command bar
                 Check(new[] { "New folder", "Cut", "Copy", "Paste", "Rename", "Delete", "Sort", "View", "Compare", "filter" }
                     .All(name => Command(name) is not null), "every pane has File Explorer's commands above the file list");
-                Check(((ToolStripTextBox)Command("filter")).BorderStyle == BorderStyle.FixedSingle,
-                    "folder filter keeps a fixed border without pointer or keyboard focus");
+                var search = (ToolStripTextBox)Command("filter");
+                var commandStrip = search.Owner!;
+                using (var image = new Bitmap(commandStrip.Width, commandStrip.Height))
+                {
+                    commandStrip.DrawToBitmap(image, new Rectangle(Point.Empty, commandStrip.Size));
+                    var field = QuadExplorer.Theme.SearchFieldBounds(search);
+                    int middle = field.Top + field.Height / 2;
+                    Check(ReferenceEquals(search.Tag, QuadExplorer.Theme.SearchField) && !search.Focused
+                        && image.GetPixel(field.Left, middle).ToArgb() != image.GetPixel(field.Left - 3, middle).ToArgb(),
+                        "folder filter keeps a rounded border without pointer or keyboard focus");
+                }
                 Check(!Command("Cut").Enabled && !Command("Delete").Enabled && Command("New folder").Enabled && Command("Paste").Enabled,
                     "selection commands wait for a selection; New folder and Paste do not");
                 await Select(host, [Path.Combine(left, "note.txt")]);
