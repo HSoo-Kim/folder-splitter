@@ -16,7 +16,7 @@ public sealed partial class ExplorerPane : UserControl
     private readonly List<Action> languageBindings = [];
     private Func<string>? localizedStatus;
     private string statusMessage = "";
-    private readonly Stack<string> closedTabs = [];
+    private readonly Stack<string?> closedTabs = [];
     private readonly ToolStrip tabStrip = Theme.Strip();
     private readonly Panel contents = new() { Dock = DockStyle.Fill, BackColor = Color.White };
     private readonly Label emptyHint = new()
@@ -62,7 +62,9 @@ public sealed partial class ExplorerPane : UserControl
     public int TabCount => tabs.Count;
     public ShellViewHost? ActiveView => selectedIndex >= 0 ? tabs[selectedIndex].Host : null;
     public string CurrentPath => ActiveView?.LocationPath ?? "";
-    internal IEnumerable<string> RecentPaths => closedTabs.Take(4);
+    internal IEnumerable<string> RecentPaths => closedTabs.OfType<string>().Take(4);
+    internal event EventHandler? TabClosed;
+    internal event EventHandler? TabReopened;
     public event EventHandler? Activated;
     public event EventHandler? StateChanged;
     public event EventHandler? SelectionChanged;
@@ -475,6 +477,8 @@ public sealed partial class ExplorerPane : UserControl
         // Tab removal hides the host while the selected index is still being updated.
         host.ItemCountChanged += (_, _) =>
         {
+            // Releasing a shell view publishes a final count while its pane is being torn down.
+            if (Disposing || IsDisposed || host.Disposing || host.IsDisposed) return;
             if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host == host)
             {
                 RenderItemCount();
@@ -527,7 +531,7 @@ public sealed partial class ExplorerPane : UserControl
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public void CloseTab(int index = -1)
+    public void CloseTab(int index = -1, bool remember = true)
     {
         if (index < 0) index = selectedIndex;
         if (index < 0 || index >= tabs.Count) return;
@@ -535,15 +539,18 @@ public sealed partial class ExplorerPane : UserControl
         int nextIndex = selectedIndex > index ? selectedIndex - 1 : Math.Min(selectedIndex, tabs.Count - 2);
         tabs.RemoveAt(index);
         tabStrip.Items.Remove(tab.Button);
-        if (tab.Host is { } host)
+        if (remember)
         {
-            closedTabs.Push(host.LocationPath);
+            closedTabs.Push(tab.Host?.LocationPath);
             if (closedTabs.Count > 32)
             {
                 var recent = closedTabs.Take(32).Reverse().ToArray();
                 closedTabs.Clear();
-                foreach (string path in recent) closedTabs.Push(path);
+                foreach (string? path in recent) closedTabs.Push(path);
             }
+        }
+        if (tab.Host is { } host)
+        {
             contents.Controls.Remove(host);
             host.Dispose();
         }
@@ -552,11 +559,15 @@ public sealed partial class ExplorerPane : UserControl
         if (tabs.Count == 0) { ShowEmptyState(); LayoutTabs(); }
         else SelectTab(Math.Max(0, nextIndex));
         StateChanged?.Invoke(this, EventArgs.Empty);
+        if (remember) TabClosed?.Invoke(this, EventArgs.Empty);
     }
 
     public void ReopenTab()
     {
-        if (closedTabs.Count > 0 && tabs.Count < 32) AddTab(closedTabs.Pop());
+        if (closedTabs.Count == 0 || tabs.Count >= 32) return;
+        if (closedTabs.Pop() is { } path) AddTab(path);
+        else AddBlankTab();
+        TabReopened?.Invoke(this, EventArgs.Empty);
     }
 
     public void Navigate(string path)
@@ -852,7 +863,7 @@ public sealed partial class ExplorerPane : UserControl
 
     internal void ReplaceTabs(PaneState state)
     {
-        while (tabs.Count > 0) CloseTab(tabs.Count - 1);
+        while (tabs.Count > 0) CloseTab(tabs.Count - 1, remember: false);
         foreach (string path in state.Tabs) AddTab(path, select: false);
         if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
     }

@@ -167,6 +167,9 @@ internal static partial class Program
             Check(restored.Panes.Skip(1).Select(p => p.Tabs[0]).SequenceEqual(folders.Skip(1)), "inactive pane paths persisted");
             RunDockingScenario(session, folders);
             RunEmptyPaneScenario(session, folders);
+            RunPaneCloseScenario(root, folders);
+            RunPaneReopenScenario(root, folders);
+            RunHelpDialogScenario(root);
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
             RunAppearanceScenario(root);
@@ -207,12 +210,19 @@ internal static partial class Program
                 Check(panes.Skip(1).Select(p => p.CurrentPath).SequenceEqual(folders.Skip(1)),
                     "three-pane presets preserve hidden folder paths");
 
+                panes[0].SelectTab(0);
                 ClickLayout(form, 1);
                 var moving = panes[0].ActiveView!;
                 await PaneChange(panes[1], () => Check(form.DockTab(panes[0], moving, 0, SplitEdge.Right),
                     "edge docking accepts a second pane"), () => panes[1].ActiveView!.HasNavigated && panes[1].CurrentPath == folders[0]);
                 Check(form.CurrentLayout.GetPanes().Length == 2 && panes[0].TabCount == 1 && panes[1].TabCount == 2,
                     "edge docking moves the chosen tab without losing cached tabs");
+                int tabsAfterMove = panes.Sum(p => p.TabCount);
+                typeof(MainForm).GetMethod("HandleShortcut",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                    .Invoke(form, [Keys.Control | Keys.Shift | Keys.T]);
+                Check(panes.Sum(p => p.TabCount) == tabsAfterMove && form.CurrentLayout.GetPanes().Length == 2,
+                    "moving a tab does not create a closed-tab undo entry or duplicate the moved tab");
 
                 moving = panes[1].ActiveView!;
                 await PaneChange(panes[2], () => Check(form.DockTab(panes[1], moving, 1, SplitEdge.Bottom),

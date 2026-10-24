@@ -54,6 +54,7 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly Panel paneHost = new() { Dock = DockStyle.Fill, BackColor = Theme.Canvas };
     private readonly List<(SplitContainer Control, string Path)> splits = [];
     private PaneLayout layoutTree;
+    private readonly List<(int Pane, PaneLayout? Layout)> closedItems = [];
     private int[] visiblePanes;
     private readonly Panel sidebar;
     private readonly Splitter sidebarSplitter;
@@ -198,6 +199,12 @@ public sealed class MainForm : Form, IMessageFilter
         foreach (var pane in panes)
         {
             pane.Activated += (_, _) => ActivatePane(Array.IndexOf(panes, pane));
+            pane.TabClosed += (_, _) => RememberClosed(pane.PaneNumber - 1, null);
+            pane.TabReopened += (_, _) =>
+            {
+                int index = closedItems.FindLastIndex(item => item.Pane == pane.PaneNumber - 1 && item.Layout is null);
+                if (index >= 0) closedItems.RemoveAt(index);
+            };
             pane.StateChanged += (_, _) =>
             {
                 ScheduleSave();
@@ -439,7 +446,7 @@ public sealed class MainForm : Form, IMessageFilter
             ApplyAppearance();
             if (!explorerFavoritesImported) ImportExplorerFavorites();
             ActivatePane(activePane);
-            if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab();
+            if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab(remember: false);
             foreach (string folder in folders) Active.AddTab(folder);
             Active.FocusFiles();
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
@@ -1578,11 +1585,20 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void ApplyLayout(int count, bool splitFirst = true, bool vertical = true)
     {
+        if (count == 1)
+        {
+            int keep = Active.TabCount > 0 ? activePane
+                : layoutTree.GetPanes().FirstOrDefault(i => panes[i].TabCount > 0, activePane);
+            RenderLayout(PaneLayout.Leaf(keep));
+            return;
+        }
         RenderLayout(PaneLayout.Preset(count, splitFirst, vertical));
     }
 
-    private void RenderLayout(PaneLayout tree)
+    private void RenderLayout(PaneLayout tree, bool preserveClosedPanes = false)
     {
+        // An explicit new arrangement supersedes snapshots of the old arrangement.
+        if (!preserveClosedPanes) closedItems.RemoveAll(item => item.Layout is not null);
         rebuilding = true;
         paneHost.SuspendLayout();
         try
@@ -1793,22 +1809,22 @@ public sealed class MainForm : Form, IMessageFilter
         var receiving = panes[destination];
         receiving.AddTab(path);
         bool emptyPane = source.TabCount == 1;
-        source.CloseTab(source.IndexOfTab(tab));
+        source.CloseTab(source.IndexOfTab(tab), remember: false);
         if (emptyPane && edge is null) RenderLayout(RemovePane(layoutTree, sourceId)!);
         ActivatePane(destination);
         receiving.FocusFiles();
         ScheduleSave();
         return true;
+    }
 
-        static PaneLayout? RemovePane(PaneLayout node, int id)
-        {
-            if (node.IsLeaf) return node.Pane == id ? null : node;
-            var first = RemovePane(node.First!, id);
-            var second = RemovePane(node.Second!, id);
-            if (first is null) return second;
-            if (second is null) return first;
-            return node with { First = first, Second = second };
-        }
+    private static PaneLayout? RemovePane(PaneLayout node, int id)
+    {
+        if (node.IsLeaf) return node.Pane == id ? null : node;
+        var first = RemovePane(node.First!, id);
+        var second = RemovePane(node.Second!, id);
+        if (first is null) return second;
+        if (second is null) return first;
+        return node with { First = first, Second = second };
     }
 
     private static void SetSplitRatio(SplitContainer split, double ratio)
@@ -2023,6 +2039,33 @@ public sealed class MainForm : Form, IMessageFilter
     private static extern nint GetParent(nint window);
 
 
+    private void RememberClosed(int pane, PaneLayout? layout)
+    {
+        closedItems.Add((pane, layout));
+        if (closedItems.Count > 32) closedItems.RemoveAt(0);
+    }
+
+    private void ReopenClosedItem()
+    {
+        if (closedItems.Count == 0) { Active.ReopenTab(); return; }
+        var item = closedItems[^1];
+        if (item.Layout is { } layout)
+        {
+            closedItems.RemoveAt(closedItems.Count - 1);
+            RenderLayout(layout, preserveClosedPanes: true);
+            ActivatePane(item.Pane);
+            Active.FocusFiles();
+        }
+        else
+        {
+            var pane = panes[item.Pane];
+            if (pane.TabCount >= 32) return;
+            if (!visiblePanes.Contains(item.Pane))
+                RenderLayout(layoutTree.Split(activePane, item.Pane, SplitEdge.Right));
+            pane.ReopenTab();
+        }
+    }
+
     private bool HandleShortcut(Keys key)
     {
         switch (key)
@@ -2031,8 +2074,16 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.Shift | Keys.C: Active.CopySelectionPaths(); break;
             case Keys.Control | Keys.Alt | Keys.C: TransferSelection(move: false); break;
             case Keys.Control | Keys.Alt | Keys.X: TransferSelection(move: true); break;
-            case Keys.Control | Keys.W: Active.CloseTab(); break;
-            case Keys.Control | Keys.Shift | Keys.T: Active.ReopenTab(); break;
+            case Keys.Control | Keys.W:
+                if (Active.TabCount > 0) Active.CloseTab();
+                else if (visiblePanes.Length > 1)
+                {
+                    RememberClosed(activePane, layoutTree);
+                    RenderLayout(RemovePane(layoutTree, activePane)!, preserveClosedPanes: true);
+                    Active.FocusFiles();
+                }
+                break;
+            case Keys.Control | Keys.Shift | Keys.T: ReopenClosedItem(); break;
             case Keys.Control | Keys.L:
             case Keys.Alt | Keys.D: Active.FocusAddress(); break;
             case Keys.Control | Keys.D: AddFavorite(Active.CurrentPath); break;
@@ -2156,7 +2207,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void ShowHelp()
     {
-        MessageBox.Show(this,
-            text.Help, text.T("Folder Splitter shortcuts"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+        using var dialog = new ShortcutHelpDialog(text, Font);
+        dialog.ShowDialog(this);
     }
 }

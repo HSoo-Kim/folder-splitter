@@ -307,7 +307,8 @@ public sealed class UiText
             사용하지 않는 영역은 폴더를 열 때까지 비어 있습니다.
             Ctrl+T   빈 새 탭
             Ctrl+W / 가운데 클릭   탭 닫기
-            Ctrl+Shift+T   닫은 탭 다시 열기
+            빈 영역에서 Ctrl+W를 다시 누르면 해당 분할을 닫습니다.
+            Ctrl+Shift+T   마지막으로 닫은 탭 또는 빈 분할 복원
             Ctrl+Tab / Ctrl+Shift+Tab   탭 전환
 
             탐색
@@ -346,7 +347,8 @@ public sealed class UiText
             未使用的窗格保持空白，直到打开文件夹。
             Ctrl+T   新建空白标签页
             Ctrl+W / 中键点击   关闭标签页
-            Ctrl+Shift+T   重新打开已关闭的标签页
+            在空窗格中再次按 Ctrl+W 可关闭该窗格。
+            Ctrl+Shift+T   恢复最后关闭的标签页或空窗格
             Ctrl+Tab / Ctrl+Shift+Tab   切换标签页
 
             导航
@@ -385,7 +387,8 @@ public sealed class UiText
             未使用のペインはフォルダーを開くまで空のままです。
             Ctrl+T   空の新しいタブ
             Ctrl+W / 中クリック   タブを閉じる
-            Ctrl+Shift+T   閉じたタブを再度開く
+            空のペインで Ctrl+W をもう一度押すと、そのペインを閉じます。
+            Ctrl+Shift+T   最後に閉じたタブまたは空のペインを復元
             Ctrl+Tab / Ctrl+Shift+Tab   タブの切り替え
 
             ナビゲーション
@@ -426,7 +429,8 @@ public sealed class UiText
         Unused panes remain empty until you open a folder.
         Ctrl+T   New blank tab
         Ctrl+W / middle-click   Close tab
-        Ctrl+Shift+T   Reopen closed tab
+        Press Ctrl+W again in an empty pane to close that split.
+        Ctrl+Shift+T   Restore the last closed tab or empty pane
         Ctrl+Tab / Ctrl+Shift+Tab   Switch tabs
 
         NAVIGATION

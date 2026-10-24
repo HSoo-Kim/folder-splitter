@@ -85,6 +85,9 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Tab width and tab list**: Tabs grow and shrink with the folder name, and a lone tab shows more of a long name. With many tabs they shrink evenly; when they still do not fit, the `▾` button next to `+` lists every tab.
 - **Drag tabs into place**: Drop a tab near a file-list edge to split in that direction, or in the center to move it into that pane. Empty panes accept tabs too.
 - **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
+- **Keep the pane you are using**: Switching to one pane keeps the active pane; if it has no tabs, a visible pane with tabs is kept instead. Hidden panes retain their tabs.
+- **Close and restore splits**: `Ctrl+W` closes a tab. Press it again when the pane has no tabs to collapse that split; the final pane stays open. `Ctrl+Shift+T` reverses the close order: restore the empty split at its original position and proportions, then press again to restore its tab. Choosing a new layout clears earlier split-restore records.
+- **Readable shortcut help**: `?` or `F1` opens a themed guide with category navigation and separate shortcut/description columns. It follows your font settings and wraps on narrow windows.
 
 ### Navigation and search
 - **Address-bar search**: Type part of a name to find it across all local drives instantly. [Details](#the-address-bar-is-a-search-box)
@@ -174,7 +177,8 @@ The two apps find files in different ways.
 | `F6` | Move to the next pane |
 | `Ctrl+T`, `+` | New blank tab |
 | `Ctrl+W`, tab ×, middle-click a tab | Close tab |
-| `Ctrl+Shift+T` | Reopen closed tab |
+| `Ctrl+W` in a pane with no tabs | Close that split (keep at least one pane) |
+| `Ctrl+Shift+T` | Restore the last closed tab or empty split |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next/previous tab |
 | Mouse wheel or wheel tilt over the tab row | Previous/next tab |
 | `Ctrl+L`, `Alt+D` | Select the address bar |
