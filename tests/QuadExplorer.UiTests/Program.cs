@@ -531,6 +531,10 @@ internal static partial class Program
 
                 Check(form.Font.Name == malgun && Math.Abs(form.Font.SizeInPoints - 10.5f) < 0.01f && (chosenFace == "Malgun Gothic" || chosenFace == malgun),
                     "a chosen font and large text apply to the app and the file list");
+                var tabButtons = Descendants(pane).OfType<ToolStrip>().SelectMany(strip => strip.Items.OfType<FolderTabButton>()).Where(button => button.Available).ToList();
+                var plus = Descendants(pane).OfType<ToolStrip>().SelectMany(strip => strip.Items.Cast<ToolStripItem>()).Single(item => item.AccessibleName == "Pane 1 new tab");
+                Check(tabButtons.Count > 0 && tabButtons.All(button => button.Height >= TextRenderer.MeasureText(button.Text, button.Font).Height + 4)
+                    && plus.Height == tabButtons[0].Height, "tabs and the new-tab button grow with a larger font instead of clipping");
                 form.SetUiFont(null, "normal");
                 string restoredFace = ListFace();
                 Check(form.Font.Name == "Segoe UI" && Theme.ListFont is null && restoredFace == standardFace,
@@ -1065,6 +1069,9 @@ internal static partial class Program
                 Check(toolbar.Items.Cast<ToolStripItem>().Where(i => i.Available).All(i =>
                     i.Bounds.Height >= TextRenderer.MeasureText(i.Text, i.Font).Height),
                     "toolbar item height fits its rendered text");
+                var arrangements = toolbar.Items.Cast<ToolStripItem>().Single(item => item.AccessibleName == "Three pane arrangements");
+                Check(arrangements.Bounds.Width >= TextRenderer.MeasureText(arrangements.Text, arrangements.Font).Width,
+                    "the three-pane arrangement arrow is as wide as its text");
                 Check(Descendants(form).OfType<TextBox>().All(t => t.Height >= t.PreferredHeight),
                     "address fields fit their preferred font height");
                 Check(Descendants(form).OfType<Label>().Where(l => l.AccessibleName?.EndsWith(" status") == true)

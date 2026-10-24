@@ -58,9 +58,11 @@ internal static partial class Program
                 Application.Idle += Released;
                 await released.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 int widthAfter = (int)SendMessage(list, 0x101D, 0, 0);
-                Check(tracking && widthDuring == widthBefore + 91 && !pendingPaint,
+                // The header's grab offset inside the divider differs by a pixel between 96 and 120 DPI.
+                int grab = widthDuring - (widthBefore + 90);
+                Check(tracking && grab is >= 0 and <= 2 && !pendingPaint,
                     "dragging a column divider resizes and repaints the column before the button is released");
-                Check(!form.ColumnDividerDragging && widthAfter == widthBefore + 41, "releasing the divider keeps the width where the mouse stopped");
+                Check(!form.ColumnDividerDragging && widthAfter == widthDuring - 50, "releasing the divider keeps the width where the mouse stopped");
                 var segments = ExplorerPane.PathSegments(@"C:\Users\Someone\Data");
                 Check(segments.Select(segment => segment.Label).SequenceEqual(["C:", "Users", "Someone", "Data"])
                     && segments[2].Path == @"C:\Users\Someone", "breadcrumb splits a drive path into folders");

@@ -182,6 +182,8 @@ public sealed partial class ExplorerPane : UserControl
         // Tabs are sized and windowed here, so nothing is ever pushed into the hidden overflow menu.
         tabStrip.CanOverflow = false;
         tabStrip.SizeChanged += (_, _) => LayoutTabs();
+        tabStrip.FontChanged += (_, _) => LayoutTabs();
+        tabStrip.DpiChangedAfterParent += (_, _) => LayoutTabs();
         tabStrip.AccessibleName = $"Pane {number} tabs";
         status = new Label
         {
@@ -623,6 +625,10 @@ public sealed partial class ExplorerPane : UserControl
             float scale = tabStrip.DeviceDpi / 96f;
             int Scaled(int value) => (int)Math.Round(value * scale);
             int chrome = Scaled(62), floor = Scaled(90), margin = 2;
+            // Fixed-size items keep the height they were created with; size them from the current font,
+            // so a font or DPI change (for example connecting over Remote Desktop) never clips their text.
+            int rowHeight = Math.Max(TextRenderer.MeasureText("가Ag", tabStrip.Font).Height, Scaled(16)) + Scaled(8);
+            newTab.Size = new Size(Scaled(30), rowHeight);
             int[] natural = tabs.Select(tab => Math.Clamp(TextWidth(tab.Button.Title) + chrome,
                 Scaled(110), Scaled(count == 1 ? 320 : 240))).ToArray();
             int available = Math.Max(0, tabStrip.ClientSize.Width - tabStrip.Padding.Horizontal
@@ -654,7 +660,7 @@ public sealed partial class ExplorerPane : UserControl
             for (int i = 0; i < count; i++)
             {
                 var button = tabs[i].Button;
-                button.Width = widths[i];
+                button.Size = new Size(widths[i], rowHeight);
                 button.Text = FitTitle(button.Title, widths[i] - chrome);
                 button.Visible = i >= first && i < first + shown;
             }

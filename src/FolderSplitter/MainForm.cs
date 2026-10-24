@@ -390,6 +390,9 @@ public sealed class MainForm : Form, IMessageFilter
         UpdateSidebarContent();
 
         BuildToolbar();
+        // A little air between the outlined top buttons, so each outline reads as its own button.
+        foreach (ToolStripItem item in toolbar.Items)
+            if (item is ToolStripButton or ToolStripDropDownButton) item.Margin = new Padding(2, 1, 2, 2);
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
         workspace.Controls.Add(paneHost);
         workspace.Controls.Add(previewSplitter);
@@ -527,7 +530,7 @@ public sealed class MainForm : Form, IMessageFilter
                 {
                     AccessibleName = "Three pane arrangements",
                     ToolTipText = text.T("Choose three-pane arrangement: left/right or top/bottom 2:1"),
-                    AutoSize = false, Width = 22
+                    ShowDropDownArrow = false
                 };
                 languageBindings.Add(() => arrangements.ToolTipText = text.T("Choose three-pane arrangement: left/right or top/bottom 2:1"));
                 BindText(arrangements.DropDownItems.Add("Two left, one right", null, (_, _) => ApplyLayout(3)), "Two left, one right");
