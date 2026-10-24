@@ -129,6 +129,7 @@ internal static class Theme
     public static Color Muted => current.Muted;
     public static Color Accent => current.Accent;
     public static Color Selected => current.Selected;
+    public static Color Hover => current.Hover;
     public static Color ErrorText => current.ErrorText;
     public static bool IsDark => current.Dark;
     // Font for the Shell file lists; null keeps Windows' own list font.
@@ -356,6 +357,76 @@ internal static class Theme
             TextRenderer.DrawText(g, "\uE70D", glyph, new Rectangle(client.Right - arrow - edge, client.Top, arrow, client.Height), Muted,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
+    }
+
+    // A pane is a rounded card resting on the window canvas: a soft shadow below gives it depth instead of a
+    // hard frame, and the active pane's edge takes the accent color so it is clear where you are.
+    internal static void PaintCard(Graphics g, Rectangle card, bool active, int dpi, int chromeBottom)
+    {
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        int radius = Scale(CornerRadius + 1, dpi);
+        int[] alphas = IsDark ? [46, 28, 14] : [20, 12, 6];
+        for (int i = 0; i < alphas.Length; i++)
+        {
+            // Each layer drops a little lower, so the shadow shows only beneath the card, as from overhead light.
+            var layer = new Rectangle(card.Left, card.Top + 1 + i, card.Width, card.Height);
+            using var shadowPath = Rounded(layer, radius);
+            using var shadow = new Pen(Color.FromArgb(alphas[i], 0, 0, 0));
+            g.DrawPath(shadow, shadowPath);
+        }
+        using var path = Rounded(card, radius);
+        // The top of the card behind the tab row is the chrome color; the rest is the content surface.
+        using (var fill = new SolidBrush(Surface)) g.FillPath(fill, path);
+        var clip = g.Clip;
+        g.SetClip(Rectangle.FromLTRB(card.Left, card.Top, card.Right + 1, chromeBottom));
+        using (var chrome = new SolidBrush(Canvas)) g.FillPath(chrome, path);
+        g.Clip = clip;
+        using var pen = new Pen(active ? Accent : Border, active ? Math.Max(1f, dpi / 96f) : 1f);
+        g.DrawPath(pen, path);
+        g.SmoothingMode = smoothing;
+    }
+
+    // The card's content is clipped to the same rounded shape, inset inside its edge.
+    internal static Region CardRegion(Size size, int dpi)
+    {
+        using var path = Rounded(new Rectangle(0, 0, size.Width, size.Height), Scale(CornerRadius, dpi));
+        return new Region(path);
+    }
+
+    // Placeholder text in the theme's secondary color; the system cue banner stays faint grey in dark themes.
+    internal static void ThemeCue(TextBox box, Func<string> cue)
+    {
+        var overlay = new CueOverlay(box, cue);
+        if (box.IsHandleCreated) overlay.AssignHandle(box.Handle);
+        box.HandleCreated += (_, _) => overlay.AssignHandle(box.Handle);
+        box.HandleDestroyed += (_, _) => overlay.ReleaseHandle();
+        box.TextChanged += (_, _) => box.Invalidate();
+        box.GotFocus += (_, _) => box.Invalidate();
+        box.LostFocus += (_, _) => box.Invalidate();
+    }
+
+    private sealed class CueOverlay(TextBox box, Func<string> cue) : NativeWindow
+    {
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            // Only paint messages are inspected: reading the text length itself sends a window message.
+            if (m.Msg is not (0x000F or 0x0317 or 0x0318) || box.IsDisposed || box.Focused || box.TextLength > 0) return;
+            if (m.Msg == 0x000F)
+            {
+                using var g = Graphics.FromHwnd(box.Handle);
+                Draw(g);
+            }
+            else if (m.Msg is 0x0317 or 0x0318 && m.WParam != 0)
+            {
+                using var g = Graphics.FromHdc(m.WParam);
+                Draw(g);
+            }
+        }
+
+        private void Draw(Graphics g) => TextRenderer.DrawText(g, cue(), box.Font, box.ClientRectangle, Muted,
+            TextFormatFlags.TextBoxControl | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 
     // Draws a rounded input field (address or search box) on its parent; the text box itself has no border.

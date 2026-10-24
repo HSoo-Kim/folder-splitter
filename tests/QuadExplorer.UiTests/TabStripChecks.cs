@@ -61,6 +61,14 @@ internal static partial class Program
                     Check(viewedFill.ToArgb() == QuadExplorer.Theme.Surface.ToArgb(), "the viewed tab is drawn in the content surface color down to its bottom");
                 }
                 pane.CloseTab(pane.TabCount - 1);
+                using (var card = new Bitmap(pane.Width, pane.Height))
+                {
+                    pane.DrawToBitmap(card, new Rectangle(Point.Empty, pane.Size));
+                    Color edge = card.GetPixel(pane.Padding.Left - 1, pane.Height / 2), outside = card.GetPixel(0, pane.Height / 2);
+                    static int Distance(Color a, Color b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
+                    Check(outside.ToArgb() == QuadExplorer.Theme.Canvas.ToArgb() && Distance(edge, QuadExplorer.Theme.Accent) < 90,
+                        "the active pane is a card on the window canvas with an accent edge");
+                }
                 if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_TAB_CAPTURE") is { Length: > 0 } captures)
                 {
                     for (int i = 0; i < 4; i++) pane.AddTab(shortFolder, select: false);

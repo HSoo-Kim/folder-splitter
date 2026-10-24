@@ -51,7 +51,7 @@ public sealed partial class ExplorerPane
             else if (e.KeyCode == Keys.Enter) { ApplyFilter(); FocusFiles(); e.SuppressKeyPress = true; }
         };
         filterTimer.Tick += (_, _) => ApplyFilter();
-        filter.TextBox.HandleCreated += (_, _) => SetFilterCue();
+        Theme.ThemeCue(filter.TextBox, () => text.T("Filter this folder"));
         languageBindings.Add(SetFilterCue);
         commands.Items.Add(filter);
         commands.SizeChanged += (_, _) => FitFilter();
@@ -177,8 +177,7 @@ public sealed partial class ExplorerPane
 
     private void SetFilterCue()
     {
-        if (filter.TextBox.IsHandleCreated)
-            SendMessage(filter.TextBox.Handle, 0x1501, 1, text.T("Filter this folder")); // EM_SETCUEBANNER
+        filter.TextBox.Invalidate(); // the themed placeholder repaints in the new language
     }
 
     private void FitFilter()

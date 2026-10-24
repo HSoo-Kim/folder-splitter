@@ -84,8 +84,11 @@ public sealed partial class ExplorerPane : UserControl
         if (search is not null) search.IndexChanged += SearchIndexChanged;
         PaneNumber = number;
         Dock = DockStyle.Fill;
-        BackColor = Theme.Border;
-        Padding = new Padding(1);
+        BackColor = Theme.Canvas;
+        UpdateCardPadding(); // room for the card's edge and soft shadow
+        DpiChangedAfterParent += (_, _) => UpdateCardPadding();
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
+            | ControlStyles.ResizeRedraw, true);
         AccessibleName = $"Pane {number}";
 
         var body = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
@@ -205,8 +208,10 @@ public sealed partial class ExplorerPane : UserControl
         body.Controls.Add(BuildCommands());
         body.Controls.Add(navigation);
         body.Controls.Add(tabStrip);
-        body.Controls.Add(activeLine);
         Controls.Add(body);
+        body.Resize += (_, _) => { body.Region?.Dispose(); body.Region = Theme.CardRegion(body.Size, DeviceDpi); };
+        // The status line is a caption: a step smaller than the body text.
+        FontChanged += (_, _) => status.Font = new Font(Font.FontFamily, Math.Max(7f, Font.SizeInPoints - 1f));
         contents.Controls.Add(emptyHint);
         emptyHint.Click += (_, _) => FocusAddress();
         Enter += (_, _) => Activated?.Invoke(this, EventArgs.Empty);
@@ -386,7 +391,7 @@ public sealed partial class ExplorerPane : UserControl
     internal void RefreshTheme()
     {
         Theme.Apply(this);
-        BackColor = Theme.Border;
+        BackColor = Theme.Canvas;
         contents.BackColor = emptyHint.BackColor = status.BackColor = address.BackColor = Theme.Surface;
         emptyHint.ForeColor = status.ForeColor = Theme.Muted;
         address.ForeColor = Theme.Text;
@@ -574,7 +579,28 @@ public sealed partial class ExplorerPane : UserControl
         if (ActiveView is { } view) view.FocusView();
         else FocusAddress();
     }
-    public void SetActive(bool active) => activeLine.BackColor = active ? Theme.Accent : Theme.Border;
+    private bool isActive;
+
+    private void UpdateCardPadding()
+    {
+        int Scaled(int value) => (int)Math.Round(value * DeviceDpi / 96d);
+        Padding = new Padding(Scaled(4), Scaled(3), Scaled(4), Scaled(6));
+    }
+
+    public void SetActive(bool active)
+    {
+        activeLine.BackColor = active ? Theme.Accent : Theme.Border;
+        if (isActive == active) return;
+        isActive = active;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        var card = Rectangle.FromLTRB(Padding.Left - 1, Padding.Top - 1, Width - Padding.Right, Height - Padding.Bottom);
+        if (card.Width > 2 && card.Height > 2) Theme.PaintCard(e.Graphics, card, isActive, DeviceDpi, Padding.Top + tabStrip.Bottom);
+    }
     public void SetStatus(string message) { localizedStatus = null; RenderStatus(message); }
     private void RenderStatus(string message)
     {

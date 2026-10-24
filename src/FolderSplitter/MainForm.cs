@@ -260,7 +260,7 @@ public sealed class MainForm : Form, IMessageFilter
         sidebarSplitter = new Splitter
         {
             Dock = DockStyle.Left, Width = 6, MinSize = 140, MinExtra = 300,
-            BackColor = Theme.Border, AccessibleName = "Resize quick access"
+            BackColor = Theme.Canvas, AccessibleName = "Resize quick access" // an invisible handle: the cards already separate
         };
         sidebarSplitter.SplitterMoved += (_, _) =>
         {
@@ -285,6 +285,7 @@ public sealed class MainForm : Form, IMessageFilter
             IntegralHeight = false, AccessibleName = "Quick access"
         };
         places.DrawItem += DrawPlace;
+        TrackHover(places);
         // An owner-drawn list keeps old pixels when it only gets narrower, leaving tails of long names; repaint it all.
         places.Resize += (_, _) => places.Invalidate();
         places.MouseClick += (_, _) => OpenPlace();
@@ -312,6 +313,7 @@ public sealed class MainForm : Form, IMessageFilter
             IntegralHeight = false, AccessibleName = "Favorites"
         };
         favoritePlaces.DrawItem += DrawPlace;
+        TrackHover(favoritePlaces);
         favoritePlaces.Resize += (_, _) => favoritePlaces.Invalidate();
         favoritePlaces.MouseClick += (_, _) => { if (favoritePlaces.SelectedItem is Place p) Active.Navigate(p.Path); };
         favoritePlaces.KeyDown += (_, e) =>
@@ -489,6 +491,34 @@ public sealed class MainForm : Form, IMessageFilter
         Refresh();
     }
 
+    // Familiar actions (settings, help, language) show their standard glyph; the words move to the tooltip.
+    private void BindIcon(ToolStripItem item, string glyph, string tip)
+    {
+        item.Text = glyph;
+        item.Font = new Font(Theme.IconFont, 10.5f);
+        void Refresh() => item.ToolTipText = text.T(tip);
+        languageBindings.Add(Refresh);
+        Refresh();
+    }
+
+    private readonly Dictionary<ListBox, int> hoverRows = [];
+
+    // Sidebar rows answer the pointer with a soft wash, like every other control.
+    private void TrackHover(ListBox list)
+    {
+        void Redraw(int index) { if (index >= 0 && index < list.Items.Count) list.Invalidate(list.GetItemRectangle(index)); }
+        void Set(int index)
+        {
+            int old = hoverRows.GetValueOrDefault(list, -1);
+            if (old == index) return;
+            hoverRows[list] = index;
+            Redraw(old);
+            Redraw(index);
+        }
+        list.MouseMove += (_, e) => { int index = list.IndexFromPoint(e.Location); Set(index < list.Items.Count ? index : -1); };
+        list.MouseLeave += (_, _) => Set(-1);
+    }
+
     private void BindTip(Control control, string key)
     {
         void Refresh() => tips.SetToolTip(control, text.T(key));
@@ -583,7 +613,7 @@ public sealed class MainForm : Form, IMessageFilter
             Alignment = ToolStripItemAlignment.Right, AccessibleName = "Shortcuts",
             Overflow = ToolStripItemOverflow.Never
         };
-        BindText(help, "Shortcuts", "Show shortcuts and help (F1)");
+        BindIcon(help, "\uE897", "Show shortcuts and help (F1)");
         help.Click += (_, _) => ShowHelp();
         toolbar.Items.Add(help);
         var close = new ToolStripButton
@@ -599,7 +629,7 @@ public sealed class MainForm : Form, IMessageFilter
             Alignment = ToolStripItemAlignment.Right, AccessibleName = "Language",
             Overflow = ToolStripItemOverflow.Never
         };
-        BindText(languageLabel, "Language");
+        BindIcon(languageLabel, "\uE774", "Language");
         languageSelector.Items.AddRange(["한국어", "English", "简体中文", "日本語"]);
         languageSelector.SelectedIndex = Array.IndexOf(new[] { "ko", "en", "zh-CN", "ja" }, text.Language);
         languageSelector.SelectedIndexChanged += (_, _) =>
@@ -628,7 +658,7 @@ public sealed class MainForm : Form, IMessageFilter
         {
             Alignment = ToolStripItemAlignment.Right, AccessibleName = "Settings", Overflow = ToolStripItemOverflow.Never
         };
-        BindText(settings, "Settings", "Shortcuts and Windows integration");
+        BindIcon(settings, "\uE713", "Shortcuts and Windows integration");
         BindText(hotkeyItem, "Win+Alt+E brings Folder Splitter to the front");
         BindText(winEItem, "Open Folder Splitter with Win+E instead of File Explorer");
         hotkeyItem.Checked = globalHotkey;
@@ -1507,6 +1537,8 @@ public sealed class MainForm : Form, IMessageFilter
         e.Graphics.FillRectangle(background, e.Bounds);
         // The selected row is a soft rounded wash, inset from the list edges.
         if (selected) Theme.FillRounded(e.Graphics, Rectangle.Inflate(e.Bounds, -2, -2), Theme.Selected, DeviceDpi);
+        else if (sender is ListBox owner && hoverRows.GetValueOrDefault(owner, -1) == e.Index)
+            Theme.FillRounded(e.Graphics, Rectangle.Inflate(e.Bounds, -2, -2), Theme.Hover, DeviceDpi);
         var place = (Place)((ListBox)sender!).Items[e.Index];
         int iconSize = (int)Math.Round(16 * DeviceDpi / 96d);
         int gap = (int)Math.Round(10 * DeviceDpi / 96d);
