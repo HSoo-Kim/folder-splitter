@@ -114,10 +114,22 @@ internal static class Program
         var legacy = SessionStore.Load(path);
         Equal("light", legacy.ColorTheme);
         Equal(true, legacy.ShowFolderTree);
-        SessionStore.Save(path, legacy with { ColorTheme = "dark", ShowFolderTree = false });
+        Equal(true, legacy.ShowCommandBar);
+        Equal(false, legacy.ShowVerticalSeparators);
+        Equal(true, legacy.ComfortableRows);
+        SessionStore.Save(path, legacy with
+        {
+            ColorTheme = "dark", ShowFolderTree = false, ShowCommandBar = false,
+            ShowVerticalSeparators = true, ComfortableRows = false,
+            Workspaces = [new Workspace { Name = "Appearance", Panes = legacy.Panes }]
+        });
         var restored = SessionStore.Load(path);
         Equal("dark", restored.ColorTheme);
         Equal(false, restored.ShowFolderTree);
+        Equal(false, restored.ShowCommandBar);
+        Equal(true, restored.ShowVerticalSeparators);
+        Equal(false, restored.ComfortableRows);
+        Sequence(legacy.Panes[0].Tabs, restored.Workspaces[0].Panes[0].Tabs);
         Sequence(legacy.Panes[0].Tabs, restored.Panes[0].Tabs);
         Equal(legacy.LayoutTree, restored.LayoutTree);
         Equal("light", legacy.ColorTheme);

@@ -442,6 +442,20 @@ internal static class Theme
         g.SmoothingMode = smoothing;
     }
 
+    internal static void PaintClose(Graphics g, Rectangle bounds, Color color, int dpi)
+    {
+        float scale = dpi / 96f;
+        using var pen = new Pen(color, 1.2f * scale);
+        float x = bounds.Left + bounds.Width / 2f;
+        int y = bounds.Top + bounds.Height / 2;
+        float radius = 3.5f * scale;
+        var smoothing = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.DrawLine(pen, x - radius, y - radius, x + radius, y + radius);
+        g.DrawLine(pen, x + radius, y - radius, x - radius, y + radius);
+        g.SmoothingMode = smoothing;
+    }
+
     // The rounded field drawn around a search box, with room for the magnifier on its left.
     internal static Rectangle SearchFieldBounds(ToolStripItem item)
     {

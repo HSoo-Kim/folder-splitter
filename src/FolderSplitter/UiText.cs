@@ -22,6 +22,15 @@ public sealed class UiText
         ["Collapse / expand folder tree (Ctrl+Shift+E)"] = ("폴더 트리 접기 / 펼치기 (Ctrl+Shift+E)", "折叠 / 展开文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを折りたたむ / 展開 (Ctrl+Shift+E)"),
         ["Drag to resize favorites and the folder tree"] = ("드래그해 즐겨찾기와 폴더 트리 높이 조절", "拖动以调整收藏夹和文件夹树的高度", "ドラッグしてお気に入りとフォルダーツリーの高さを調整"),
         ["Settings"] = ("설정", "设置", "設定"),
+        ["Show command bar"] = ("명령 막대 표시", "显示命令栏", "コマンドバーを表示"),
+        ["All panes"] = ("모든 영역에 공통 적용", "应用于所有窗格", "すべてのペインに適用"),
+        ["This pane"] = ("이 영역에만 적용", "仅应用于此窗格", "このペインのみに適用"),
+        ["Windows settings"] = ("Windows 공통 설정", "Windows 共享设置", "Windows 共通設定"),
+        ["Apply"] = ("적용", "应用", "適用"),
+        ["Vertical separators"] = ("세로 구분선", "垂直分隔线", "縦の区切り線"),
+        ["Row spacing"] = ("줄 간격", "行间距", "行間"),
+        ["Compact"] = ("빽빽하게", "紧凑", "コンパクト"),
+        ["Comfortable"] = ("보통", "标准", "標準"),
         ["Open Folder Splitter"] = ("Folder Splitter 열기", "打开 Folder Splitter", "Folder Splitter を開く"),
         ["Exit"] = ("종료", "退出", "終了"),
         ["New version {0} available · Download"] = ("새 버전 {0} 있음 · 다운로드", "有新版本 {0} · 下载", "新しいバージョン {0} · ダウンロード"),
@@ -58,6 +67,7 @@ public sealed class UiText
         ["View"] = ("보기", "查看", "表示"),
         ["Compare with the other pane"] = ("다른 영역과 비교", "与另一个窗格比较", "他のペインと比較"),
         ["Filter this folder"] = ("폴더 내에서 찾기", "筛选此文件夹", "このフォルダーを絞り込む"),
+        ["Filter this folder (Ctrl+F)"] = ("폴더 내에서 찾기 (Ctrl+F)", "筛选此文件夹 (Ctrl+F)", "このフォルダーを絞り込む (Ctrl+F)"),
         ["Name"] = ("이름", "名称", "名前"),
         ["Date modified"] = ("수정한 날짜", "修改日期", "更新日時"),
         ["Type"] = ("유형", "类型", "種類"),
@@ -115,7 +125,7 @@ public sealed class UiText
         ["Small text"] = ("글자 작게", "小号文字", "文字を小さく"),
         ["Normal text"] = ("글자 보통", "常规文字", "文字を標準に"),
         ["Large text"] = ("글자 크게", "大号文字", "文字を大きく"),
-        ["Files here: {0}"] = ("이 폴더 파일 {0}", "此文件夹中的文件 {0}", "このフォルダーのファイル {0}"),
+        ["File total: {0}"] = ("파일 총 용량 {0}", "文件总大小 {0}", "ファイル合計 {0}"),
         ["Soft green"] = ("연녹색", "浅绿色", "ライトグリーン"),
         ["Sky blue"] = ("하늘색", "天蓝色", "スカイブルー"),
         ["Pastel blue"] = ("파스텔 블루", "粉蓝色", "パステルブルー"),
@@ -184,6 +194,12 @@ public sealed class UiText
         ["Shortcuts"] = ("단축키", "快捷键", "ショートカット"),
         ["Show shortcuts and help (F1)"] = ("단축키와 사용법 보기 (F1)", "查看快捷键和帮助 (F1)", "ショートカットとヘルプを表示 (F1)"),
         ["Close tab"] = ("탭 닫기", "关闭标签页", "タブを閉じる"),
+        ["Close pane (Ctrl+W when empty)"] = ("영역 닫기 (빈 영역: Ctrl+W)", "关闭窗格（空窗格：Ctrl+W）", "ペインを閉じる（空のペイン: Ctrl+W）"),
+        ["Select this tab, then close with Ctrl+W"] = ("이 탭을 선택한 뒤 Ctrl+W로 닫기", "选中此标签页后按 Ctrl+W 关闭", "このタブを選択して Ctrl+W で閉じる"),
+        ["Undo tab or pane close in any pane (Ctrl+Shift+T)"] = ("전체 탭·영역 닫기 되돌리기 (Ctrl+Shift+T)", "撤销所有窗格中的标签页或窗格关闭 (Ctrl+Shift+T)", "全ペインのタブ・ペインを閉じる操作を元に戻す (Ctrl+Shift+T)"),
+        ["Redo tab or pane close in any pane"] = ("전체 탭·영역 닫기 다시 실행", "重做所有窗格中的标签页或窗格关闭", "全ペインのタブ・ペインを閉じる操作をやり直す"),
+        ["Undo tab close in this pane"] = ("이 영역의 탭 닫기 되돌리기", "撤销此窗格中的标签页关闭", "このペインのタブを閉じる操作を元に戻す"),
+        ["Redo tab close in this pane"] = ("이 영역의 탭 닫기 다시 실행", "重做此窗格中的标签页关闭", "このペインのタブを閉じる操作をやり直す"),
         ["Close current tab (Ctrl+W)"] = ("현재 탭 닫기 (Ctrl+W)", "关闭当前标签页 (Ctrl+W)", "現在のタブを閉じる (Ctrl+W)"),
         ["Language"] = ("언어", "语言", "言語"),
         ["Choose UI language"] = ("화면 언어 선택", "选择界面语言", "表示言語を選択"),
@@ -242,8 +258,8 @@ public sealed class UiText
         ["All tabs"] = ("모든 탭", "所有标签页", "すべてのタブ"),
         ["New tab (Ctrl+T)"] = ("새 탭 열기 (Ctrl+T)", "新建标签页 (Ctrl+T)", "新しいタブ (Ctrl+T)"),
         ["Maximum 32 tabs per pane. Close a tab first."] = ("영역당 탭은 최대 32개입니다. 먼저 탭을 닫으세요.", "每个窗格最多 32 个标签页。请先关闭一个标签页。", "タブは 1 ペインにつき最大 32 個です。先にタブを閉じてください。"),
-        ["Pane {0}  |  1 tab  |  {1}"] = ("영역 {0}  |  탭 1개  |  {1}", "窗格 {0}  |  1 个标签页  |  {1}", "ペイン {0}  |  タブ 1 個  |  {1}"),
-        ["Pane {0}  |  {1} tabs  |  {2}"] = ("영역 {0}  |  탭 {1}개  |  {2}", "窗格 {0}  |  {1} 个标签页  |  {2}", "ペイン {0}  |  タブ {1} 個  |  {2}"),
+        ["Pane {0}  |  1 tab"] = ("영역 {0}  |  탭 1개", "窗格 {0}  |  1 个标签页", "ペイン {0}  |  タブ 1 個"),
+        ["Pane {0}  |  {1} tabs"] = ("영역 {0}  |  탭 {1}개", "窗格 {0}  |  {1} 个标签页", "ペイン {0}  |  タブ {1} 個"),
         ["New tab"] = ("새 탭", "新建标签页", "新しいタブ"),
         ["Duplicate tab"] = ("탭 복제", "复制标签页", "タブを複製"),
         ["Reopen closed tab"] = ("닫은 탭 다시 열기", "重新打开已关闭的标签页", "閉じたタブを再度開く"),
@@ -313,6 +329,7 @@ public sealed class UiText
 
             탐색
             Ctrl+L / Alt+D   주소창
+            Ctrl+F   폴더 내에서 찾기
             Alt+Left / Right / Up   뒤로, 앞으로, 상위 폴더
             마우스 뒤로 / 앞으로 버튼   포인터가 있는 영역에서 뒤로, 앞으로
             Win+Alt+E   어디서나 Folder Splitter 불러오기 (다시 누르면 알림 영역으로 숨기기)
@@ -353,6 +370,7 @@ public sealed class UiText
 
             导航
             Ctrl+L / Alt+D   地址栏
+            Ctrl+F   筛选此文件夹
             Alt+Left / Right / Up   后退、前进、上级文件夹
             鼠标后退 / 前进键   在指针所在区域后退、前进
             Win+Alt+E   随时调出 Folder Splitter（再按一次隐藏到通知区域）
@@ -393,6 +411,7 @@ public sealed class UiText
 
             ナビゲーション
             Ctrl+L / Alt+D   アドレス バー
+            Ctrl+F   このフォルダーを絞り込む
             Alt+Left / Right / Up   戻る、進む、上のフォルダー
             マウスの戻る / 進むボタン   ポインターがあるペインで戻る、進む
             Win+Alt+E   どこからでも Folder Splitter を前面に（もう一度で通知領域に隠す）
@@ -435,6 +454,7 @@ public sealed class UiText
 
         NAVIGATION
         Ctrl+L / Alt+D   Address bar
+        Ctrl+F   Filter this folder
         Alt+Left / Right / Up   Back, forward, parent
         Mouse back / forward buttons   Back, forward in the pane under the pointer
         Win+Alt+E   Bring Folder Splitter to the front from anywhere (again: hide to the notification area)

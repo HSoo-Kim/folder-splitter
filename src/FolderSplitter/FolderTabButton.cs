@@ -92,16 +92,7 @@ internal sealed class FolderTabButton : ToolStripButton
     {
         base.OnPaint(e);
         if (!Checked && !Selected) return; // the close mark shows on the viewed tab and under the pointer
-        float scale = (Owner?.DeviceDpi ?? 96) / 96f;
-        using var pen = new Pen(Selected ? Theme.Text : Theme.Muted, 1.2f * scale);
-        float x = CloseBounds.Left + CloseBounds.Width / 2f;
-        int y = Height / 2;
-        float radius = 3.5f * scale;
-        var smoothing = e.Graphics.SmoothingMode;
-        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        e.Graphics.DrawLine(pen, x - radius, y - radius, x + radius, y + radius);
-        e.Graphics.DrawLine(pen, x + radius, y - radius, x - radius, y + radius);
-        e.Graphics.SmoothingMode = smoothing;
+        Theme.PaintClose(e.Graphics, CloseBounds, Selected ? Theme.Text : Theme.Muted, Owner?.DeviceDpi ?? 96);
     }
 
     protected override void Dispose(bool disposing)

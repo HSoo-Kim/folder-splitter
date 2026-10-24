@@ -7,6 +7,8 @@ namespace QuadExplorer;
 
 public sealed class MainForm : Form, IMessageFilter
 {
+    private readonly ToolStripButton undoClose = new CloseHistoryButton(false) { AutoSize = false },
+        redoClose = new CloseHistoryButton(true) { AutoSize = false };
     private readonly string sessionPath;
     private readonly UiText text;
     private readonly IPathSearchBackend? search;
@@ -19,6 +21,9 @@ public sealed class MainForm : Form, IMessageFilter
     private PreviewWindow? previewWindow;
     private readonly System.Windows.Forms.Timer previewTimer = new() { Interval = 200 };
     private bool showPreview;
+    private bool showCommandBar;
+    private bool showVerticalSeparators;
+    private bool comfortableRows;
     private int previewWidth;
     private readonly Button treeHeader;
     private readonly Panel treePanel = new() { Dock = DockStyle.Bottom };
@@ -55,6 +60,8 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly List<(SplitContainer Control, string Path)> splits = [];
     private PaneLayout layoutTree;
     private readonly List<(int Pane, PaneLayout? Layout)> closedItems = [];
+    private readonly List<(int Pane, ExplorerPane.FolderTab? Tab, bool Global)> reopenedItems = [];
+    private bool redoingClose;
     private int[] visiblePanes;
     private readonly Panel sidebar;
     private readonly Splitter sidebarSplitter;
@@ -196,20 +203,44 @@ public sealed class MainForm : Form, IMessageFilter
 
         panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i], text,
             search, SearchRoots)).ToArray();
+        showCommandBar = initialState.ShowCommandBar;
+        showVerticalSeparators = initialState.ShowVerticalSeparators;
+        comfortableRows = initialState.ComfortableRows;
         foreach (var pane in panes)
         {
+            pane.SetCommandBarVisible(showCommandBar);
+            pane.SetDetailsAppearance(showVerticalSeparators, comfortableRows);
+            pane.CommandBarToggled += (_, _) =>
+            {
+                showCommandBar = !showCommandBar;
+                foreach (var target in panes) target.SetCommandBarVisible(showCommandBar);
+                ScheduleSave();
+            };
+            pane.DetailsAppearanceRequested += (separators, comfortable) =>
+            {
+                showVerticalSeparators = separators;
+                comfortableRows = comfortable;
+                foreach (var target in panes) target.SetDetailsAppearance(separators, comfortable);
+                ScheduleSave();
+            };
             pane.Activated += (_, _) => ActivatePane(Array.IndexOf(panes, pane));
             pane.TabClosed += (_, _) => RememberClosed(pane.PaneNumber - 1, null);
+            pane.ClosePaneRequested += (_, _) => ClosePane(pane.PaneNumber - 1);
+            pane.UndoCloseRequested += (_, _) => pane.ReopenTab();
+            pane.RedoCloseRequested += (_, _) => RedoClosedItem(pane.PaneNumber - 1);
             pane.TabReopened += (_, _) =>
             {
                 int index = closedItems.FindLastIndex(item => item.Pane == pane.PaneNumber - 1 && item.Layout is null);
                 if (index >= 0) closedItems.RemoveAt(index);
+                reopenedItems.Add((pane.PaneNumber - 1, pane.ActiveTab, true));
+                RefreshCloseHistory();
             };
             pane.StateChanged += (_, _) =>
             {
                 ScheduleSave();
                 if (ready && ReferenceEquals(pane, Active)) SyncTree();
                 if (ReferenceEquals(pane, Active)) SchedulePreview();
+                RefreshCloseHistory();
             };
             pane.SelectionChanged += (_, _) => { if (ReferenceEquals(pane, Active)) SchedulePreview(); };
             pane.FavoriteRequested += (_, path) => AddFavorite(path);
@@ -536,8 +567,6 @@ public sealed class MainForm : Form, IMessageFilter
     private void BuildToolbar()
     {
         toolbar.Padding = new Padding(10, 7, 10, 7);
-        var brand = new ToolStripLabel("Folder Splitter") { Font = new Font(Theme.TitleFace, Font.SizeInPoints + 0.5f), Margin = new Padding(5, 0, 18, 0) };
-        toolbar.Items.Add(brand);
         sidebarButton.CheckOnClick = true;
         sidebarButton.Checked = initialState.ShowSidebar;
         BindText(sidebarButton, "Sidebar", "Show / hide quick access sidebar");
@@ -552,6 +581,22 @@ public sealed class MainForm : Form, IMessageFilter
         previewButton.Click += (_, _) => SetPreviewVisible(previewButton.Checked);
         toolbar.Items.Add(previewButton);
         toolbar.Items.Add(new ToolStripSeparator());
+        foreach (var (button, name, tip) in new[]
+        {
+            (undoClose, "Undo close", "Undo tab or pane close in any pane (Ctrl+Shift+T)"),
+            (redoClose, "Redo close", "Redo tab or pane close in any pane")
+        })
+        {
+            button.AccessibleName = name;
+            button.Alignment = ToolStripItemAlignment.Right;
+            button.Overflow = ToolStripItemOverflow.Never;
+            button.Enabled = false;
+            void Refresh() => button.ToolTipText = text.T(tip);
+            languageBindings.Add(Refresh);
+            Refresh();
+        }
+        undoClose.Click += (_, _) => ReopenClosedItem();
+        redoClose.Click += (_, _) => RedoClosedItem();
         int[] counts = [1, 2, 3, 4];
         for (int i = 0; i < counts.Length; i++)
         {
@@ -580,6 +625,7 @@ public sealed class MainForm : Form, IMessageFilter
                     ToolTipText = text.T("Choose three-pane arrangement: left/right or top/bottom 2:1"),
                     ShowDropDownArrow = false
                 };
+                arrangements.DropDownOpening += (_, _) => arrangements.DropDown.Font = Font;
                 languageBindings.Add(() => arrangements.ToolTipText = text.T("Choose three-pane arrangement: left/right or top/bottom 2:1"));
                 BindText(arrangements.DropDownItems.Add("Two left, one right", null, (_, _) => ApplyLayout(3)), "Two left, one right");
                 BindText(arrangements.DropDownItems.Add("One left, two right", null, (_, _) => ApplyLayout(3, false)), "One left, two right");
@@ -697,8 +743,13 @@ public sealed class MainForm : Form, IMessageFilter
         fontMenu.DropDownOpening += (_, _) => BuildFontMenu();
         settings.DropDownItems.Add(fontMenu);
         toolbar.Items.Add(settings);
+        toolbar.Items.Add(redoClose);
+        toolbar.Items.Add(undoClose);
         toolbar.Layout += (_, _) =>
         {
+            int target = (int)Math.Round(24 * toolbar.DeviceDpi / 96d);
+            undoClose.Size = redoClose.Size = new Size(target, target);
+            redoClose.Margin = new Padding(0, 1, (int)Math.Round(12 * toolbar.DeviceDpi / 96d), 2);
             int width = Math.Max(100, languageSelector.Items.Cast<string>()
                 .Max(name => TextRenderer.MeasureText(name, languageSelector.Font).Width)
                 + (int)Math.Ceiling(32 * toolbar.DeviceDpi / 96d));
@@ -1578,7 +1629,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void MoveTab(ExplorerPane source, string path, int number)
     {
-        if (source.ActiveView is not { } tab) return;
+        if (source.ActiveTab is not { } tab) return;
         if (!visiblePanes.Contains(number - 1)) ApplyLayout(Math.Max(visiblePanes.Length, number));
         DockTab(source, tab, number - 1, null);
     }
@@ -1598,7 +1649,11 @@ public sealed class MainForm : Form, IMessageFilter
     private void RenderLayout(PaneLayout tree, bool preserveClosedPanes = false)
     {
         // An explicit new arrangement supersedes snapshots of the old arrangement.
-        if (!preserveClosedPanes) closedItems.RemoveAll(item => item.Layout is not null);
+        if (!preserveClosedPanes)
+        {
+            closedItems.RemoveAll(item => item.Layout is not null);
+            InvalidateRedo();
+        }
         rebuilding = true;
         paneHost.SuspendLayout();
         try
@@ -1607,6 +1662,7 @@ public sealed class MainForm : Form, IMessageFilter
             visiblePanes = tree.GetPanes().Order().ToArray();
             foreach (var pane in panes)
             {
+                pane.SetCanClose(visiblePanes.Length > 1);
                 pane.Visible = false;
                 pane.Parent?.Controls.Remove(pane);
             }
@@ -1625,6 +1681,7 @@ public sealed class MainForm : Form, IMessageFilter
             rebuilding = false;
         }
         ActivatePane(activePane);
+        RefreshCloseHistory();
         ScheduleSave();
 
         Control BuildNode(PaneLayout node, string path)
@@ -1707,7 +1764,7 @@ public sealed class MainForm : Form, IMessageFilter
         ScheduleSave();
     }
 
-    private void StartTabDrag(ExplorerPane source, ShellViewHost tab)
+    private void StartTabDrag(ExplorerPane source, ExplorerPane.FolderTab tab)
     {
         if (tabDragging || source.IndexOfTab(tab) < 0) return;
         source.SelectTab(source.IndexOfTab(tab), focus: false);
@@ -1733,7 +1790,7 @@ public sealed class MainForm : Form, IMessageFilter
             DockTab(source, tab, drop.TargetPane, drop.Edge);
     }
 
-    private TabDropPlan? FindDropPlan(Point screen, ExplorerPane source, ShellViewHost tab)
+    private TabDropPlan? FindDropPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab tab)
     {
         foreach (int target in visiblePanes)
         {
@@ -1769,7 +1826,7 @@ public sealed class MainForm : Form, IMessageFilter
         return null;
     }
 
-    private bool CanDockTab(ExplorerPane source, ShellViewHost tab, int target, SplitEdge? edge, out string reason)
+    private bool CanDockTab(ExplorerPane source, ExplorerPane.FolderTab tab, int target, SplitEdge? edge, out string reason)
     {
         reason = "";
         if (source.IndexOfTab(tab) < 0 || !visiblePanes.Contains(source.PaneNumber - 1) || !visiblePanes.Contains(target))
@@ -1786,10 +1843,11 @@ public sealed class MainForm : Form, IMessageFilter
         return true;
     }
 
-    internal bool DockTab(ExplorerPane source, ShellViewHost tab, int target, SplitEdge? edge)
+    internal bool DockTab(ExplorerPane source, ExplorerPane.FolderTab tab, int target, SplitEdge? edge)
     {
         if (!CanDockTab(source, tab, target, edge, out string reason))
         { source.SetLocalizedStatus(() => text.T(reason).Replace("\n", " ")); return false; }
+        InvalidateRedo();
         int sourceId = source.PaneNumber - 1;
         if (edge is { } side && sourceId != target && source.TabCount == 1)
         {
@@ -1799,7 +1857,7 @@ public sealed class MainForm : Form, IMessageFilter
             return true;
         }
 
-        string path = tab.LocationPath;
+        string? path = tab.Host?.LocationPath;
         int destination = target;
         if (edge is { } splitEdge)
         {
@@ -1807,7 +1865,8 @@ public sealed class MainForm : Form, IMessageFilter
             RenderLayout(layoutTree.Split(target, destination, splitEdge));
         }
         var receiving = panes[destination];
-        receiving.AddTab(path);
+        if (path is null) receiving.AddBlankTab();
+        else receiving.AddTab(path);
         bool emptyPane = source.TabCount == 1;
         source.CloseTab(source.IndexOfTab(tab), remember: false);
         if (emptyPane && edge is null) RenderLayout(RemovePane(layoutTree, sourceId)!);
@@ -2041,8 +2100,66 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void RememberClosed(int pane, PaneLayout? layout)
     {
+        if (!redoingClose) InvalidateRedo(pane);
         closedItems.Add((pane, layout));
         if (closedItems.Count > 32) closedItems.RemoveAt(0);
+        RefreshCloseHistory();
+    }
+
+    private void InvalidateRedo(int? pane = null)
+    {
+        // A new action forks global redo without discarding other panes' local tab redo.
+        for (int i = reopenedItems.Count - 1; i >= 0; i--)
+        {
+            var item = reopenedItems[i];
+            if (item.Tab is null || item.Pane == pane) reopenedItems.RemoveAt(i);
+            else reopenedItems[i] = (item.Pane, item.Tab, false);
+        }
+    }
+
+    private int RedoIndex(int? pane = null) => reopenedItems.FindLastIndex(item =>
+        (pane is null ? item.Global : item.Pane == pane && item.Tab is not null)
+        && visiblePanes.Contains(item.Pane) && (item.Tab is { } tab
+            ? panes[item.Pane].IndexOfTab(tab) >= 0 : visiblePanes.Length > 1));
+
+    private void RefreshCloseHistory()
+    {
+        bool canUndo = closedItems.Count > 0
+            ? closedItems[^1].Layout is not null || panes[closedItems[^1].Pane].CanReopenTab
+            : Active.CanReopenTab;
+        undoClose.Enabled = canUndo;
+        redoClose.Enabled = RedoIndex() >= 0;
+        foreach (var pane in panes)
+            pane.SetCloseHistory(pane.CanReopenTab, RedoIndex(pane.PaneNumber - 1) >= 0);
+    }
+
+    private void RedoClosedItem(int? scope = null)
+    {
+        int index = RedoIndex(scope);
+        if (index < 0) return;
+        var item = reopenedItems[index];
+        reopenedItems.RemoveAt(index);
+        redoingClose = true;
+        try
+        {
+            if (item.Tab is null) ClosePane(item.Pane);
+            else
+            {
+                var pane = panes[item.Pane];
+                pane.CloseTab(pane.IndexOfTab(item.Tab));
+                ActivatePane(item.Pane);
+                pane.FocusFiles();
+            }
+        }
+        finally { redoingClose = false; RefreshCloseHistory(); }
+    }
+
+    private void ClosePane(int number)
+    {
+        if (visiblePanes.Length <= 1 || !visiblePanes.Contains(number)) return;
+        RememberClosed(number, layoutTree);
+        RenderLayout(RemovePane(layoutTree, number)!, preserveClosedPanes: true);
+        Active.FocusFiles();
     }
 
     private void ReopenClosedItem()
@@ -2053,15 +2170,17 @@ public sealed class MainForm : Form, IMessageFilter
         {
             closedItems.RemoveAt(closedItems.Count - 1);
             RenderLayout(layout, preserveClosedPanes: true);
+            reopenedItems.Add((item.Pane, null, true));
             ActivatePane(item.Pane);
             Active.FocusFiles();
+            RefreshCloseHistory();
         }
         else
         {
             var pane = panes[item.Pane];
             if (pane.TabCount >= 32) return;
             if (!visiblePanes.Contains(item.Pane))
-                RenderLayout(layoutTree.Split(activePane, item.Pane, SplitEdge.Right));
+                RenderLayout(layoutTree.Split(activePane, item.Pane, SplitEdge.Right), preserveClosedPanes: true);
             pane.ReopenTab();
         }
     }
@@ -2071,17 +2190,13 @@ public sealed class MainForm : Form, IMessageFilter
         switch (key)
         {
             case Keys.Control | Keys.T: Active.AddBlankTab(); break;
+            case Keys.Control | Keys.F: Active.FocusFolderFilter(); break;
             case Keys.Control | Keys.Shift | Keys.C: Active.CopySelectionPaths(); break;
             case Keys.Control | Keys.Alt | Keys.C: TransferSelection(move: false); break;
             case Keys.Control | Keys.Alt | Keys.X: TransferSelection(move: true); break;
             case Keys.Control | Keys.W:
                 if (Active.TabCount > 0) Active.CloseTab();
-                else if (visiblePanes.Length > 1)
-                {
-                    RememberClosed(activePane, layoutTree);
-                    RenderLayout(RemovePane(layoutTree, activePane)!, preserveClosedPanes: true);
-                    Active.FocusFiles();
-                }
+                else ClosePane(activePane);
                 break;
             case Keys.Control | Keys.Shift | Keys.T: ReopenClosedItem(); break;
             case Keys.Control | Keys.L:
@@ -2127,7 +2242,8 @@ public sealed class MainForm : Form, IMessageFilter
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowDetails = showDetails, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
-                CheckUpdates = checkUpdates, AutoUpdate = autoUpdate,
+                CheckUpdates = checkUpdates, AutoUpdate = autoUpdate, ShowCommandBar = showCommandBar,
+                ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible, Workspaces = [.. workspaces],
                 FavoritesExpanded = favoritesExpanded,

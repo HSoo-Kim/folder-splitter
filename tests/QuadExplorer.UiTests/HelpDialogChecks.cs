@@ -33,6 +33,15 @@ internal static partial class Program
                         .Where(label => label.AccessibleName?.StartsWith("Help section ", StringComparison.Ordinal) == true).ToArray();
                     var labels = Descendants(content).OfType<Label>().ToArray();
                     var buttons = navigation.Controls.OfType<Button>().ToArray();
+                    void Capture(string view)
+                    {
+                        if (output is not { Length: > 0 }) return;
+                        dialog.Refresh();
+                        using var image = new Bitmap(dialog.Width, dialog.Height);
+                        dialog.DrawToBitmap(image, new Rectangle(Point.Empty, dialog.Size));
+                        string scale = points > 10 ? "large" : "regular";
+                        image.Save(Path.Combine(output, $"help-{mode}-{language}-{scale}-{view}.png"));
+                    }
                     string[] paragraphs = text.Help.Replace("\r", "").Trim()
                         .Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
                     Check(headings.Length == paragraphs.Length - 1
@@ -53,6 +62,15 @@ internal static partial class Program
                             .All(label => label.ForeColor == Theme.Muted)
                         && labels.All(label => label.Font.SizeInPoints >= points),
                         name + " uses the active palette and supplied readable font");
+                    var title = controls.OfType<Label>().Single(label => label.AccessibleName == "Help title");
+                    Check(title.Font.SizeInPoints > headings.Max(label => label.Font.SizeInPoints)
+                        && headings.All(label => label.Font.SizeInPoints == points)
+                        && labels.Where(label => label.AccessibleName == "Help description")
+                            .All(label => label.Font.SizeInPoints == points),
+                        name + " separates the title from compact section headings without shrinking body text");
+                    Check(content.Controls.Count == 1 && content.Controls[0] is Panel { AutoScroll: false }
+                        && labels.All(label => label.Parent == content.Controls[0]),
+                        name + " keeps every help row on one sheet inside a single scrolling viewport");
                     var work = Screen.FromControl(dialog).WorkingArea;
                     Check(dialog.Width <= work.Width && dialog.Height <= work.Height
                         && dialog.MinimumSize.Width <= work.Width && dialog.MinimumSize.Height <= work.Height,
@@ -64,6 +82,12 @@ internal static partial class Program
                         dialog.PerformLayout();
                         content.AutoScrollPosition = Point.Empty;
                         CheckHelpGeometry(dialog, content, navigation, name + (narrow ? " narrow" : " regular"));
+                        if (!narrow && points < 10)
+                        {
+                            int visibleShortcuts = labels.Count(label => label.AccessibleName == "Help shortcut"
+                                && label.Bottom <= content.ClientSize.Height);
+                            Check(visibleShortcuts >= 6, name + " regular view reveals at least six useful shortcut rows");
+                        }
                         foreach (var button in buttons)
                         {
                             button.PerformClick();
@@ -73,6 +97,8 @@ internal static partial class Program
                                 && button.BackColor == Theme.Selected && button.ForeColor == Theme.Accent,
                                 name + " category " + index + " reveals its heading and selected state"
                                 + $" (heading={headingBounds}, client={content.ClientSize}, scroll={content.AutoScrollPosition}, range={content.AutoScrollMinSize})");
+                            if (!narrow && points < 10 && index is 1 or 3)
+                                Capture(index == 1 ? "tabs" : "files");
                         }
                         InvokeHelpKey(dialog, Keys.Control | Keys.End);
                         var footer = labels.Single(label => label.AccessibleName == "Help footer");
@@ -88,15 +114,19 @@ internal static partial class Program
                         InvokeHelpKey(dialog, Keys.PageUp);
                         Check(content.AutoScrollPosition.Y == 0, name + " keyboard pages back without global input");
                         buttons[0].PerformClick();
-                        if (output is { Length: > 0 })
-                        {
-                            dialog.Refresh();
-                            using var image = new Bitmap(dialog.Width, dialog.Height);
-                            dialog.DrawToBitmap(image, new Rectangle(Point.Empty, dialog.Size));
-                            string scale = points > 10 ? "large" : "regular";
-                            image.Save(Path.Combine(output, $"help-{mode}-{language}-{scale}-{(narrow ? "narrow" : "regular")}.png"));
-                        }
+                        Capture(narrow ? "narrow" : "regular");
                     }
+                    dialog.Size = regular;
+                    dialog.PerformLayout();
+                    InvokeHelpKey(dialog, Keys.Control | Keys.Home);
+                    CheckHelpGeometry(dialog, content, navigation, name + " restored regular");
+                    InvokeHelpKey(dialog, Keys.Control | Keys.End);
+                    var restoredFooter = labels.Single(label => label.AccessibleName == "Help footer");
+                    Rectangle restoredBounds = content.RectangleToClient(
+                        restoredFooter.RectangleToScreen(restoredFooter.ClientRectangle));
+                    Check(restoredBounds.Bottom <= content.ClientSize.Height && restoredBounds.Bottom > 0
+                        && !content.HorizontalScroll.Visible,
+                        name + " narrow-to-regular resize keeps the complete footer reachable");
                     bool closed = false;
                     dialog.FormClosed += (_, _) => closed = true;
                     Check(InvokeHelpKey(dialog, Keys.Escape) && closed && dialog.DialogResult == DialogResult.Cancel,
@@ -140,11 +170,30 @@ internal static partial class Program
         Check(!labels.SelectMany((label, index) => labels.Skip(index + 1)
                 .Select(other => (label, other))).Any(pair => pair.label.Bounds.IntersectsWith(pair.other.Bounds)),
             name + " content rows do not overlap");
+        var keycaps = labels.Where(label => label.AccessibleName == "Help shortcut").ToArray();
+        Check(keycaps.All(label => label.Width <= label.GetPreferredSize(Size.Empty).Width
+                && label.Padding.Horizontal > 0 && label.Padding.Vertical > 0)
+            && keycaps.Single(label => label.Text == "F6").Width < content.ClientSize.Width / 3,
+            name + " keycaps fit their text instead of stretching across the shortcut column");
+        Check(keycaps.All(key =>
+        {
+            Label description = labels[Array.IndexOf(labels, key) + 1];
+            return description.AccessibleName == "Help description"
+                && description.TextAlign == ContentAlignment.MiddleLeft
+                && (description.Top >= key.Bottom
+                    || (description.Left >= key.Right
+                        && Math.Abs((description.Top * 2 + description.Height)
+                            - (key.Top * 2 + key.Height)) <= 1));
+        }), name + " shortcut descriptions stack or align on the same row center");
         Check(navigation.Controls.OfType<Button>().All(button =>
             navigation.ClientRectangle.Contains(button.Bounds)
             && button.Height >= button.GetPreferredSize(Size.Empty).Height
             && button.Width >= button.GetPreferredSize(Size.Empty).Width),
             name + " category buttons wrap inside navigation without clipping");
+        int compactAllowance = (int)Math.Ceiling(8 * dialog.DeviceDpi / 96d);
+        Check(navigation.Controls.OfType<Button>().All(button =>
+            button.Height <= button.Font.Height + compactAllowance),
+            name + " section navigation remains compact at each font and DPI");
         var close = Descendants(dialog).OfType<Button>().Single(button => button.AccessibleName == "Close help");
         Rectangle closeBounds = dialog.RectangleToClient(close.RectangleToScreen(close.ClientRectangle));
         Rectangle contentBounds = dialog.RectangleToClient(content.RectangleToScreen(content.ClientRectangle));

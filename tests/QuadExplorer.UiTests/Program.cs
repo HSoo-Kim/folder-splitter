@@ -167,9 +167,14 @@ internal static partial class Program
             Check(restored.Panes.Skip(1).Select(p => p.Tabs[0]).SequenceEqual(folders.Skip(1)), "inactive pane paths persisted");
             RunDockingScenario(session, folders);
             RunEmptyPaneScenario(session, folders);
+            RunBlankTabDockingScenario(root);
             RunPaneCloseScenario(root, folders);
             RunPaneReopenScenario(root, folders);
+            RunCloseHistoryScopeScenario(root, folders);
+            RunCommandBarPreferenceScenario(root);
+            RunNativeDetailsAppearanceScenario(root, folders);
             RunHelpDialogScenario(root);
+            RunStatusChromeScenario(root);
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
             RunAppearanceScenario(root);
@@ -212,7 +217,7 @@ internal static partial class Program
 
                 panes[0].SelectTab(0);
                 ClickLayout(form, 1);
-                var moving = panes[0].ActiveView!;
+                var moving = panes[0].ActiveTab!;
                 await PaneChange(panes[1], () => Check(form.DockTab(panes[0], moving, 0, SplitEdge.Right),
                     "edge docking accepts a second pane"), () => panes[1].ActiveView!.HasNavigated && panes[1].CurrentPath == folders[0]);
                 Check(form.CurrentLayout.GetPanes().Length == 2 && panes[0].TabCount == 1 && panes[1].TabCount == 2,
@@ -224,22 +229,22 @@ internal static partial class Program
                 Check(panes.Sum(p => p.TabCount) == tabsAfterMove && form.CurrentLayout.GetPanes().Length == 2,
                     "moving a tab does not create a closed-tab undo entry or duplicate the moved tab");
 
-                moving = panes[1].ActiveView!;
+                moving = panes[1].ActiveTab!;
                 await PaneChange(panes[2], () => Check(form.DockTab(panes[1], moving, 1, SplitEdge.Bottom),
                     "edge docking accepts a third pane"), () => panes[2].ActiveView!.HasNavigated && panes[2].CurrentPath == folders[0]);
                 Check(form.CurrentLayout.First!.IsLeaf && !form.CurrentLayout.Second!.IsLeaf
                     && !form.CurrentLayout.Second.Vertical, "docking creates a one-plus-two layout");
 
-                moving = panes[2].ActiveView!;
+                moving = panes[2].ActiveTab!;
                 await PaneChange(panes[3], () => Check(form.DockTab(panes[2], moving, 2, SplitEdge.Left),
                     "edge docking accepts a fourth pane"), () => panes[3].ActiveView!.HasNavigated && panes[3].CurrentPath == folders[0]);
                 var before = form.CurrentLayout;
                 int totalTabs = panes.Sum(p => p.TabCount);
-                Check(!form.DockTab(panes[3], panes[3].ActiveView!, 3, SplitEdge.Bottom)
+                Check(!form.DockTab(panes[3], panes[3].ActiveTab!, 3, SplitEdge.Bottom)
                     && form.CurrentLayout == before && panes.Sum(p => p.TabCount) == totalTabs,
                     "fifth-pane rejection keeps layout and tabs unchanged");
 
-                moving = panes[2].ActiveView!;
+                moving = panes[2].ActiveTab!;
                 await PaneChange(panes[0], () => Check(form.DockTab(panes[2], moving, 0, null),
                     "center docking accepts a tab move"), () => panes[0].ActiveView!.HasNavigated && panes[0].CurrentPath == folders[2]);
                 Check(form.CurrentLayout.GetPanes().Order().SequenceEqual(new[] { 0, 1, 3 })
@@ -1058,7 +1063,7 @@ internal static partial class Program
                 }), "bottom pane status labels remain inside the screen working area");
                 var source = form.GetPane(0);
                 form.ApplyLayout(1);
-                Check(form.DockTab(source, source.ActiveView!, 0, SplitEdge.Right)
+                Check(form.DockTab(source, source.ActiveTab!, 0, SplitEdge.Right)
                     && source.TabCount == 0 && form.GetPane(1).TabCount == 1,
                     "splitting the only tab moves it without duplicating");
                 var empty = form.GetPane(0);
@@ -1177,7 +1182,7 @@ internal static partial class Program
                             && favorites.ContextMenuStrip!.Items[0].Text == text.T("Open in new tab"),
                             language + " sidebar and favorite actions translate without changing folder names");
                         string paneStatus = Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status").Text;
-                        string expectedStatus = text.T("Pane {0}  |  {1} tabs  |  {2}", 1, 2, active.DisplayName) + CountSuffix(text, active);
+                        string expectedStatus = active.DisplayName + "  |  " + text.T("Pane {0}  |  {1} tabs", 1, 2) + CountSuffix(text, active);
                         if (paneStatus != expectedStatus) Console.Error.WriteLine($"STATUS actual='{paneStatus}' expected='{expectedStatus}'");
                         Check(paneStatus == expectedStatus
                             && Descendants(form.GetPane(1)).OfType<Label>().Any(l =>
@@ -1219,7 +1224,7 @@ internal static partial class Program
                     pane.SetLocalizedStatus("Folder path copied.");
                     selector.SelectedIndex = 2;
                     Check(Descendants(pane).OfType<Label>().Single(l => l.AccessibleName == "Pane 1 status").Text
-                        == new UiText("zh-CN").T("Folder path copied.") + CountSuffix(new UiText("zh-CN"), active),
+                        == active.DisplayName + "  |  " + new UiText("zh-CN").T("Folder path copied.") + CountSuffix(new UiText("zh-CN"), active),
                         "existing action status refreshes on language switch");
                     selector.SelectedIndex = 3;
                     await Navigate(active, () => active.Travel(0x8000));

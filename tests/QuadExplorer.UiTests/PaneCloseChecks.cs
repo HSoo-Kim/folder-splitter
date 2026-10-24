@@ -28,6 +28,174 @@ internal static partial class Program
                 foreach (var pane in panes)
                     if (pane.ActiveView is { HasNavigated: false } view)
                         await NavigationSignal(view).WaitAsync(TimeSpan.FromSeconds(20));
+                ToolStripButton CloseButton(int index) => panes[index].TabStrip.Items.OfType<ToolStripButton>()
+                    .Single(button => button.AccessibleName == $"Pane {index + 1} close pane");
+                var startingLayout = form.CurrentLayout;
+                var keptView = panes[2].ActiveView;
+                panes[2].AddBlankTab();
+                panes[0].SelectTab(0);
+                CloseButton(2).PerformClick();
+                Check(!panes[2].Visible && panes[2].TabCount == 2 && panes[2].ActiveView is null
+                    && panes[0].CurrentPath == folders[0],
+                    "an inactive pane's X closes that entire pane without closing its folder or blank tabs");
+                Reopen();
+                Check(form.CurrentLayout == startingLayout && panes[2].Visible && panes[2].TabCount == 2
+                    && panes[2].SelectedIndex == 1 && panes[2].ActiveView is null,
+                    "Ctrl+Shift+T restores the pane closed by X with its layout and selected blank tab");
+                panes[2].SelectTab(0);
+                Check(ReferenceEquals(panes[2].ActiveView, keptView),
+                    "pane X and restore retain the same live folder view");
+                panes[2].CloseTab(1, remember: false);
+                ToolStripButton HistoryButton(int pane, string action) => Descendants(panes[pane]).OfType<ToolStrip>()
+                    .SelectMany(strip => strip.Items.OfType<ToolStripButton>())
+                    .Single(button => button.AccessibleName == $"Pane {pane + 1} {action} close");
+                var common = form.Controls.OfType<ToolStrip>().Single();
+                ToolStripButton GlobalHistoryButton(string action) => common.Items.OfType<ToolStripButton>()
+                    .Single(button => button.AccessibleName == $"{action} close");
+                Check(GlobalHistoryButton("Redo").Enabled && !GlobalHistoryButton("Undo").Enabled
+                    && !HistoryButton(2, "Redo").Enabled,
+                    "restoring the only closed pane enables redo without inventing undo history");
+                panes[0].SelectTab(0);
+                GlobalHistoryButton("Redo").PerformClick();
+                Check(!panes[2].Visible && panes[2].TabCount == 1 && GlobalHistoryButton("Undo").Enabled,
+                    "global redo closes the restored pane rather than the active pane");
+                GlobalHistoryButton("Undo").PerformClick();
+                Check(panes[2].Visible && form.CurrentLayout == startingLayout && ReferenceEquals(panes[2].ActiveView, keptView),
+                    "undo and redo repeatedly preserve the pane's original layout and shell view");
+                panes[2].AddBlankTab();
+                panes[2].CloseTab();
+                Check(!GlobalHistoryButton("Redo").Enabled && GlobalHistoryButton("Undo").Enabled,
+                    "a new tab close clears the redo branch and enables global undo even in a blank pane");
+                panes[3].FocusAddress();
+                GlobalHistoryButton("Undo").PerformClick();
+                var restoredBlank = panes[2].ActiveTab;
+                Check(panes[2].TabCount == 2 && restoredBlank?.Host is null && GlobalHistoryButton("Redo").Enabled,
+                    "the undo button restores the most recently closed blank tab");
+                GlobalHistoryButton("Redo").PerformClick();
+                Check(panes[2].TabCount == 1 && panes[2].ActiveView == keptView,
+                    "the redo button closes the exact restored tab without touching its neighboring folder tab");
+                Reopen();
+                Check(panes[2].TabCount == 2 && panes[2].ActiveView is null,
+                    "Ctrl+Shift+T shares the button history after redo");
+                panes[2].CloseTab(1, remember: false);
+                Check(!GlobalHistoryButton("Redo").Enabled,
+                    "removing a restored tab by another path disables its stale redo entry");
+                panes[0].AddBlankTab();
+                panes[0].CloseTab();
+                CloseButton(1).PerformClick();
+                GlobalHistoryButton("Undo").PerformClick();
+                GlobalHistoryButton("Undo").PerformClick();
+                Check(panes[1].Visible && panes[0].TabCount == 2,
+                    "successive undo restores a pane then the earlier tab in reverse close order");
+                GlobalHistoryButton("Redo").PerformClick();
+                Check(panes[0].TabCount == 1 && panes[1].Visible && GlobalHistoryButton("Redo").Enabled,
+                    "redoing a tab close retains the next pane redo entry");
+                GlobalHistoryButton("Redo").PerformClick();
+                Check(!panes[1].Visible && panes[0].TabCount == 1,
+                    "successive redo replays the original tab then pane close order");
+                GlobalHistoryButton("Undo").PerformClick();
+                GlobalHistoryButton("Undo").PerformClick();
+                panes[0].CloseTab(1, remember: false);
+                Size startingSize = form.Size;
+                foreach (string theme in new[] { "light", "dark" })
+                foreach (string size in new[] { "normal", "large" })
+                foreach (bool narrow in new[] { false, true })
+                {
+                    form.SetColorTheme(theme);
+                    form.SetUiFont(null, size);
+                    form.Size = narrow ? new Size(900, 600) : new Size(1500, 900);
+                    form.Refresh();
+                    if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR") is { Length: > 0 } captures)
+                    {
+                        using var image = new Bitmap(form.Width, form.Height);
+                        form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size));
+                        image.Save(Path.Combine(captures, $"pane-x-{theme}-{size}-{(narrow ? "minimum" : "regular")}.png"));
+                    }
+                    Check(panes.All(pane =>
+                    {
+                        var strip = pane.TabStrip;
+                        var close = CloseButton(pane.PaneNumber - 1);
+                        return close.Enabled && close.Available && close.Alignment == ToolStripItemAlignment.Right
+                            && close.Height >= TextRenderer.MeasureText(close.Text, close.Font).Height
+                            && strip.ClientRectangle.Contains(close.Bounds)
+                            && strip.Items.Cast<ToolStripItem>().Where(item => item.Available && item != close)
+                                .All(item => !item.Bounds.IntersectsWith(close.Bounds));
+                    }), $"pane close targets stay at the right without clipping or overlapping tabs in {theme}/{size}/{narrow}");
+                    Check(panes.Where(pane => pane.ActiveTab is not null).All(pane =>
+                    {
+                        var strip = pane.TabStrip;
+                        var tab = pane.ActiveTab!.Button;
+                        var close = CloseButton(pane.PaneNumber - 1);
+                        using var image = new Bitmap(strip.Width, strip.Height);
+                        strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
+                        Size InkSize(Rectangle target, Color ink)
+                        {
+                            Color background = image.GetPixel(target.Left + 1, target.Top + target.Height / 2);
+                            int radius = (int)Math.Ceiling(8 * strip.DeviceDpi / 96d);
+                            var sample = new Rectangle(target.Left + target.Width / 2 - radius,
+                                target.Top + target.Height / 2 - radius, radius * 2 + 1, radius * 2 + 1);
+                            sample.Intersect(target);
+                            int left = sample.Right, top = sample.Bottom, right = -1, bottom = -1;
+                            for (int x = sample.Left; x < sample.Right; x++)
+                            for (int y = sample.Top; y < sample.Bottom; y++)
+                            {
+                                Color pixel = image.GetPixel(x, y);
+                                int inkDistance = Math.Abs(pixel.R - ink.R) + Math.Abs(pixel.G - ink.G) + Math.Abs(pixel.B - ink.B);
+                                int backgroundDistance = Math.Abs(pixel.R - background.R) + Math.Abs(pixel.G - background.G)
+                                    + Math.Abs(pixel.B - background.B);
+                                // Fractional DPI antialiases the entire stroke; count majority-ink pixels, not only near-solid ones.
+                                if (inkDistance >= backgroundDistance) continue;
+                                left = Math.Min(left, x); top = Math.Min(top, y);
+                                right = Math.Max(right, x); bottom = Math.Max(bottom, y);
+                            }
+                            return right < 0 ? Size.Empty : new Size(right - left + 1, bottom - top + 1);
+                        }
+                        var tabTarget = tab.CloseBounds;
+                        tabTarget.Offset(tab.Bounds.Location);
+                        Size tabInk = InkSize(tabTarget, tab.Selected ? Theme.Text : Theme.Muted);
+                        Size paneInk = InkSize(close.Bounds, close.Selected ? Theme.Text : Theme.Muted);
+                        return !tabInk.IsEmpty && !paneInk.IsEmpty
+                            && Math.Abs(tabInk.Width - paneInk.Width) <= 1 && Math.Abs(tabInk.Height - paneInk.Height) <= 1
+                            && close.Width >= tab.CloseBounds.Width;
+                    }), $"pane and tab X marks have matching rendered size while preserving the pane hit target in {theme}/{size}/{narrow}");
+                    Check(panes.All(pane =>
+                    {
+                        var strip = Descendants(pane).OfType<ToolStrip>().Single(each => each.AccessibleName == $"Pane {pane.PaneNumber} commands");
+                        var undo = HistoryButton(pane.PaneNumber - 1, "Undo");
+                        var redo = HistoryButton(pane.PaneNumber - 1, "Redo");
+                        var search = strip.Items.OfType<ToolStripTextBox>().Single();
+                        if (pane.PaneNumber == 1 && Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR") is { Length: > 0 } iconCaptures)
+                        {
+                            using var row = new Bitmap(strip.Width, strip.Height);
+                            strip.DrawToBitmap(row, new Rectangle(Point.Empty, strip.Size));
+                            var bounds = Rectangle.Union(undo.Bounds, redo.Bounds);
+                            bounds.Inflate(2, 2);
+                            bounds.Intersect(strip.ClientRectangle);
+                            using var icons = row.Clone(bounds, row.PixelFormat);
+                            icons.Save(Path.Combine(iconCaptures, $"history-icons-{theme}-{size}-{(narrow ? "minimum" : "regular")}.png"));
+                        }
+                        return undo.Available && redo.Available && undo.Bounds.Right <= redo.Bounds.Left
+                            && strip.ClientRectangle.Contains(undo.Bounds) && strip.ClientRectangle.Contains(redo.Bounds)
+                            && strip.Items.Cast<ToolStripItem>().Where(item => item.Available)
+                                .All(item => item.Placement != ToolStripItemPlacement.None)
+                            && (!search.Available || redo.Bounds.Right <= Theme.SearchFieldBounds(search).Left);
+                    }), $"undo and redo remain ordered to the left of the magnifier in {theme}/{size}/{narrow}");
+                    var globalUndo = GlobalHistoryButton("Undo");
+                    var globalRedo = GlobalHistoryButton("Redo");
+                    var settings = common.Items.Cast<ToolStripItem>().Single(item => item.AccessibleName == "Settings");
+                    int historyGap = (int)Math.Round(12 * common.DeviceDpi / 96d);
+                    Check(globalUndo.Placement == ToolStripItemPlacement.Main && globalRedo.Placement == ToolStripItemPlacement.Main
+                        && globalUndo.Alignment == ToolStripItemAlignment.Right && globalRedo.Alignment == ToolStripItemAlignment.Right
+                        && globalUndo.Bounds.Right <= globalRedo.Bounds.Left
+                        && settings.Bounds.Left - globalRedo.Bounds.Right == historyGap
+                        && common.ClientRectangle.Contains(globalUndo.Bounds) && common.ClientRectangle.Contains(globalRedo.Bounds)
+                        && common.Items.Cast<ToolStripItem>().Where(item => item.Available && item.Placement == ToolStripItemPlacement.Main
+                            && item != globalUndo && item != globalRedo)
+                            .All(item => !item.Bounds.IntersectsWith(globalUndo.Bounds) && !item.Bounds.IntersectsWith(globalRedo.Bounds)),
+                        $"global undo/redo stay right-aligned with a 12-DIP gap left of Settings in {theme}/{size}/{narrow}");
+                }
+                form.SetUiFont(null, "normal");
+                form.Size = startingSize;
                 panes[0].SelectTab(0);
                 var original = form.CurrentLayout;
                 var originalSize = panes[0].Size;
@@ -152,6 +320,11 @@ internal static partial class Program
                 Check(right.Visible && !left.Visible && right.TabCount == 2
                     && ReferenceEquals(right.ActiveView, originalView),
                     "one pane keeps the populated right pane when the active left pane is empty");
+                var finalClose = right.TabStrip.Items.OfType<ToolStripButton>()
+                    .Single(button => button.AccessibleName == "Pane 2 close pane");
+                finalClose.PerformClick();
+                Check(!finalClose.Enabled && right.Visible && right.TabCount == 2,
+                    "the final pane's X is disabled and cannot close the app or its tabs");
                 ClickLayout(form, 2);
                 Check(right.Visible && left.Visible && right.TabCount == 2 && left.TabCount == 0,
                     "expanding again preserves both pane states");

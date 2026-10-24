@@ -9,12 +9,25 @@ public sealed partial class ExplorerPane
     private readonly ToolStripTextBox filter = new()
     {
         AutoSize = false, Width = 160, Alignment = ToolStripItemAlignment.Right,
-        BorderStyle = BorderStyle.None, Tag = Theme.SearchField
+        BorderStyle = BorderStyle.None, Tag = Theme.SearchField, Overflow = ToolStripItemOverflow.Never
     };
     private readonly System.Windows.Forms.Timer filterTimer = new() { Interval = 250 };
     private ToolStripDropDownButton sortMenu = null!, viewMenu = null!;
     private ToolStripButton compare = null!;
+    private bool showVerticalSeparators, comfortableRows = true;
+    private bool commandBarVisible = true;
+    internal event Action<bool, bool>? DetailsAppearanceRequested;
+    internal event EventHandler? CommandBarToggled;
+    private readonly ToolStripButton undoClose = new CloseHistoryButton(false) { AutoSize = false },
+        redoClose = new CloseHistoryButton(true) { AutoSize = false };
+    internal event EventHandler? UndoCloseRequested;
+    internal event EventHandler? RedoCloseRequested;
 
+    internal void SetCloseHistory(bool canUndo, bool canRedo)
+    {
+        undoClose.Enabled = canUndo;
+        redoClose.Enabled = canRedo;
+    }
     internal event EventHandler? BulkRenameRequested;
     internal event EventHandler? CompareRequested;
     internal event EventHandler? DetailsPaneToggled;
@@ -28,7 +41,7 @@ public sealed partial class ExplorerPane
     {
         commands.Dock = DockStyle.Top;
         commands.Padding = new Padding(6, 0, 6, 2);
-        commands.CanOverflow = false;
+        commands.CanOverflow = true;
         commands.AccessibleName = $"Pane {PaneNumber} commands";
         AddCommand("\uE8F4", "New folder", "Ctrl+Shift+N", () => ActiveView?.InvokeBackgroundVerb("NewFolder"), false);
         AddCommand("\uE8C6", "Cut", "Ctrl+X", () => ActiveView?.InvokeSelectionVerb("cut"), true);
@@ -39,7 +52,7 @@ public sealed partial class ExplorerPane
         commands.Items.Add(new ToolStripSeparator());
         sortMenu = AddMenu("\uE8CB", "Sort", BuildSortMenu);
         viewMenu = AddMenu("\uE890", "View", BuildViewMenu);
-        compare = new ToolStripButton("\uE8AB") { Font = new Font(Theme.IconFont, 10), Alignment = ToolStripItemAlignment.Right, AccessibleName = $"Pane {PaneNumber} Compare" };
+        compare = new ToolStripButton("\uE8AB") { Font = new Font(Theme.IconFont, 10), Alignment = ToolStripItemAlignment.Right, AccessibleName = $"Pane {PaneNumber} Compare", Overflow = ToolStripItemOverflow.Never };
         compare.Click += (_, _) => CompareRequested?.Invoke(this, EventArgs.Empty);
         languageBindings.Add(() => compare.ToolTipText = text.T("Compare with the other pane"));
         commands.Items.Add(compare);
@@ -52,8 +65,24 @@ public sealed partial class ExplorerPane
         };
         filterTimer.Tick += (_, _) => ApplyFilter();
         Theme.ThemeCue(filter.TextBox, () => text.T("Filter this folder"));
+        languageBindings.Add(() => filter.ToolTipText = text.T("Filter this folder (Ctrl+F)"));
         languageBindings.Add(SetFilterCue);
         commands.Items.Add(filter);
+        foreach (var (button, name, tip) in new[]
+        {
+            (redoClose, "Redo close", "Redo tab close in this pane"),
+            (undoClose, "Undo close", "Undo tab close in this pane")
+        })
+        {
+            button.Alignment = ToolStripItemAlignment.Right;
+            button.Overflow = ToolStripItemOverflow.Never;
+            button.AccessibleName = $"Pane {PaneNumber} {name}";
+            button.Enabled = false;
+            languageBindings.Add(() => button.ToolTipText = text.T(tip));
+            commands.Items.Add(button);
+        }
+        undoClose.Click += (_, _) => UndoCloseRequested?.Invoke(this, EventArgs.Empty);
+        redoClose.Click += (_, _) => RedoCloseRequested?.Invoke(this, EventArgs.Empty);
         commands.SizeChanged += (_, _) => FitFilter();
         commands.ItemAdded += (_, _) => FitFilter();
         languageBindings.Add(() => { foreach (var refresh in commandTips) refresh(); });
@@ -95,8 +124,9 @@ public sealed partial class ExplorerPane
         else view.StartRename();
     }
 
-    private void BuildSortMenu(ToolStripDropDownButton menu)
+    private void BuildSortMenu(ToolStripDropDownItem menu)
     {
+        menu.DropDownItems.Add(new ToolStripLabel(text.T("This pane")) { ForeColor = Theme.Muted, Padding = new Padding(8, 3, 0, 1) });
         var current = ActiveView?.FirstSortColumn;
         bool Same(PropertyKey a, PropertyKey b) => a.FormatId == b.FormatId && a.PropertyId == b.PropertyId;
         bool descending = current is { Direction: < 0 };
@@ -127,8 +157,9 @@ public sealed partial class ExplorerPane
         }
     }
 
-    private void BuildViewMenu(ToolStripDropDownButton menu)
+    private void BuildViewMenu(ToolStripDropDownItem menu)
     {
+        menu.DropDownItems.Add(new ToolStripLabel(text.T("This pane")) { ForeColor = Theme.Muted, Padding = new Padding(8, 3, 0, 1) });
         var current = ActiveView?.ViewModeAndSize;
         foreach (var (mode, size, label) in new (uint, int, string)[]
         {
@@ -138,12 +169,14 @@ public sealed partial class ExplorerPane
         {
             var item = new ToolStripMenuItem(text.T(label))
             {
-                Checked = current is { } c && c.Mode == mode && (mode != 1 || c.Size == size)
+                Checked = current is { } c && c.Mode == mode && (mode != 1 || c.Size == size),
+                Enabled = ActiveView is not null
             };
             item.Click += (_, _) => ActiveView?.SetViewModeAndSize(mode, size);
             menu.DropDownItems.Add(item);
         }
         menu.DropDownItems.Add(new ToolStripSeparator());
+        menu.DropDownItems.Add(new ToolStripLabel(text.T("Windows settings")) { ForeColor = Theme.Muted, Padding = new Padding(8, 3, 0, 1) });
         var hidden = new ToolStripMenuItem(text.T("Show hidden items")) { Checked = ShellSettings.HiddenItemsShown };
         hidden.Click += (_, _) => { ShellSettings.HiddenItemsShown = !hidden.Checked; ShellSettingsChanged?.Invoke(this, EventArgs.Empty); };
         var extensions = new ToolStripMenuItem(text.T("Show file name extensions")) { Checked = ShellSettings.ExtensionsShown };
@@ -151,9 +184,80 @@ public sealed partial class ExplorerPane
         menu.DropDownItems.Add(hidden);
         menu.DropDownItems.Add(extensions);
         menu.DropDownItems.Add(new ToolStripSeparator());
+        menu.DropDownItems.Add(new ToolStripLabel(text.T("All panes")) { ForeColor = Theme.Muted, Padding = new Padding(8, 3, 0, 1) });
         var details = new ToolStripMenuItem(text.T("Details pane")) { Checked = DetailsPaneShown() };
         details.Click += (_, _) => DetailsPaneToggled?.Invoke(this, EventArgs.Empty);
         menu.DropDownItems.Add(details);
+        var commandBar = new ToolStripMenuItem(text.T("Show command bar"))
+        {
+            Checked = commandBarVisible, AccessibleName = "Show command bar"
+        };
+        commandBar.Click += (_, _) => CommandBarToggled?.Invoke(this, EventArgs.Empty);
+        menu.DropDownItems.Add(commandBar);
+        var separators = new ToolStripMenuItem(text.T("Vertical separators")) { Checked = showVerticalSeparators };
+        separators.Click += (_, _) => DetailsAppearanceRequested?.Invoke(!showVerticalSeparators, comfortableRows);
+        menu.DropDownItems.Add(separators);
+        var spacing = new ToolStripMenuItem(text.T("Row spacing"));
+        foreach (var (comfortable, label) in new[] { (false, "Compact"), (true, "Comfortable") })
+        {
+            var item = new ToolStripMenuItem(text.T(label)) { Checked = comfortableRows == comfortable };
+            item.Click += (_, _) => DetailsAppearanceRequested?.Invoke(showVerticalSeparators, comfortable);
+            spacing.DropDownItems.Add(item);
+        }
+        menu.DropDownItems.Add(spacing);
+    }
+
+    internal void SetDetailsAppearance(bool separators, bool comfortable)
+    {
+        showVerticalSeparators = separators;
+        comfortableRows = comfortable;
+        foreach (var tab in tabs)
+            tab.Host?.SetDetailsAppearance(separators, comfortable);
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal void SetCommandBarVisible(bool visible)
+    {
+        commandBarVisible = visible;
+        commands.Visible = visible;
+        if (!visible && commands.ContainsFocus) FocusFiles();
+    }
+
+    internal void FocusFolderFilter()
+    {
+        if (ActiveView is null) return;
+        if (commands.Visible && filter.Available)
+        {
+            filter.Focus();
+            filter.SelectAll();
+            return;
+        }
+        using var dialog = new Form
+        {
+            Text = text.T("Filter this folder"), AccessibleName = "Folder filter",
+            FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false,
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12), Font = Font
+        };
+        var layout = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill };
+        var input = new TextBox { Width = 280, Text = ActiveView.FilterText, AccessibleName = "Folder filter input" };
+        var ok = new Button { Text = text.T("Apply"), DialogResult = DialogResult.OK, AutoSize = true };
+        var cancel = new Button { Text = text.T("Cancel"), DialogResult = DialogResult.Cancel, AutoSize = true };
+        layout.Controls.Add(input, 0, 0);
+        layout.SetColumnSpan(input, 2);
+        layout.Controls.Add(ok, 0, 1);
+        layout.Controls.Add(cancel, 1, 1);
+        dialog.Controls.Add(layout);
+        dialog.AcceptButton = ok;
+        dialog.CancelButton = cancel;
+        Theme.Apply(dialog);
+        input.SelectAll();
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            filter.Text = input.Text;
+            ApplyFilter();
+            FocusFiles();
+        }
     }
 
     internal void ApplyFilter()
@@ -169,7 +273,9 @@ public sealed partial class ExplorerPane
         var view = ActiveView;
         bool selected = view is not null && view.SelectionCount > 0;
         foreach (var item in selectionCommands) item.Enabled = selected;
-        foreach (ToolStripItem item in commands.Items) if (!selectionCommands.Contains(item)) item.Enabled = view is not null || item == compare;
+        foreach (ToolStripItem item in commands.Items)
+            if (!selectionCommands.Contains(item) && item != undoClose && item != redoClose)
+                item.Enabled = view is not null || item == compare || item == viewMenu;
         filterTimer.Stop();
         string active = view?.FilterText ?? "";
         if (filter.Text.Trim() != active) filter.Text = active;
@@ -183,6 +289,7 @@ public sealed partial class ExplorerPane
     private void FitFilter()
     {
         int Scaled(int value) => (int)Math.Round(value * commands.DeviceDpi / 96d);
+        undoClose.Size = redoClose.Size = new Size(Scaled(24), Scaled(28));
         filter.Margin = new Padding(Scaled(30), Scaled(6), Scaled(12), Scaled(5)); // room for the magnifier and rounded edge
         int used = commands.Padding.Horizontal + 8;
         foreach (ToolStripItem item in commands.Items)

@@ -88,6 +88,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Keep the pane you are using**: Switching to one pane keeps the active pane; if it has no tabs, a visible pane with tabs is kept instead. Hidden panes retain their tabs.
 - **Close and restore splits**: `Ctrl+W` closes a tab. Press it again when the pane has no tabs to collapse that split; the final pane stays open. `Ctrl+Shift+T` reverses the close order: restore the empty split at its original position and proportions, then press again to restore its tab. Choosing a new layout clears earlier split-restore records.
 - **Readable shortcut help**: `?` or `F1` opens a themed guide with category navigation and separate shortcut/description columns. It follows your font settings and wraps on narrow windows.
+- **Two kinds of close history**: The circular undo/redo buttons beside each pane's filter box reopen only that pane's closed tabs. The pair at the top right, left of `Settings`, covers every tab and split closed in any pane and matches `Ctrl+Shift+T`. Restoring from either never brings the same item back twice. Hover any of them for its scope and shortcut.
 
 ### Navigation and search
 - **Address-bar search**: Type part of a name to find it across all local drives instantly. [Details](#the-address-bar-is-a-search-box)
@@ -124,6 +125,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Color themes**: Choose from 15 in the menu at the top right: the standard `Light` and `Dark`, the easier-on-the-eyes `Beige`, `Soft green`, `Sky blue`, `Pastel blue` and `Soft dark`, and eight mixed palettes based on well-known design palettes (Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin, Nord) that give the top bar, sidebar, file list and sorted column their own colors.
   ![The 15 Folder Splitter color theme palettes](docs/images/folder-splitter-themes-v0.7.29.png)
 - **Font and text size**: In `Settings` → `Font and text size`, pick an installed font (Malgun Gothic, Pretendard, NanumGothic and others) and small, normal or large text; the file lists change too.
+- **List appearance**: Each pane's `View` menu groups its options by scope: this pane only, all panes, and Windows-wide settings. For all panes you can hide the command bar (the filter is still on `Ctrl+F` and the other commands are in the pane options), turn vertical column separators on or off (off by default) and choose `Compact` or `Comfortable` row spacing (default). Comfortable spacing only adds room between rows; icons and text keep their size.
 - **Folder file total**: The status line shows the total size of the files directly in the current folder, such as `Files here: 18.4 MB`. Subfolders are not scanned, so it is a single folder read with no load on the PC; network folders are skipped.
 - **Languages**: 한국어, English, 简体中文, 日本語.
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
@@ -182,6 +184,7 @@ The two apps find files in different ways.
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next/previous tab |
 | Mouse wheel or wheel tilt over the tab row | Previous/next tab |
 | `Ctrl+L`, `Alt+D` | Select the address bar |
+| `Ctrl+F` | Filter in this folder (opens a filter box when the command bar is hidden) |
 | `Alt+Left`, `Alt+Right`, `Alt+Up` | Back/forward/parent folder |
 | Mouse back/forward buttons | Back/forward in the pane under the pointer |
 | `Ctrl+D` | Add the current folder to favorites |

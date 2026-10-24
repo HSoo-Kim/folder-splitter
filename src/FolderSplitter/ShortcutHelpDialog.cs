@@ -11,6 +11,7 @@ internal sealed class ShortcutHelpDialog : Form
     private readonly List<(Label? Key, Label Body)> rows = [];
     private readonly List<Label> headings = [];
     private readonly List<Button> sections = [];
+    private readonly Font titleFont;
     private readonly Font headingFont;
     private bool arranging;
 
@@ -21,9 +22,12 @@ internal sealed class ShortcutHelpDialog : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = font;
         content.Controls.Add(sheet);
+        titleFont = font.Name == Theme.UiFace
+            ? new Font(Theme.TitleFace, font.SizeInPoints + 4)
+            : new Font(font.FontFamily, font.SizeInPoints + 4, FontStyle.Bold);
         headingFont = font.Name == Theme.UiFace
-            ? new Font(Theme.TitleFace, font.SizeInPoints + 2)
-            : new Font(font.FontFamily, font.SizeInPoints + 2, FontStyle.Bold);
+            ? new Font(Theme.TitleFace, font.SizeInPoints)
+            : new Font(font.FontFamily, font.SizeInPoints, FontStyle.Bold);
         Text = text.T("Folder Splitter shortcuts");
         AccessibleName = Text;
         StartPosition = FormStartPosition.CenterParent;
@@ -35,7 +39,7 @@ internal sealed class ShortcutHelpDialog : Form
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4,
-            Padding = new Padding(24), BackColor = Theme.Canvas
+            Padding = new Padding(20), BackColor = Theme.Canvas
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -44,14 +48,14 @@ internal sealed class ShortcutHelpDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var title = new Label
         {
-            Text = Text, Font = headingFont, AutoSize = true, Dock = DockStyle.Fill,
-            UseMnemonic = false, Margin = new Padding(0, 0, 0, 12),
+            Text = Text, Font = titleFont, AutoSize = true, Dock = DockStyle.Fill,
+            UseMnemonic = false, Margin = new Padding(0, 0, 0, 8),
             AccessibleName = "Help title", BackColor = Theme.Canvas
         };
         var navigation = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill, AutoSize = true, WrapContents = true,
-            Margin = new Padding(0, 0, 0, 16), BackColor = Theme.Canvas,
+            Margin = new Padding(0, 0, 0, 12), BackColor = Theme.Canvas,
             AccessibleName = "Help sections"
         };
         string[] paragraphs = text.Help.Replace("\r", "").Trim()
@@ -64,11 +68,12 @@ internal sealed class ShortcutHelpDialog : Form
             headings.Add(heading);
             rows.Add((null, heading));
             int index = section;
-            var button = Theme.Button(lines[0], "Help navigate " + section, () => NavigateTo(index));
+            var button = Theme.Button(lines[0], "Help navigate " + section, () => NavigateTo(index), quiet: true);
             button.Dock = DockStyle.None;
             button.AutoSize = true;
-            button.Padding = new Padding(12, 4, 12, 4);
-            button.Margin = new Padding(0, 0, 8, 4);
+            button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            button.Padding = new Padding(8, 0, 8, 0);
+            button.Margin = new Padding(0, 0, 4, 4);
             sections.Add(button);
             navigation.Controls.Add(button);
 
@@ -80,10 +85,9 @@ internal sealed class ShortcutHelpDialog : Form
                     rows.Add((null, AddText(line, "Help note")));
                     continue;
                 }
-                var key = AddText(line[..divider], "Help shortcut");
-                key.BackColor = Theme.Canvas;
-                key.Padding = new Padding(8, 4, 8, 4);
+                var key = AddText(line[..divider], "Help shortcut", keycap: true);
                 var description = AddText(line[divider..].TrimStart(), "Help description");
+                description.TextAlign = ContentAlignment.MiddleLeft;
                 rows.Add((key, description));
             }
         }
@@ -93,16 +97,17 @@ internal sealed class ShortcutHelpDialog : Form
         {
             Dock = DockStyle.Fill, AutoSize = true, WrapContents = false,
             FlowDirection = FlowDirection.RightToLeft,
-            Margin = new Padding(0, 16, 0, 0), BackColor = Theme.Canvas
+            Margin = new Padding(0, 12, 0, 0), BackColor = Theme.Canvas
         };
         var close = Theme.Button(text.T("Close"), "Close help", () =>
         {
             DialogResult = DialogResult.Cancel;
             Close();
-        }, 96);
+        }, 80);
         close.Dock = DockStyle.None;
         close.AutoSize = true;
-        close.Padding = new Padding(16, 4, 16, 4);
+        close.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        close.Padding = new Padding(12, 0, 12, 0);
         close.Margin = Padding.Empty;
         close.DialogResult = DialogResult.Cancel;
         actions.Controls.Add(close);
@@ -120,15 +125,16 @@ internal sealed class ShortcutHelpDialog : Form
         ResumeLayout(true);
     }
 
-    private Label AddText(string value, string name)
+    private Label AddText(string value, string name, bool keycap = false)
     {
-        var label = new Label
-        {
-            Text = value, AccessibleName = name, UseMnemonic = false,
-            AutoSize = false, Margin = Padding.Empty,
-            ForeColor = name is "Help note" or "Help footer" ? Theme.Muted : Theme.Text,
-            BackColor = Theme.Surface
-        };
+        Label label = keycap ? new KeycapLabel() : new Label();
+        label.Text = value;
+        label.AccessibleName = name;
+        label.UseMnemonic = false;
+        label.AutoSize = false;
+        label.Margin = Padding.Empty;
+        label.ForeColor = name is "Help note" or "Help footer" ? Theme.Muted : Theme.Text;
+        label.BackColor = keycap ? Theme.Canvas : Theme.Surface;
         sheet.Controls.Add(label);
         return label;
     }
@@ -146,43 +152,47 @@ internal sealed class ShortcutHelpDialog : Form
         sheet.SuspendLayout();
         try
         {
-            int inset = Space(4), gap = Space(4);
+            int inset = Space(3), gap = Space(4);
             int width = Math.Max(1, content.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - inset * 2);
             int keyWidth = Math.Max(1, (width - gap) * 2 / 5);
             int bodyWidth = Math.Max(1, width - keyWidth - gap);
-            bool stacked = width < Math.Max(Space(120), Font.Height * 24);
+            bool stacked = width < Math.Max(Space(120), Font.Height * 20);
             int y = inset;
             foreach (var row in rows)
             {
                 bool heading = headings.Contains(row.Body);
                 bool footer = row.Body.AccessibleName == "Help footer";
-                if ((heading && row.Body != headings[0]) || footer) y += Space(4);
+                if ((heading && row.Body != headings[0]) || footer) y += Space(6);
                 if (row.Key is { } key)
                 {
+                    key.Padding = new Padding(Space(2), Space(1), Space(2), Space(1));
                     if (stacked)
                     {
-                        int keyHeight = key.GetPreferredSize(new Size(width, 0)).Height;
+                        Size preferred = key.GetPreferredSize(new Size(width, 0));
+                        int keyHeight = preferred.Height;
                         int bodyHeight = row.Body.GetPreferredSize(new Size(width, 0)).Height;
-                        key.SetBounds(inset, y, width, keyHeight);
+                        key.SetBounds(inset, y, Math.Min(width, preferred.Width), keyHeight);
                         y += keyHeight + Space(1);
                         row.Body.SetBounds(inset, y, width, bodyHeight);
-                        y += bodyHeight + Space(3);
+                        y += bodyHeight + Space(2);
                     }
                     else
                     {
-                        int keyHeight = key.GetPreferredSize(new Size(keyWidth, 0)).Height;
+                        Size preferred = key.GetPreferredSize(new Size(keyWidth, 0));
+                        int keyHeight = preferred.Height;
                         int bodyHeight = row.Body.GetPreferredSize(new Size(bodyWidth, 0)).Height;
                         int height = Math.Max(keyHeight, bodyHeight);
-                        key.SetBounds(inset, y, keyWidth, height);
+                        key.SetBounds(inset, y + (height - keyHeight) / 2,
+                            Math.Min(keyWidth, preferred.Width), keyHeight);
                         row.Body.SetBounds(inset + keyWidth + gap, y, bodyWidth, height);
-                        y += height + Space(2);
+                        y += height + Space(1);
                     }
                 }
                 else
                 {
                     int height = row.Body.GetPreferredSize(new Size(width, 0)).Height;
                     row.Body.SetBounds(inset, y, width, height);
-                    y += height + Space(heading ? 3 : 2);
+                    y += height + Space(heading ? 2 : 1);
                 }
             }
             sheet.SetBounds(0, 0, width + inset * 2, y + inset);
@@ -256,6 +266,33 @@ internal sealed class ShortcutHelpDialog : Form
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (disposing) headingFont.Dispose();
+        if (disposing)
+        {
+            titleFont.Dispose();
+            headingFont.Dispose();
+        }
+    }
+
+    // Keep native label text, measurement and accessibility; only the material is drawn.
+    private sealed class KeycapLabel : Label
+    {
+        internal KeycapLabel()
+        {
+            TextAlign = ContentAlignment.MiddleLeft;
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            e.Graphics.Clear(Parent?.BackColor ?? Theme.Surface);
+            var bounds = ClientRectangle;
+            bounds.Width--;
+            bounds.Height--;
+            Theme.FillRounded(e.Graphics, bounds, Theme.Border, DeviceDpi);
+            int edge = Math.Max(1, (int)Math.Round(DeviceDpi / 96d));
+            bounds.Inflate(-edge, -edge);
+            if (bounds.Width > 0 && bounds.Height > 0)
+                Theme.FillRounded(e.Graphics, bounds, BackColor, DeviceDpi);
+        }
     }
 }

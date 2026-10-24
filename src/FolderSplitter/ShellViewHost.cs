@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace QuadExplorer;
 
 [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
+public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 {
     private IExplorerBrowser? browser;
     private IShellView? view;
@@ -171,6 +171,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
         visual.SetColor(4, ColorTranslator.ToWin32(Theme.Muted));
         visual.SetColor(5, ColorTranslator.ToWin32(Theme.ListBack));
         ApplyListFont();
+        ApplyDetailsAppearance();
     }
 
     // The folder view does not implement IVisualProperties.SetFont, so the font goes to its list window,
@@ -264,6 +265,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     {
         var settings = new FolderSettings { ViewMode = mode, Flags = 0x02000000 };
         browser?.SetFolderSettings(ref settings);
+        ApplyDetailsAppearance();
     }
 
     public void FocusView()
@@ -293,6 +295,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     {
         base.OnResize(e);
         if (initialized) browser?.SetRect(0, new NativeRect(ClientSize.Width, ClientSize.Height));
+        ApplyDetailsAppearance();
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
@@ -326,6 +329,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     private void ReleaseView()
     {
+        ReleaseDetailsAppearance();
         itemCountTimer.Stop();
         SetItemCount(null);
         if (enumerationSource is not null)
@@ -425,6 +429,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     private void OnEnumerationDone()
     {
         enumerationReady = true;
+        ApplyDetailsAppearance();
         RefreshItemCount();
         if (pendingSelection is not null && navigationReady) CompleteNavigation();
     }
@@ -610,6 +615,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     internal void SetViewModeAndSize(uint mode, int size)
     {
         if (view is IFolderView2 folderView) folderView.SetViewModeAndIconSize(mode, size);
+        ApplyDetailsAppearance();
     }
 
     internal (uint Mode, int Size)? ViewModeAndSize =>
