@@ -11,16 +11,19 @@ internal sealed class FolderTabButton : ToolStripButton
     public event EventHandler? CloseRequested;
     public event EventHandler? DragRequested;
 
+    internal Rectangle CloseBounds => new(Width - CloseWidth, 0, CloseWidth, Height);
+    internal int CloseWidth => (int)Math.Round(28 * (Owner?.DeviceDpi ?? 96) / 96d);
+
     public FolderTabButton()
     {
-        Padding = new Padding(0, 0, 20, 0);
+        Padding = new Padding(0, 0, 28, 0);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         StopTracking();
         dragged = false;
-        closePressed = e.Button == MouseButtons.Left && e.X >= Width - 22;
+        closePressed = e.Button == MouseButtons.Left && CloseBounds.Contains(e.Location);
         base.OnMouseDown(e);
         if (e.Button == MouseButtons.Left && !closePressed && Owner is not null)
         {
@@ -88,11 +91,16 @@ internal sealed class FolderTabButton : ToolStripButton
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        using var pen = new Pen(Selected ? Theme.Text : Theme.Muted, 1.2f);
-        int x = Width - 14;
+        float scale = (Owner?.DeviceDpi ?? 96) / 96f;
+        using var pen = new Pen(Selected ? Theme.Text : Theme.Muted, 1.6f * scale);
+        float x = CloseBounds.Left + CloseBounds.Width / 2f;
         int y = Height / 2;
-        e.Graphics.DrawLine(pen, x - 3, y - 3, x + 3, y + 3);
-        e.Graphics.DrawLine(pen, x + 3, y - 3, x - 3, y + 3);
+        float radius = 5 * scale;
+        var smoothing = e.Graphics.SmoothingMode;
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.DrawLine(pen, x - radius, y - radius, x + radius, y + radius);
+        e.Graphics.DrawLine(pen, x + radius, y - radius, x - radius, y + radius);
+        e.Graphics.SmoothingMode = smoothing;
     }
 
     protected override void Dispose(bool disposing)

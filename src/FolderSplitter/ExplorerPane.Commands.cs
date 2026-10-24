@@ -6,7 +6,11 @@ public sealed partial class ExplorerPane
 {
     private readonly ToolStrip commands = Theme.Strip(outlineItems: true);
     private readonly List<ToolStripItem> selectionCommands = [];
-    private readonly ToolStripTextBox filter = new() { AutoSize = false, Width = 160, Alignment = ToolStripItemAlignment.Right };
+    private readonly ToolStripTextBox filter = new()
+    {
+        AutoSize = false, Width = 160, Alignment = ToolStripItemAlignment.Right,
+        BorderStyle = BorderStyle.FixedSingle
+    };
     private readonly System.Windows.Forms.Timer filterTimer = new() { Interval = 250 };
     private ToolStripDropDownButton sortMenu = null!, viewMenu = null!;
     private ToolStripButton compare = null!;

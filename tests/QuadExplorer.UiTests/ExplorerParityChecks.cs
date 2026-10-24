@@ -68,6 +68,8 @@ internal static partial class Program
                 // Command bar
                 Check(new[] { "New folder", "Cut", "Copy", "Paste", "Rename", "Delete", "Sort", "View", "Compare", "filter" }
                     .All(name => Command(name) is not null), "every pane has File Explorer's commands above the file list");
+                Check(((ToolStripTextBox)Command("filter")).BorderStyle == BorderStyle.FixedSingle,
+                    "folder filter keeps a fixed border without pointer or keyboard focus");
                 Check(!Command("Cut").Enabled && !Command("Delete").Enabled && Command("New folder").Enabled && Command("Paste").Enabled,
                     "selection commands wait for a selection; New folder and Paste do not");
                 await Select(host, [Path.Combine(left, "note.txt")]);

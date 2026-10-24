@@ -162,7 +162,7 @@ public sealed partial class ExplorerPane : UserControl
         AddButton(navigation, 5, "\uE838", "Choose folder", ChooseFolder);
         AddButton(navigation, 6, "\uE713", "Pane options", ShowOptions);
 
-        newTab = new OutlinedToolStripButton("+")
+        newTab = new ToolStripButton("+")
         {
             AutoSize = false, Width = 30, Margin = new Padding(12, 1, 0, 2), // gap keeps it away from the last tab's close button
             AccessibleName = $"Pane {number} new tab", ToolTipText = this.text.T("New tab (Ctrl+T)"),
@@ -624,7 +624,7 @@ public sealed partial class ExplorerPane : UserControl
             int count = tabs.Count;
             float scale = tabStrip.DeviceDpi / 96f;
             int Scaled(int value) => (int)Math.Round(value * scale);
-            int chrome = Scaled(62), floor = Scaled(90), margin = 2;
+            int chrome = Scaled(70), floor = Scaled(90), margin = 2;
             // Fixed-size items keep the height they were created with; size them from the current font,
             // so a font or DPI change (for example connecting over Remote Desktop) never clips their text.
             int rowHeight = Math.Max(TextRenderer.MeasureText("가Ag", tabStrip.Font).Height, Scaled(16)) + Scaled(8);
@@ -660,6 +660,7 @@ public sealed partial class ExplorerPane : UserControl
             for (int i = 0; i < count; i++)
             {
                 var button = tabs[i].Button;
+                button.Padding = new Padding(0, 0, button.CloseWidth, 0);
                 button.Size = new Size(widths[i], rowHeight);
                 button.Text = FitTitle(button.Title, widths[i] - chrome);
                 button.Visible = i >= first && i < first + shown;

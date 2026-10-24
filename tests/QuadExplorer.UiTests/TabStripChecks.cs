@@ -31,6 +31,20 @@ internal static partial class Program
                 Check(pane.TabButtons[0].Width <= Scaled(240) && pane.TabButtons[0].Text!.EndsWith('\u2026'),
                     "with more tabs a long name returns to the normal maximum with an ellipsis");
                 Check(pane.TabButtons[1].Width >= Scaled(110), "a short name keeps a readable minimum width");
+                var closeTab = pane.TabButtons[1];
+                Check(closeTab.CloseBounds.Width == Scaled(28) && closeTab.Padding.Right == Scaled(28),
+                    "tab close target and reserved title space scale together");
+                var mouseDown = typeof(FolderTabButton).GetMethod("OnMouseDown",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                mouseDown.Invoke(closeTab, [new MouseEventArgs(MouseButtons.Left, 1,
+                    closeTab.CloseBounds.Left - 1, closeTab.Height / 2, 0)]);
+                closeTab.PerformClick();
+                Check(pane.TabCount == 2, "clicking beside the close target only selects the tab");
+                mouseDown.Invoke(closeTab, [new MouseEventArgs(MouseButtons.Left, 1,
+                    closeTab.CloseBounds.Left + 1, closeTab.Height / 2, 0)]);
+                closeTab.PerformClick();
+                Check(pane.TabCount == 1, "clicking the expanded close target closes its tab");
+                pane.AddTab(shortFolder);
                 using (var image = new Bitmap(strip.Width, strip.Height))
                 {
                     strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
@@ -47,8 +61,17 @@ internal static partial class Program
                     {
                         form.SetColorTheme(mode);
                         form.Refresh();
-                        using var shot = PrintForm(form, 2);
+                        pane.TabButtons[1].Select();
+                        using var shot = new Bitmap(strip.Width, strip.Height);
+                        strip.DrawToBitmap(shot, new Rectangle(Point.Empty, strip.Size));
                         shot.Save(Path.Combine(captures, $"tabs-{mode}.png"));
+                        strip.Items.Cast<ToolStripItem>().Single(item => item.AccessibleName == "Pane 1 new tab").Select();
+                        strip.DrawToBitmap(shot, new Rectangle(Point.Empty, strip.Size));
+                        shot.Save(Path.Combine(captures, $"tabs-{mode}-hover.png"));
+                        var commandStrip = Descendants(pane).OfType<ToolStrip>().Single(s => s.AccessibleName == "Pane 1 commands");
+                        using var commandShot = new Bitmap(commandStrip.Width, commandStrip.Height);
+                        commandStrip.DrawToBitmap(commandShot, new Rectangle(Point.Empty, commandStrip.Size));
+                        commandShot.Save(Path.Combine(captures, $"filter-{mode}.png"));
                     }
                     form.SetColorTheme("light");
                     while (pane.TabCount > 2) pane.CloseTab(pane.TabCount - 1);

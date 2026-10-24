@@ -461,7 +461,7 @@ internal static class Theme
             bool active = e.Item.Enabled && (e.Item.Selected || e.Item.Pressed);
             // Folder tabs keep a faint outline when idle so neighbouring tabs read as separate items.
             bool tab = e.Item is FolderTabButton;
-            bool outlined = e.Item is OutlinedToolStripButton || ReferenceEquals(e.ToolStrip?.Tag, OutlineItems);
+            bool outlined = ReferenceEquals(e.ToolStrip?.Tag, OutlineItems);
             bool outlineOnly = (outlined || tab) && !isChecked && !active;
             if (!isChecked && !active && !outlineOnly) return;
             int dpi = e.ToolStrip?.DeviceDpi ?? 96;
@@ -563,6 +563,3 @@ internal static class Theme
         public static extern int DwmSetWindowAttribute(nint window, uint attribute, ref int value, int size);
     }
 }
-
-// A toolbar button that keeps its rounded outline when idle, so a lone icon such as "+" stays easy to find.
-internal sealed class OutlinedToolStripButton(string text) : ToolStripButton(text);

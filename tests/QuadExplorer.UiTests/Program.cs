@@ -128,7 +128,12 @@ internal static partial class Program
                         strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
                         Color edge = image.GetPixel(plus.Bounds.Left + 1, plus.Bounds.Top + plus.Bounds.Height / 2);
                         Color gapColor = image.GetPixel(plus.Bounds.Left - 5, plus.Bounds.Top + plus.Bounds.Height / 2);
-                        Check(edge.ToArgb() != gapColor.ToArgb(), "new tab button draws an outline when idle");
+                        Check(edge.ToArgb() == gapColor.ToArgb(), "new tab button has no outline when idle");
+                        plus.Select();
+                        strip.DrawToBitmap(image, new Rectangle(Point.Empty, strip.Size));
+                        Color hoverEdge = image.GetPixel(plus.Bounds.Left + 1, plus.Bounds.Top + plus.Bounds.Height / 2);
+                        Check(plus.Selected && hoverEdge.ToArgb() != gapColor.ToArgb(),
+                            "new tab button shows an outline when selected by pointer or keyboard");
                     }
                     Check(HasNativeDropTarget(newView), "new shell tab registers a native drop target");
                     panes[0].CloseTab();
