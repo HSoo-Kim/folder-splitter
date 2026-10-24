@@ -265,6 +265,17 @@ internal static partial class Program
             Files(projects, "프로젝트 개요.txt", "연간 일정.csv");
             Folder("프로젝트", "2026 신제품 출시", "보도 사진"); Folder("프로젝트", "2026 신제품 출시", "참고 자료");
             Files(launch, "출시 계획.txt", "예산표.csv", "회의록 10월.txt", "보도자료 초안.txt");
+            string productPhoto = Path.Combine(launch, "제품 사진.png");
+            using (var image = new Bitmap(1200, 800))
+            {
+                using var g = Graphics.FromImage(image);
+                using var brush = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(0, 0, 1200, 800),
+                    Color.FromArgb(120, 170, 215), Color.FromArgb(225, 236, 246), 35f);
+                g.FillRectangle(brush, 0, 0, 1200, 800);
+                using var shape = new SolidBrush(Color.FromArgb(240, 250, 252, 255));
+                g.FillEllipse(shape, 420, 220, 360, 360);
+                image.Save(productPhoto);
+            }
             Files(web, "사이트맵.txt", "화면 설계.txt");
             string photos = Folder("사진");
             Folder("사진", "제주 여행"); Folder("사진", "가족"); Folder("사진", "2026 워크숍"); Folder("사진", "스크린샷");
@@ -311,6 +322,20 @@ internal static partial class Program
                     panes[0].ActiveView!.SetViewMode(4);
                     await ItemCountKnown(panes[0].ActiveView!);
                     await CaptureDemo(form, output, "03-dark-tree-tab");
+                    // Sky blue theme with the details pane showing a photo's properties.
+                    form.SetColorTheme("sky");
+                    panes[0].SelectTab(1, focus: false);
+                    form.SetDetailsPaneVisible(true);
+                    var details = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void DetailsChanged(object? sender, EventArgs e) { if (form.Preview.DetailsPath == productPhoto) details.TrySetResult(); }
+                    form.Preview.DetailsChanged += DetailsChanged;
+                    panes[0].ActiveView!.SelectPaths([productPhoto]);
+                    form.UpdatePreview();
+                    await details.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                    form.Preview.DetailsChanged -= DetailsChanged;
+                    await CaptureDemo(form, output, "05-sky-details");
+                    form.SetDetailsPaneVisible(false);
+                    form.SetPreviewVisible(false);
                     form.SetColorTheme("light");
                     await search.BuildOrLoadAsync(CancellationToken.None);
                     var address = Descendants(panes[1]).OfType<TextBox>().Single(box => box.AccessibleName?.EndsWith(" address") == true);
