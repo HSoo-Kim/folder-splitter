@@ -882,10 +882,20 @@ internal static partial class Program
                     && form.VersionText.Contains("New version v99.0.0 available", StringComparison.Ordinal),
                     "a newer release shows a download link next to the version");
                 Check(form.AutoUpdateEnabled, "automatic update install is on by default");
+                Check(form.UpdateCheckInterval == TimeSpan.FromHours(1), "a running app checks for a new release every hour");
+                var activated = typeof(Form).GetMethod("OnActivated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                int recent = requests;
+                activated.Invoke(form, [EventArgs.Empty]);
+                Check(requests == recent, "showing the window again within 15 minutes of a check does not query GitHub");
+                form.LastUpdateCheck = DateTime.UtcNow - TimeSpan.FromMinutes(16);
+                activated.Invoke(form, [EventArgs.Empty]);
+                Check(requests == recent + 1, "showing the window again after 15 minutes checks for a new release");
                 form.SetAutoUpdate(false);
                 form.SetCheckUpdates(false);
                 int before = requests;
                 await form.CheckForUpdateAsync();
+                form.LastUpdateCheck = DateTime.MinValue;
+                activated.Invoke(form, [EventArgs.Empty]);
                 Check(!form.UpdateLinkShown && requests == before, "turning update checks off hides the notice and stops requests");
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }

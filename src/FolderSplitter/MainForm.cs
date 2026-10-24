@@ -97,7 +97,8 @@ public sealed class MainForm : Form, IMessageFilter
         AccessibleName = "Author", Text = "Made by HSoo-Kim (github.com/HSoo-Kim)"
     };
     private readonly Func<CancellationToken, Task<ReleaseInfo?>>? latestRelease;
-    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 24 * 60 * 60 * 1000 };
+    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 60 * 60 * 1000 };
+    private static readonly TimeSpan UpdateRecheckAfter = TimeSpan.FromMinutes(15);
     private readonly CancellationTokenSource updateCancellation = new();
     private readonly ToolStripMenuItem updateItem = new() { CheckOnClick = true };
     private ReleaseInfo? availableUpdate;
@@ -482,7 +483,7 @@ public sealed class MainForm : Form, IMessageFilter
             Active.FocusFiles();
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
             updateTimer.Enabled = checkUpdates && latestRelease is not null;
-            _ = CheckForUpdateAsync();
+            _ = CheckForStaleUpdateAsync();
         };
         ResizeEnd += (_, _) => ScheduleSave();
         RenderLayout(layoutTree);
@@ -1308,10 +1309,25 @@ public sealed class MainForm : Form, IMessageFilter
         ScheduleSave();
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal DateTime LastUpdateCheck { get; set; } = DateTime.MinValue;
+    internal TimeSpan UpdateCheckInterval => TimeSpan.FromMilliseconds(updateTimer.Interval);
+
+    // Unauthenticated GitHub API calls share 60 requests per hour per IP address. Besides the hourly
+    // timer, showing the window again re-checks only when the last check is 15 minutes old.
+    internal Task CheckForStaleUpdateAsync() =>
+        DateTime.UtcNow - LastUpdateCheck >= UpdateRecheckAfter ? CheckForUpdateAsync() : Task.CompletedTask;
+
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        _ = CheckForStaleUpdateAsync();
+    }
+
     // Offline, blocked or rate-limited networks simply leave the version label unchanged.
     internal async Task CheckForUpdateAsync()
     {
         if (!checkUpdates || latestRelease is null || updateCancellation.IsCancellationRequested) return;
+        LastUpdateCheck = DateTime.UtcNow;
         ReleaseInfo? latest;
         try { latest = await latestRelease(updateCancellation.Token); }
         catch (Exception error) when (error is HttpRequestException or TaskCanceledException or OperationCanceledException
