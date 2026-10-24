@@ -1064,6 +1064,11 @@ internal static partial class Program
                     "lower-left version matches running assembly and remains visible with sidebar hidden");
                 form.SetSidebarVisible(true);
                 Check(form.SidebarWidth == 320, "quick access restores its resized width");
+                var favoriteList = Descendants(form).OfType<ListBox>().Single(list => list.AccessibleName == "Favorites");
+                favoriteList.Update();
+                form.SetSidebarWidth(260);
+                Check(GetUpdateRect(favoriteList.Handle, 0, false), "narrowing quick access repaints the favorites list so no old name tails remain");
+                form.SetSidebarWidth(320);
                 form.ClearFavorites();
                 Check(form.FavoritePaths.Count == 0 && form.DeletedFavoritePaths.Count == 2,
                     "clear all favorites retains recoverable entries");

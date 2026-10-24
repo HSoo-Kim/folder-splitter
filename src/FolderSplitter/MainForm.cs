@@ -285,6 +285,8 @@ public sealed class MainForm : Form, IMessageFilter
             IntegralHeight = false, AccessibleName = "Quick access"
         };
         places.DrawItem += DrawPlace;
+        // An owner-drawn list keeps old pixels when it only gets narrower, leaving tails of long names; repaint it all.
+        places.Resize += (_, _) => places.Invalidate();
         places.MouseClick += (_, _) => OpenPlace();
         places.KeyDown += (_, e) =>
         {
@@ -310,6 +312,7 @@ public sealed class MainForm : Form, IMessageFilter
             IntegralHeight = false, AccessibleName = "Favorites"
         };
         favoritePlaces.DrawItem += DrawPlace;
+        favoritePlaces.Resize += (_, _) => favoritePlaces.Invalidate();
         favoritePlaces.MouseClick += (_, _) => { if (favoritePlaces.SelectedItem is Place p) Active.Navigate(p.Path); };
         favoritePlaces.KeyDown += (_, e) =>
         {

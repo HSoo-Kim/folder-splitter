@@ -92,10 +92,10 @@ internal sealed class FolderTabButton : ToolStripButton
     {
         base.OnPaint(e);
         float scale = (Owner?.DeviceDpi ?? 96) / 96f;
-        using var pen = new Pen(Selected ? Theme.Text : Theme.Muted, 1.6f * scale);
+        using var pen = new Pen(Selected ? Theme.Text : Theme.Muted, 1.3f * scale);
         float x = CloseBounds.Left + CloseBounds.Width / 2f;
         int y = Height / 2;
-        float radius = 5 * scale;
+        float radius = 4 * scale;
         var smoothing = e.Graphics.SmoothingMode;
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         e.Graphics.DrawLine(pen, x - radius, y - radius, x + radius, y + radius);
