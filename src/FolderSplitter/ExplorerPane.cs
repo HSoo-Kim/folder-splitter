@@ -4,7 +4,7 @@ using QuadExplorer.Search;
 
 namespace QuadExplorer;
 
-public sealed class ExplorerPane : UserControl
+public sealed partial class ExplorerPane : UserControl
 {
     private sealed class FolderTab(FolderTabButton button)
     {
@@ -192,6 +192,7 @@ public sealed class ExplorerPane : UserControl
         activeLine = new Panel { Dock = DockStyle.Top, Height = 2, BackColor = Theme.Border };
         body.Controls.Add(contents);
         body.Controls.Add(status);
+        body.Controls.Add(BuildCommands());
         body.Controls.Add(navigation);
         body.Controls.Add(tabStrip);
         body.Controls.Add(activeLine);
@@ -440,6 +441,7 @@ public sealed class ExplorerPane : UserControl
             if (host != ActiveView) return;
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             ScheduleSelectionSummary();
+            UpdateCommands();
         };
         host.Navigated += (_, _) =>
         {
@@ -453,6 +455,8 @@ public sealed class ExplorerPane : UserControl
             StateChanged?.Invoke(this, EventArgs.Empty);
         };
         host.NavigationError += (_, message) => SetLocalizedStatus(() => host.ErrorStatus ?? message);
+        host.FilterChanged += (_, _) => { if (host == ActiveView) UpdateCommands(); };
+        host.Navigated += (_, _) => { if (host == ActiveView) UpdateCommands(); };
         // Tab removal hides the host while the selected index is still being updated.
         host.ItemCountChanged += (_, _) =>
         {
@@ -463,6 +467,11 @@ public sealed class ExplorerPane : UserControl
             }
         };
         contents.Controls.Add(host);
+    }
+
+    internal void RefreshViews()
+    {
+        foreach (var tab in tabs) tab.Host?.RefreshFolder();
     }
 
     public void SelectTab(int index, bool focus = true)
@@ -493,6 +502,7 @@ public sealed class ExplorerPane : UserControl
         UpdateStatus();
         LayoutTabs();
         ShowBreadcrumb();
+        UpdateCommands();
         if (focus)
         {
             Activated?.Invoke(this, EventArgs.Empty);

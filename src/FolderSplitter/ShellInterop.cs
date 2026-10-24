@@ -22,6 +22,12 @@ internal static class ShellNative
     [DllImport("shell32.dll")]
     public static extern nint ILFindLastID(nint pidl);
 
+    [DllImport("shell32.dll")]
+    public static extern nint ILCombine(nint parent, nint child);
+
+    [DllImport("shell32.dll")]
+    public static extern void ILFree(nint pidl);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsChild(nint parent, nint window);
@@ -186,4 +192,53 @@ public interface IFolderView2
     [PreserveSig] int GetSortColumnCount(out int count);
     [PreserveSig] int SetSortColumns([In, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] SortColumn[] columns, int count);
     [PreserveSig] int GetSortColumns([Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] SortColumn[] columns, int count);
+    void GetItem(); void GetVisibleItem(); void GetSelectedItem(); void GetSelection(); void GetSelectionState();
+    [PreserveSig] int InvokeVerbOnSelection([MarshalAs(UnmanagedType.LPStr)] string verb);
+    [PreserveSig] int SetViewModeAndIconSize(uint mode, int size);
+    [PreserveSig] int GetViewModeAndIconSize(out uint mode, out int size);
+    void SetGroupSubsetCount(); void GetGroupSubsetCount(); void SetRedraw(); void IsMoveInSameFolder();
+    [PreserveSig] int DoRename();
+}
+
+// The folder view's background menu (New folder, Paste) is invoked by its canonical verb, as File Explorer does.
+[ComImport, Guid("000214E4-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IContextMenu
+{
+    [PreserveSig] int QueryContextMenu(nint menu, uint index, uint firstCommand, uint lastCommand, uint flags);
+    [PreserveSig] int InvokeCommand(nint info);
+    [PreserveSig] int GetCommandString(nuint command, uint type, nint reserved, nint name, uint length);
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct InvokeCommandInfo
+{
+    public int Size;
+    public uint Mask;
+    public nint Window;
+    public nint Verb;
+    public nint Parameters;
+    public nint Directory;
+    public int Show;
+    public uint HotKey;
+    public nint Icon;
+    public nint Title;
+    public nint VerbW;
+    public nint ParametersW;
+    public nint DirectoryW;
+    public nint TitleW;
+    public int X, Y;
+}
+
+// ExplorerBrowser asks a folder filter which items to show while it enumerates a folder.
+[ComImport, Guid("C0A651F5-B48B-11d2-B5ED-006097C686F6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IFolderFilterSite
+{
+    [PreserveSig] int SetFilter([MarshalAs(UnmanagedType.IUnknown)] object? filter);
+}
+
+[ComImport, Guid("9CC22886-DC8E-11d2-B1D0-00C04F8EEB3E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IFolderFilter
+{
+    [PreserveSig] int ShouldShow([MarshalAs(UnmanagedType.IUnknown)] object folder, nint folderIdList, nint itemIdList);
+    [PreserveSig] int GetEnumFlags([MarshalAs(UnmanagedType.IUnknown)] object folder, nint folderIdList, ref nint window, ref uint flags);
 }

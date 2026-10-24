@@ -210,11 +210,18 @@ public sealed class MainForm : Form, IMessageFilter
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
             pane.TransferRequested += (source, move) => { ActivatePane(Array.IndexOf(panes, source)); TransferSelection(move); };
+            pane.BulkRenameRequested += (_, _) => OpenBulkRename(pane);
+            pane.CompareRequested += (_, _) => OpenCompare(pane);
+            pane.DetailsPaneToggled += (_, _) => SetDetailsPaneVisible(!(showDetails && showPreview));
+            pane.ShellSettingsChanged += (_, _) => { foreach (var each in panes) each.RefreshViews(); };
+            pane.DetailsPaneShown = () => showDetails && showPreview;
         }
 
         showPreview = initialState.ShowPreview;
+        showDetails = initialState.ShowDetails;
         previewWidth = initialState.PreviewWidth > 0 ? Math.Clamp(initialState.PreviewWidth, 200, 1600) : 380;
         previewPane = new PreviewPane(text) { Dock = DockStyle.Right, Width = previewWidth, Visible = showPreview };
+        previewPane.SetDetailsVisible(showDetails);
         previewSplitter = new Splitter
         {
             Dock = DockStyle.Right, Width = 6, MinSize = 200, MinExtra = 300, Visible = showPreview,
@@ -1040,10 +1047,54 @@ public sealed class MainForm : Form, IMessageFilter
     {
         if (!showPreview || IsDisposed || previewPane.Pinned) return;
         var (path, count) = Active.ActiveView?.SelectionInfo() ?? (null, 0);
+        if (showDetails) _ = previewPane.ShowDetailsAsync(count == 1 ? path : null);
         if (count == 0) previewPane.ShowMessage("Select a file to preview it.");
         else if (count > 1) previewPane.ShowMessage("{0} items selected", count);
         else if (path is null || Directory.Exists(path)) previewPane.ShowMessage("Folders are not previewed.");
         else previewPane.ShowFile(path);
+    }
+
+    private bool showDetails;
+    internal bool DetailsPaneVisible => showDetails && showPreview;
+
+    // The details pane lives under the preview, so showing it also shows the preview area.
+    internal void SetDetailsPaneVisible(bool visible)
+    {
+        showDetails = visible;
+        previewPane.SetDetailsVisible(visible);
+        if (visible && !showPreview) SetPreviewVisible(true);
+        else if (visible) UpdatePreview();
+        ScheduleSave();
+    }
+
+    internal BulkRenameDialog? OpenBulkRename(ExplorerPane pane, bool modal = true)
+    {
+        if (pane.ActiveView is not { } view) return null;
+        var (paths, _) = view.SelectedPaths();
+        if (paths.Count < 2) { view.StartRename(); return null; }
+        var dialog = new BulkRenameDialog(paths, text);
+        dialog.Completed += (done, error) =>
+        {
+            if (error is not null) pane.SetStatus(error);
+            else if (done) pane.SetLocalizedStatus("Renamed {0} items.", paths.Count);
+        };
+        if (modal) { using (dialog) dialog.ShowDialog(this); return null; }
+        return dialog;
+    }
+
+    internal CompareDialog? OpenCompare(ExplorerPane pane)
+    {
+        var other = OtherPane();
+        if (other is null || pane.ActiveView is null || other.ActiveView is null || pane.CurrentPath.Length == 0 || other.CurrentPath.Length == 0
+            || !Directory.Exists(pane.CurrentPath) || !Directory.Exists(other.CurrentPath))
+        {
+            pane.SetLocalizedStatus("Open another pane to compare.");
+            return null;
+        }
+        var dialog = new CompareDialog(pane.CurrentPath, pane.PaneNumber, other.CurrentPath, other.PaneNumber, text,
+            paths => pane.ActiveView?.SelectPaths(paths), paths => other.ActiveView?.SelectPaths(paths));
+        dialog.Show(this);
+        return dialog;
     }
 
     internal void SetFolderTreeVisible(bool visible)
@@ -1960,7 +2011,7 @@ public sealed class MainForm : Form, IMessageFilter
             {
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
-                ColorTheme = colorTheme, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
+                ColorTheme = colorTheme, ShowDetails = showDetails, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),

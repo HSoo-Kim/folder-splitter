@@ -368,6 +368,7 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public int OnNavigationPending(nint pidlFolder)
     {
+        ClearFilterForNavigation();
         EndSettling();
         navigationReady = false;
         itemCountTimer.Stop();
@@ -566,6 +567,116 @@ public sealed class ShellViewHost : UserControl, IExplorerBrowserEvents
     {
         if (view is IFolderView2 folderView) folderView.SetGroupBy(ref key, true);
     }
+
+    // Commands that File Explorer's command bar runs on the selection or the folder background.
+    internal int SelectionCount => view is IFolderView folderView && folderView.ItemCount(1, out int count) >= 0 ? count : 0;
+
+    internal bool InvokeSelectionVerb(string verb) =>
+        view is IFolderView2 folderView && SelectionCount > 0 && folderView.InvokeVerbOnSelection(verb) >= 0;
+
+    internal bool StartRename() => view is IFolderView2 folderView && SelectionCount > 0 && folderView.DoRename() >= 0;
+
+    // "NewFolder" and "paste" are canonical verbs of the folder background menu.
+    internal bool InvokeBackgroundVerb(string verb)
+    {
+        if (view is null) return false;
+        Guid menuId = typeof(IContextMenu).GUID;
+        if (view.GetItemObject(0, ref menuId, out nint pointer) < 0) return false; // SVGIO_BACKGROUND
+        var menu = (IContextMenu)Marshal.GetObjectForIUnknown(pointer);
+        Marshal.Release(pointer);
+        nint popup = CreatePopupMenu(), verbA = Marshal.StringToHGlobalAnsi(verb), verbW = Marshal.StringToHGlobalUni(verb);
+        nint info = Marshal.AllocHGlobal(Marshal.SizeOf<InvokeCommandInfo>());
+        try
+        {
+            if (menu.QueryContextMenu(popup, 0, 1, 0x7FFF, 0) < 0) return false; // CMF_NORMAL
+            Marshal.StructureToPtr(new InvokeCommandInfo
+            {
+                Size = Marshal.SizeOf<InvokeCommandInfo>(), Mask = 0x4000, Window = Handle, // CMIC_MASK_UNICODE
+                Verb = verbA, VerbW = verbW, Show = 1
+            }, info, false);
+            return menu.InvokeCommand(info) >= 0;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(info);
+            Marshal.FreeHGlobal(verbA);
+            Marshal.FreeHGlobal(verbW);
+            DestroyMenu(popup);
+            Marshal.ReleaseComObject(menu);
+        }
+    }
+
+    // Folder view modes with File Explorer's icon sizes (FVM_ICON 1, SMALLICON 2, LIST 3, DETAILS 4, TILE 6, CONTENT 8).
+    internal void SetViewModeAndSize(uint mode, int size)
+    {
+        if (view is IFolderView2 folderView) folderView.SetViewModeAndIconSize(mode, size);
+    }
+
+    internal (uint Mode, int Size)? ViewModeAndSize =>
+        view is IFolderView2 folderView && folderView.GetViewModeAndIconSize(out uint mode, out int size) >= 0 ? (mode, size) : null;
+
+    internal void SortBy(PropertyKey key, bool descending)
+    {
+        if (view is IFolderView2 folderView)
+            folderView.SetSortColumns([new SortColumn { Property = key, Direction = descending ? -1 : 1 }], 1);
+    }
+
+    internal SortColumn? FirstSortColumn
+    {
+        get
+        {
+            if (view is not IFolderView2 folderView || folderView.GetSortColumnCount(out int count) < 0 || count < 1) return null;
+            var columns = new SortColumn[count];
+            return folderView.GetSortColumns(columns, count) >= 0 ? columns[0] : null;
+        }
+    }
+
+    // Selects exactly these items of the current folder and scrolls to the first one.
+    internal int SelectPaths(IEnumerable<string> paths)
+    {
+        if (view is null) return 0;
+        view.SelectItem(0, 0x4); // SVSI_DESELECTOTHERS
+        int selected = 0;
+        foreach (string path in paths)
+        {
+            if (!string.Equals(Path.GetDirectoryName(path), LocationPath, StringComparison.OrdinalIgnoreCase)) continue;
+            if (ShellNative.SHParseDisplayName(path, 0, out nint item, 0, out _) < 0) continue;
+            try
+            {
+                if (view.SelectItem(ShellNative.ILFindLastID(item), selected == 0 ? 0x19u : 0x1u) >= 0) selected++; // SELECT | ENSUREVISIBLE | FOCUSED
+            }
+            finally { Marshal.FreeCoTaskMem(item); }
+        }
+        return selected;
+    }
+
+    // Quick filter: only names containing every typed fragment are listed. Cleared when the tab navigates.
+    internal string FilterText { get; private set; } = "";
+    internal event EventHandler? FilterChanged;
+
+    internal void SetFilter(string text)
+    {
+        text = text.Trim();
+        if (text == FilterText || browser is not IFolderFilterSite site) return;
+        FilterText = text;
+        site.SetFilter(text.Length == 0 ? null : new NameFilter(text.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
+        view?.Refresh();
+        FilterChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ClearFilterForNavigation()
+    {
+        if (FilterText.Length == 0 || browser is not IFolderFilterSite site) return;
+        FilterText = "";
+        site.SetFilter(null);
+        FilterChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern nint CreatePopupMenu();
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyMenu(nint menu);
 
     internal PropertyKey? GroupKey =>
         view is IFolderView2 folderView && folderView.GetGroupBy(out var key, out _) >= 0 ? key : null;

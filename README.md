@@ -101,6 +101,12 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 
 ### Files
 - **Native Windows actions**: Right-click menu, copy/cut/paste, rename, delete and drag and drop between panes are handled by Windows as usual.
+- **Command bar**: Above each file list, like File Explorer: New folder, Cut, Copy, Paste, Rename and Delete (to the Recycle Bin, undoable with `Ctrl+Z`). Hover a button for its name and shortcut.
+- **Sort and View menus**: Sort by name, date modified, type or size, ascending or descending, and group by type or date. View switches between extra large to small icons, List, Details, Tiles and Content, and has File Explorer's `Show hidden items` and `Show file name extensions` (Windows-wide settings, so File Explorer follows too) and the details pane.
+- **Quick filter**: Type in the box at the right of the command bar to list only the names in this folder that contain it (several words must all match). `Esc` clears it, and it clears by itself when the tab opens another folder.
+- **Rename several items at once**: Select two or more items and press `Rename` on the command bar. Find and replace text (or a regular expression), add a running number with `{n}` and check every new name before applying; the extension is kept, clashes are refused, and one `Ctrl+Z` in File Explorer undoes it.
+- **Details pane**: `View` → `Details pane` lists the selected item's properties under the preview, as File Explorer does: type, location, size and dates, plus dimensions for images, length for media and authors for documents.
+- **Compare two panes**: `⇄` on the command bar compares this folder with the other pane's: items on one side only, newer files and files of a different size. A button selects those items in either pane, ready to copy.
 - **Views**: Pick Details, List or Icons from the pane options, or open the same folder in File Explorer. Grouping, sort order and view mode are remembered per folder, as in File Explorer.
 - **Item count and selection**: Each pane shows how many items it displays and, with a selection, the count and total file size (for example `3 selected · 1.2 GB`).
 - **Preview**: Enable it with `Preview` or `Alt+P`, then click a file. Its visibility and width are remembered.

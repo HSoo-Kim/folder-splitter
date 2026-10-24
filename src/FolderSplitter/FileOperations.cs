@@ -54,6 +54,48 @@ internal static class FileOperations
         }
     }
 
+    // Renames several items in one operation, so one Undo in File Explorer restores them all.
+    internal static void StartRename(IReadOnlyList<(string Path, string Name)> renames, nint owner, Action<bool, string?> completed)
+    {
+        var thread = new Thread(() =>
+        {
+            bool done = false;
+            string? error = null;
+            try { done = RunRename(renames, owner); }
+            catch (COMException exception) when (exception.HResult == Cancelled) { }
+            catch (Exception exception) when (exception is COMException or InvalidCastException or ArgumentException
+                or UnauthorizedAccessException) { error = exception.Message; }
+            completed(done, error);
+        }) { IsBackground = true, Name = "Rename operation" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    private static bool RunRename(IReadOnlyList<(string Path, string Name)> renames, nint owner)
+    {
+        var type = Type.GetTypeFromCLSID(new Guid("3ad05575-8857-4850-9277-11b85bdb8e09"), throwOnError: true)!;
+        var operation = (IFileOperation)Activator.CreateInstance(type)!;
+        var items = new List<IShellItem>();
+        try
+        {
+            operation.SetOwnerWindow(owner);
+            operation.SetOperationFlags(AllowUndo | AddUndoRecord);
+            foreach (var (path, name) in renames)
+            {
+                var item = ShellItem(path);
+                items.Add(item);
+                operation.RenameItem(item, name, 0);
+            }
+            operation.PerformOperations();
+            return !operation.GetAnyOperationsAborted();
+        }
+        finally
+        {
+            foreach (var item in items) Marshal.FinalReleaseComObject(item);
+            Marshal.FinalReleaseComObject(operation);
+        }
+    }
+
     private static IShellItem ShellItem(string path)
     {
         Guid shellItem = typeof(IShellItem).GUID;
@@ -81,7 +123,7 @@ internal static class FileOperations
         void SetOwnerWindow(nint owner);
         void ApplyPropertiesToItem(nint item);
         void ApplyPropertiesToItems(nint items);
-        void RenameItem(nint item, [MarshalAs(UnmanagedType.LPWStr)] string name, nint sink);
+        void RenameItem(IShellItem item, [MarshalAs(UnmanagedType.LPWStr)] string name, nint sink);
         void RenameItems(nint items, [MarshalAs(UnmanagedType.LPWStr)] string name);
         void MoveItem(IShellItem item, IShellItem destination,
             [MarshalAs(UnmanagedType.LPWStr)] string? name, nint sink);

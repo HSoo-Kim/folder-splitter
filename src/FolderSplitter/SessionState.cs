@@ -37,6 +37,7 @@ public sealed record SessionState
     public bool CheckUpdates { get; init; } = true;
     public bool AutoUpdate { get; init; } = true;
     public bool ShowPreview { get; init; }
+    public bool ShowDetails { get; init; }
     public int PreviewWidth { get; init; }
     public int Layout { get; init; } = 1;
     public PaneLayout? LayoutTree { get; init; }

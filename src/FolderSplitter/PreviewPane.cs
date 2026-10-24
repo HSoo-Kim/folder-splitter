@@ -26,6 +26,13 @@ internal sealed class PreviewPane : Panel
         Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Visible = false, Padding = new Padding(8),
         AccessibleName = "Preview image"
     };
+    // File Explorer's details pane: the selected item's properties under the preview.
+    private readonly ListView details = new()
+    {
+        Dock = DockStyle.Bottom, View = View.Details, HeaderStyle = ColumnHeaderStyle.None, FullRowSelect = true,
+        BorderStyle = BorderStyle.None, Visible = false, AccessibleName = "Details pane"
+    };
+    private int detailsGeneration;
     private IPreviewHandler? handler;
     private PdfPreview? pdf;
     private Point? dragStart;
@@ -49,6 +56,10 @@ internal sealed class PreviewPane : Panel
         windowButton.Dock = DockStyle.Right;
         windowButton.AutoSize = true;
         AccessibleName = "Preview";
+        details.Columns.Add("", 120);
+        details.Columns.Add("", 200);
+        details.Resize += (_, _) => FitDetailsColumns();
+        Resize += (_, _) => details.Height = Math.Max(120, ClientSize.Height * 2 / 5);
         Controls.Add(host);
         Controls.Add(picture);
         Controls.Add(message);
@@ -56,6 +67,7 @@ internal sealed class PreviewPane : Panel
         header.Controls.Add(windowButton);
         header.Controls.Add(pinButton);
         header.Controls.Add(detachButton);
+        Controls.Add(details);
         Controls.Add(header);
         host.Resize += (_, _) => ResizePreview();
         title.Cursor = Cursors.SizeAll;
@@ -84,6 +96,56 @@ internal sealed class PreviewPane : Panel
     internal event Action<string>? NewWindowRequested;
     internal event EventHandler? PinChanged;
     internal void SetFloating(bool floating) => detachButton.Visible = !floating;
+
+    internal bool DetailsShown => details.Visible;
+    internal string? DetailsPath { get; private set; }
+    internal IReadOnlyList<(string Name, string Value)> DetailRows =>
+        details.Items.Cast<ListViewItem>().Select(item => (item.Text, item.SubItems[1].Text)).ToList();
+    internal event EventHandler? DetailsChanged;
+
+    internal void SetDetailsVisible(bool visible)
+    {
+        details.Visible = visible;
+        if (!visible) { detailsGeneration++; details.Items.Clear(); DetailsPath = null; }
+    }
+
+    // Properties are read off the UI thread; a newer selection wins over a slower older one.
+    internal async Task ShowDetailsAsync(string? path)
+    {
+        if (!details.Visible) return;
+        int generation = ++detailsGeneration;
+        DetailsPath = path;
+        var rows = path is null ? [] : await Task.Run(() => ShellProperties.Read(path));
+        if (generation != detailsGeneration || IsDisposed) return;
+        details.BeginUpdate();
+        details.Items.Clear();
+        if (path is not null) details.Items.Add(new ListViewItem([text.T("Name"), Path.GetFileName(path.TrimEnd('\\')) is { Length: > 0 } name ? name : path]));
+        foreach (var (name, value) in rows) details.Items.Add(new ListViewItem([name, value]));
+        details.EndUpdate();
+        FitDetailsColumns();
+        ApplyDetailColors();
+        DetailsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void FitDetailsColumns()
+    {
+        if (details.Columns.Count < 2) return;
+        int width = details.ClientSize.Width;
+        details.Columns[0].Width = Math.Max(90, width * 2 / 5);
+        details.Columns[1].Width = Math.Max(80, width - details.Columns[0].Width - 4);
+    }
+
+    private void ApplyDetailColors()
+    {
+        details.BackColor = Theme.ListBack;
+        details.ForeColor = Theme.Text;
+        foreach (ListViewItem item in details.Items)
+        {
+            item.UseItemStyleForSubItems = false;
+            item.ForeColor = Theme.Muted;
+            item.SubItems[1].ForeColor = Theme.Text;
+        }
+    }
 
     // A preview window that shows one file: no pinning, detaching or further windows.
     internal void SetStandalone() => detachButton.Visible = pinButton.Visible = windowButton.Visible = false;
@@ -209,6 +271,7 @@ internal sealed class PreviewPane : Panel
 
     internal void ApplyColors()
     {
+        ApplyDetailColors();
         BackColor = host.BackColor = picture.BackColor = message.BackColor = title.BackColor = header.BackColor = Theme.Canvas;
         message.ForeColor = Theme.Muted;
         title.ForeColor = Theme.Text;

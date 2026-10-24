@@ -168,6 +168,7 @@ internal static partial class Program
             RunPdfScenario(root);
             RunTabStripScenario(root);
             RunConvenienceScenario(root);
+            RunExplorerParityScenario(root);
             RunResizeMetric(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
@@ -312,7 +313,7 @@ internal static partial class Program
                     await CaptureDemo(form, output, "03-dark-tree-tab");
                     form.SetColorTheme("light");
                     await search.BuildOrLoadAsync(CancellationToken.None);
-                    var address = Descendants(panes[1]).OfType<TextBox>().Single();
+                    var address = Descendants(panes[1]).OfType<TextBox>().Single(box => box.AccessibleName?.EndsWith(" address") == true);
                     var results = SearchSignal(panes[1], predicate: () => panes[1].SearchCandidates.Count > 0);
                     address.Focus();
                     address.Text = "공유용/월별연구계획";
@@ -1093,7 +1094,7 @@ internal static partial class Program
                     nint activeHandle = active!.Handle;
                     var state = pane.CaptureState();
                     var tree = form.CurrentLayout;
-                    var address = Descendants(pane).OfType<TextBox>().Single();
+                    var address = Descendants(pane).OfType<TextBox>().Single(box => box.AccessibleName?.EndsWith(" address") == true);
                     address.Text = "Z:\\typed but not navigated\\日本語";
                     var favorites = Descendants(form).OfType<ListBox>().Single(l => l.AccessibleName == "Favorites");
                     favorites.SelectedIndex = 0;
@@ -1331,7 +1332,7 @@ internal static partial class Program
         using var backend = new DelayedSearchBackend(real);
         using var form = new MainForm(session, [], backend);
         var pane = form.GetPane(0);
-        var address = Descendants(pane).OfType<TextBox>().Single();
+        var address = Descendants(pane).OfType<TextBox>().Single(box => box.AccessibleName?.EndsWith(" address") == true);
         Task navigation = pane.ActiveView!.HasNavigated ? Task.CompletedTask : NavigationSignal(pane.ActiveView);
         form.Shown += async (_, _) =>
         {
