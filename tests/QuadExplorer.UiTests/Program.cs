@@ -49,6 +49,12 @@ internal static partial class Program
         try
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
+            if (args is ["--shortcut-menu"])
+            {
+                RunNativeShortcutMenuScenario(root);
+                Console.WriteLine($"PASS {checks} native shortcut-menu checks");
+                return 0;
+            }
             if (args is ["--active-pane"])
             {
                 RunActivePaneAppearanceScenario(root);
@@ -193,6 +199,7 @@ internal static partial class Program
             RunCommandBarPreferenceScenario(root);
             RunNativeDetailsAppearanceScenario(root, folders);
             RunNativeDetailsThemeScenario(root);
+            RunNativeShortcutMenuScenario(root);
             RunHelpDialogScenario(root);
             RunStatusChromeScenario(root);
             RunActivePaneAppearanceScenario(root);
