@@ -21,7 +21,7 @@
   <a href="README.ja.md">日本語</a>
 </p>
 
-<img src="docs/images/folder-splitter-overview-v0.8.4.png" alt="Folder Splitter 的四分屏界面与各区域的独立标签页" width="100%">
+<img src="docs/images/folder-splitter-overview-en-v0.8.4.png" alt="Folder Splitter 的四分屏界面与各区域的独立标签页" width="100%">
 
 </div>
 
@@ -51,9 +51,9 @@
 
 ## 地址栏就是搜索框
 
-无需记住完整路径。在地址栏输入**记得的任意名称片段**，匹配的文件夹和文件会随输入立即显示。用 `/` 连接文件夹名和文件名片段，例如 `공유용/월별연구계획`，即可缩小范围。
+无需记住完整路径。在地址栏输入**记得的任意名称片段**，匹配的文件夹和文件会随输入立即显示。用 `/` 连接文件夹名和文件名片段，例如 `shared/monthly`，即可缩小范围。
 
-![在地址栏输入“공유용/월별연구계획”后立即显示文件夹和文件候选](docs/images/folder-splitter-search-v0.8.4.png)
+![在地址栏输入“shared/monthly”后立即显示文件夹和文件候选](docs/images/folder-splitter-search-en-v0.8.4.png)
 
 - 选择**文件夹**会进入该文件夹；选择**文件**会打开其所在文件夹并选中该文件。
 - 使用上下键和 Enter，或直接点击选择。靠近当前文件夹、已打开标签页、收藏夹和最近关闭标签页的结果优先显示。

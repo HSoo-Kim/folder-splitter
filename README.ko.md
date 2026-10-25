@@ -21,7 +21,7 @@
   <a href="README.ja.md">日本語</a>
 </p>
 
-<img src="docs/images/folder-splitter-overview-v0.8.4.png" alt="Folder Splitter의 4분할 화면과 영역별 독립 탭" width="100%">
+<img src="docs/images/folder-splitter-overview-ko-v0.8.4.png" alt="Folder Splitter의 4분할 화면과 영역별 독립 탭" width="100%">
 
 </div>
 
@@ -53,7 +53,7 @@ Windows 기본 파일 목록(Shell `IExplorerBrowser`)을 사용하는 Windows �
 
 경로를 다 기억하지 못해도 됩니다. 주소창에 **기억나는 이름 조각**을 입력하면 입력하는 즉시 맞는 폴더와 파일이 아래에 펼쳐집니다. `공유용/월별연구계획`처럼 폴더와 파일 이름 조각을 `/`로 이어 쓰면 범위가 좁혀집니다.
 
-![주소창에 '공유용/월별연구계획'을 입력하자 폴더와 파일 후보가 바로 나타난 화면](docs/images/folder-splitter-search-v0.8.4.png)
+![주소창에 '공유용/월별연구계획'을 입력하자 폴더와 파일 후보가 바로 나타난 화면](docs/images/folder-splitter-search-ko-v0.8.4.png)
 
 - **폴더**를 고르면 그 폴더로 이동하고, **파일**을 고르면 파일이 있는 폴더를 열어 그 파일을 바로 선택해 줍니다.
 - ↑/↓와 Enter, 또는 클릭으로 고릅니다. 현재 폴더, 열린 탭, 즐겨찾기, 최근 닫은 탭과 가까운 결과가 먼저 나옵니다.

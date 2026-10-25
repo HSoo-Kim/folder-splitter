@@ -21,7 +21,7 @@
   <a href="README.ja.md">日本語</a>
 </p>
 
-<img src="docs/images/folder-splitter-overview-v0.8.4.png" alt="Folder Splitter showing four panes with independent tabs" width="100%">
+<img src="docs/images/folder-splitter-overview-en-v0.8.4.png" alt="Folder Splitter showing four panes with independent tabs" width="100%">
 
 </div>
 
@@ -51,9 +51,9 @@ Early versions aren't code-signed, so Windows may warn that it can't verify the 
 
 ## The address bar is a search box
 
-You don't need the full path. Type **any fragment you remember** into the address bar and matching folders and files appear as you type. Join folder and file name fragments with `/`, such as `공유용/월별연구계획`, to narrow the results.
+You don't need the full path. Type **any fragment you remember** into the address bar and matching folders and files appear as you type. Join folder and file name fragments with `/`, such as `shared/monthly`, to narrow the results.
 
-![Typing '공유용/월별연구계획' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-v0.8.4.png)
+![Typing 'shared/monthly' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-en-v0.8.4.png)
 
 - Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
 - Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
