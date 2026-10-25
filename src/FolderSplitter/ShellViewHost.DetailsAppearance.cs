@@ -97,6 +97,7 @@ public sealed partial class ShellViewHost
             // Keep sorting native; apply its optional color through the same draw path as selection.
             SendMessage(list, 0x108C, -1, 0); // LVM_SETSELECTEDCOLUMN
             DetailsNative.RedrawWindow(list, 0, 0, 0x0001 | 0x0004 | 0x0080);
+            UpdateHorizontalScrollbar(list);
         }
         finally { applyingDetailsAppearance = false; }
     }
@@ -193,12 +194,16 @@ public sealed partial class ShellViewHost
         detailsWindows.Clear();
         detailsList = detailsHeader = null;
         rowFont = 0;
+        horizontalScrollbar?.Destroy();
+        horizontalScrollbar = null;
     }
 
     private enum DetailsWindowKind { Container, List, Header }
 
     private sealed class DetailsWindow(ShellViewHost owner, DetailsWindowKind kind) : NativeWindow
     {
+        private bool horizontalHover;
+
         protected override void WndProc(ref Message message)
         {
             if (kind == DetailsWindowKind.Header && message.Msg == 0x14 && message.WParam != 0) // WM_ERASEBKGND
@@ -211,7 +216,16 @@ public sealed partial class ShellViewHost
             bool external = !owner.applyingDetailsAppearance;
             if (kind == DetailsWindowKind.List && message.Msg == 0x108C)
                 message.WParam = -1; // sorting still updates header flags and row order
+            bool horizontalDrag = kind == DetailsWindowKind.List && message.Msg == 0x00A1 && message.WParam == 6;
+            if (horizontalDrag)
+            {
+                owner.horizontalTracking = true;
+                owner.UpdateHorizontalScrollbar(Handle, true);
+            }
             base.WndProc(ref message);
+            if (horizontalDrag) owner.horizontalTracking = false;
+            if (kind == DetailsWindowKind.List)
+                owner.PaintHorizontalScrollbar(ref message, ref horizontalHover);
             if (message.Msg == 0x004E && message.LParam != 0 && kind == DetailsWindowKind.List
                 && Marshal.ReadIntPtr(message.LParam) == owner.detailsHeader?.Handle
                 && Marshal.ReadInt32(message.LParam, 2 * IntPtr.Size) == -12)

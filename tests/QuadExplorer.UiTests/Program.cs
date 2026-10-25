@@ -15,7 +15,8 @@ internal static partial class Program
         // Demo capture runs on the user's desktop only with their consent: Shell views paint only in a visible,
         // DWM-composed window. It never takes activation and captures the window's own content.
         bool demoCapture = args is ["--demo-capture", _, _];
-        if (!demoCapture && (expectedDesktop is null || !expectedDesktop.StartsWith("FolderSplitter-QA-", StringComparison.Ordinal) ||
+        bool scrollbarDemo = args is ["--scrollbar-demo"];
+        if (!demoCapture && !scrollbarDemo && (expectedDesktop is null || !expectedDesktop.StartsWith("FolderSplitter-QA-", StringComparison.Ordinal) ||
             !GetUserObjectInformation(GetThreadDesktop(GetCurrentThreadId()), 2, actualDesktop, 512, out _) ||
             actualDesktop.ToString() != expectedDesktop))
         {
@@ -49,6 +50,13 @@ internal static partial class Program
         try
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
+            if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--native-scrollbars"])
+            {
+                RunNativeScrollbarScenario(root);
+                Console.WriteLine($"PASS {checks} native scrollbar checks");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--shortcut-menu"])
             {
                 RunNativeShortcutMenuScenario(root);
@@ -199,6 +207,7 @@ internal static partial class Program
             RunCommandBarPreferenceScenario(root);
             RunNativeDetailsAppearanceScenario(root, folders);
             RunNativeDetailsThemeScenario(root);
+            RunNativeScrollbarScenario(root);
             RunNativeShortcutMenuScenario(root);
             RunHelpDialogScenario(root);
             RunStatusChromeScenario(root);
