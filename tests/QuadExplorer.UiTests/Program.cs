@@ -329,11 +329,11 @@ internal static partial class Program
             string session = Path.Combine(output, "demo-session.json");
             SessionStore.Save(session, new SessionState
             {
-                Layout = 3, Language = "ko", ExplorerFavoritesImported = true, WindowWidth = 1600, WindowHeight = 900,
+                Layout = 4, Language = "ko", ExplorerFavoritesImported = true, WindowWidth = 1600, WindowHeight = 900,
                 Favorites = [projects, photos, documents],
-                // Three panes with one left empty, as a new split shows it.
+                // Four panes, each with its own folder.
                 Panes = [new PaneState { Tabs = [projects, launch], SelectedTab = 1 }, new PaneState { Tabs = [documents] },
-                    new PaneState(), new PaneState()]
+                    new PaneState { Tabs = [photos] }, new PaneState { Tabs = [downloads] }]
             });
             using var search = new IndependentSearchBackend(new[] { demoRoot }, Path.Combine(output, "demo-index.fsix"));
             using var form = new MainForm(session, [], search, [demoRoot]);
