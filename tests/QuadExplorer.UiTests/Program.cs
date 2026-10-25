@@ -289,20 +289,33 @@ internal static partial class Program
     private static int RunDemoCapture(string output, string demoRoot)
     {
         if (Directory.Exists(demoRoot)) throw new IOException("Demo root already exists: " + demoRoot);
+        // FOLDERSPLITTER_DEMO_LANGUAGE=en captures an English app, English sample names, and English Shell columns.
+        bool en = Environment.GetEnvironmentVariable("FOLDERSPLITTER_DEMO_LANGUAGE") == "en";
+        string L(string ko, string english) => en ? english : ko;
+        // The Shell draws Details columns, dates and byte units in the Windows display language, so an English
+        // capture uses large icons and kilobyte-sized files to show no Windows-localized text.
+        uint viewMode = en ? 1u : 4u;
+        int viewSize = en ? 48 : 16;
+        if (en)
+        {
+            SetProcessPreferredUILanguages(0x8, "en-US\0", out _); // MUI_LANGUAGE_NAME
+            SetThreadLocale(0x0409);
+        }
         Directory.CreateDirectory(output);
         try
         {
             string Folder(params string[] parts) => Directory.CreateDirectory(Path.Combine([demoRoot, .. parts])).FullName;
             void Files(string folder, params string[] names)
             {
-                foreach (string name in names) File.WriteAllText(Path.Combine(folder, name), "Folder Splitter demo file");
+                foreach (string name in names) File.WriteAllText(Path.Combine(folder, name), en
+                    ? string.Concat(Enumerable.Repeat("Folder Splitter demo file\n", 60)) : "Folder Splitter demo file");
             }
-            string projects = Folder("프로젝트"), launch = Folder("프로젝트", "2026 신제품 출시"), web = Folder("프로젝트", "웹사이트 개편");
-            Folder("프로젝트", "고객 리서치"); Folder("프로젝트", "디자인 시안");
-            Files(projects, "프로젝트 개요.txt", "연간 일정.csv");
-            Folder("프로젝트", "2026 신제품 출시", "보도 사진"); Folder("프로젝트", "2026 신제품 출시", "참고 자료");
-            Files(launch, "출시 계획.txt", "예산표.csv", "회의록 10월.txt", "보도자료 초안.txt");
-            string productPhoto = Path.Combine(launch, "제품 사진.png");
+            string projects = Folder(L("프로젝트", "Projects")), launch = Folder(L("프로젝트", "Projects"), L("2026 신제품 출시", "2026 Product Launch")), web = Folder(L("프로젝트", "Projects"), L("웹사이트 개편", "Website Redesign"));
+            Folder(L("프로젝트", "Projects"), L("고객 리서치", "Customer Research")); Folder(L("프로젝트", "Projects"), L("디자인 시안", "Design Drafts"));
+            Files(projects, L("프로젝트 개요.txt", "Project Overview.txt"), L("연간 일정.csv", "Annual Schedule.csv"));
+            Folder(L("프로젝트", "Projects"), L("2026 신제품 출시", "2026 Product Launch"), L("보도 사진", "Press Photos")); Folder(L("프로젝트", "Projects"), L("2026 신제품 출시", "2026 Product Launch"), L("참고 자료", "References"));
+            Files(launch, L("출시 계획.txt", "Launch Plan.txt"), L("예산표.csv", "Budget.csv"), L("회의록 10월.txt", "October Meeting Notes.txt"), L("보도자료 초안.txt", "Press Release Draft.txt"));
+            string productPhoto = Path.Combine(launch, L("제품 사진.png", "Product Photo.png"));
             using (var image = new Bitmap(1200, 800))
             {
                 using var g = Graphics.FromImage(image);
@@ -313,23 +326,23 @@ internal static partial class Program
                 g.FillEllipse(shape, 420, 220, 360, 360);
                 image.Save(productPhoto);
             }
-            Files(web, "사이트맵.txt", "화면 설계.txt");
-            string photos = Folder("사진");
-            Folder("사진", "제주 여행"); Folder("사진", "가족"); Folder("사진", "2026 워크숍"); Folder("사진", "스크린샷");
-            Files(photos, "앨범 목록.txt");
-            string documents = Folder("문서");
-            Folder("문서", "계약서"); Folder("문서", "세금"); Folder("문서", "보고서");
-            Files(documents, "이력서.txt", "업무 메모.txt", "주간 보고.txt");
-            string downloads = Folder("다운로드");
-            Folder("다운로드", "설치 파일");
-            Files(downloads, "매뉴얼.txt", "데이터 샘플.csv");
-            string shared = Folder("공유용");
-            Folder("공유용", "월별연구계획_20261019");
-            Files(shared, "월별연구계획_20261019_v2.txt");
+            Files(web, L("사이트맵.txt", "Sitemap.txt"), L("화면 설계.txt", "Screen Design.txt"));
+            string photos = Folder(L("사진", "Photos"));
+            Folder(L("사진", "Photos"), L("제주 여행", "Jeju Trip")); Folder(L("사진", "Photos"), L("가족", "Family")); Folder(L("사진", "Photos"), L("2026 워크숍", "2026 Workshop")); Folder(L("사진", "Photos"), L("스크린샷", "Screenshots"));
+            Files(photos, L("앨범 목록.txt", "Album List.txt"));
+            string documents = Folder(L("문서", "Documents"));
+            Folder(L("문서", "Documents"), L("계약서", "Contracts")); Folder(L("문서", "Documents"), L("세금", "Taxes")); Folder(L("문서", "Documents"), L("보고서", "Reports"));
+            Files(documents, L("이력서.txt", "Resume.txt"), L("업무 메모.txt", "Work Notes.txt"), L("주간 보고.txt", "Weekly Report.txt"));
+            string downloads = Folder(L("다운로드", "Downloads"));
+            Folder(L("다운로드", "Downloads"), L("설치 파일", "Installers"));
+            Files(downloads, L("매뉴얼.txt", "Manual.txt"), L("데이터 샘플.csv", "Data Sample.csv"));
+            string shared = Folder(L("공유용", "Shared"));
+            Folder(L("공유용", "Shared"), L("월별연구계획_20261019", "Monthly_Plan_20261019"));
+            Files(shared, L("월별연구계획_20261019_v2.txt", "Monthly_Plan_20261019_v2.txt"));
             string session = Path.Combine(output, "demo-session.json");
             SessionStore.Save(session, new SessionState
             {
-                Layout = 4, Language = "ko", ExplorerFavoritesImported = true, WindowWidth = 1600, WindowHeight = 900,
+                Layout = 4, Language = en ? "en" : "ko", ExplorerFavoritesImported = true, WindowWidth = 1600, WindowHeight = 900,
                 Favorites = [projects, photos, documents],
                 // Four panes, each with its own folder.
                 Panes = [new PaneState { Tabs = [projects, launch], SelectedTab = 1 }, new PaneState { Tabs = [documents] },
@@ -347,16 +360,18 @@ internal static partial class Program
                 try
                 {
                     await Task.WhenAll(navigation).WaitAsync(TimeSpan.FromSeconds(20));
-                    foreach (var pane in shown) pane.ActiveView!.SetViewMode(4);
+                    foreach (var pane in shown) pane.ActiveView!.SetViewModeAndSize(viewMode, viewSize);
                     foreach (var pane in shown) await ItemCountKnown(pane.ActiveView!);
                     await form.FolderTree.FollowPathAsync(launch);
+                    // The first English frame still carries the Details header; a throwaway capture settles it.
+                    if (en) await CaptureDemo(form, output, "00-warm-up");
                     await CaptureDemo(form, output, "01-light-panes");
                     form.SetColorTheme("dark");
                     await CaptureDemo(form, output, "02-dark-panes");
                     await form.FolderTree.FollowPathAsync(web);
                     await PaneChange(panes[0], () => form.FolderTree.RequestOpen(FolderTreeTarget.NewTab),
                         () => panes[0].TabCount == 3 && panes[0].ActiveView is { HasNavigated: true } && panes[0].CurrentPath == web);
-                    panes[0].ActiveView!.SetViewMode(4);
+                    panes[0].ActiveView!.SetViewModeAndSize(viewMode, viewSize);
                     await ItemCountKnown(panes[0].ActiveView!);
                     await CaptureDemo(form, output, "03-dark-tree-tab");
                     // Sky blue theme with the details pane showing a photo's properties.
@@ -378,7 +393,7 @@ internal static partial class Program
                     var address = Descendants(panes[1]).OfType<TextBox>().Single(box => box.AccessibleName?.EndsWith(" address") == true);
                     var results = SearchSignal(panes[1], predicate: () => panes[1].SearchCandidates.Count > 0);
                     address.Focus();
-                    address.Text = "공유용/월별연구계획";
+                    address.Text = L("공유용/월별연구계획", "shared/monthly");
                     await results.WaitAsync(TimeSpan.FromSeconds(15));
                     await CaptureDemo(form, output, "04-light-search", address);
                 }
@@ -400,6 +415,10 @@ internal static partial class Program
         .GetField("candidates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .GetValue(form.GetPane(i))!);
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SetProcessPreferredUILanguages(uint flags, string languages, out uint count);
+    [DllImport("kernel32.dll")]
+    private static extern bool SetThreadLocale(uint locale);
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(nint window, int attribute, out int value, int size);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
@@ -420,8 +439,37 @@ internal static partial class Program
         finally { host.ItemCountChanged -= Changed; }
     }
 
+    // The Shell leaves the Details column header visible in List and icon views. Its text is drawn in the
+    // Windows display language, so an English capture hides it.
+    private static void HideDetailsHeaders(MainForm form)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            if (form.GetPane(i).ActiveView is not { IsHandleCreated: true } host) continue;
+            nint list = NativeAppearanceList(host);
+            nint header = SendMessage(list, 0x101F, 0, 0); // LVM_GETHEADER
+            Console.WriteLine($"DEMO_HEADER pane={i + 1} visible={DemoIsVisible(header)} list={DemoIsVisible(list)}");
+            DemoShowWindow(header, 0); // SW_HIDE
+            DemoRedraw(list, 0, 0, 0x0001 | 0x0004 | 0x0080 | 0x0100); // INVALIDATE | ERASE | ALLCHILDREN | UPDATENOW
+        }
+    }
+
+    [DllImport("user32.dll", EntryPoint = "IsWindowVisible")]
+    private static extern bool DemoIsVisible(nint window);
+    [DllImport("user32.dll", EntryPoint = "ShowWindow")]
+    private static extern bool DemoShowWindow(nint window, int command);
+    [DllImport("user32.dll", EntryPoint = "RedrawWindow")]
+    private static extern bool DemoRedraw(nint window, nint rect, nint region, uint flags);
+
     private static async Task CaptureDemo(MainForm form, string output, string name, TextBox? anchor = null)
     {
+        if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_DEMO_LANGUAGE") == "en")
+        {
+            // A view change can show the header again once its queued messages run, so hide it twice.
+            HideDetailsHeaders(form);
+            await NativeAppearanceDispatch(form);
+            HideDetailsHeaders(form);
+        }
         form.Refresh();
         string path = Path.Combine(output, name + ".png");
         await WindowCapture.SavePngAsync(form.Handle, path);
