@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing.Drawing2D;
 using QuadExplorer.Search;
 
 namespace QuadExplorer;
@@ -259,6 +260,11 @@ public sealed partial class ExplorerPane : UserControl
         body.Controls.Add(contents);
         body.Controls.Add(status);
         body.Controls.Add(BuildCommands());
+        viewMenu.DropDownOpening += (_, _) =>
+        {
+            AddActivePaneColorMenu(viewMenu);
+            Theme.Apply(commands);
+        };
         body.Controls.Add(navigation);
         body.Controls.Add(tabStrip);
         Controls.Add(body);
@@ -641,6 +647,48 @@ public sealed partial class ExplorerPane : UserControl
         else FocusAddress();
     }
     private bool isActive;
+    private string activePaneColor = "default";
+    private const int ActiveBorderWidth = 2;
+    // Match Theme.PaintCard's rounded edge; only the outline changes, never the content bounds.
+    private const int CardCornerRadius = 8;
+    internal event Action<string>? ActivePaneColorRequested;
+    internal string ActivePaneColor => activePaneColor;
+    // Reuse the existing light/green/beige palette accents, with their softer dark-theme counterparts.
+    internal Color ActiveBorderColor => activePaneColor switch
+    {
+        "blue" => Theme.IsDark ? Color.FromArgb(112, 183, 255) : Color.FromArgb(0, 95, 184),
+        "green" => Theme.IsDark ? Color.FromArgb(167, 192, 128) : Color.FromArgb(40, 118, 74),
+        "amber" => Theme.IsDark ? Color.FromArgb(245, 192, 66) : Color.FromArgb(150, 92, 36),
+        _ => Theme.Accent
+    };
+
+    internal void SetActivePaneColor(string color)
+    {
+        activePaneColor = SessionStore.NormalizeActivePaneColor(color);
+        activeLine.BackColor = isActive ? ActiveBorderColor : Theme.Border;
+        Invalidate();
+    }
+
+    private void AddActivePaneColorMenu(ToolStripDropDownItem menu)
+    {
+        var colors = new ToolStripMenuItem(text.T("Active pane color"))
+        {
+            AccessibleName = "Active pane color", Font = Font
+        };
+        foreach (var (color, label) in new[]
+        {
+            ("default", "Theme default"), ("blue", "Blue"), ("green", "Green"), ("amber", "Amber")
+        })
+        {
+            var item = new ToolStripMenuItem(text.T(label))
+            {
+                AccessibleName = $"Active pane color {color}", Checked = activePaneColor == color, Font = Font
+            };
+            item.Click += (_, _) => ActivePaneColorRequested?.Invoke(color);
+            colors.DropDownItems.Add(item);
+        }
+        menu.DropDownItems.Add(colors);
+    }
 
     private void UpdateCardPadding()
     {
@@ -650,7 +698,7 @@ public sealed partial class ExplorerPane : UserControl
 
     public void SetActive(bool active)
     {
-        activeLine.BackColor = active ? Theme.Accent : Theme.Border;
+        activeLine.BackColor = active ? ActiveBorderColor : Theme.Border;
         if (isActive == active) return;
         isActive = active;
         Invalidate();
@@ -660,7 +708,26 @@ public sealed partial class ExplorerPane : UserControl
     {
         base.OnPaint(e);
         var card = Rectangle.FromLTRB(Padding.Left - 1, Padding.Top - 1, Width - Padding.Right, Height - Padding.Bottom);
-        if (card.Width > 2 && card.Height > 2) Theme.PaintCard(e.Graphics, card, isActive, DeviceDpi, Padding.Top + tabStrip.Bottom);
+        if (card.Width <= 2 || card.Height <= 2) return;
+        Theme.PaintCard(e.Graphics, card, false, DeviceDpi, Padding.Top + tabStrip.Bottom);
+        if (!isActive) return;
+        float thickness = (float)Math.Ceiling(ActiveBorderWidth * DeviceDpi / 96d);
+        // Child controls clip the inside half of the border. Grow into the existing outer
+        // padding instead, without moving the tabs, file area or any other content.
+        int outset = (int)Math.Ceiling((thickness - 1) / 2);
+        card.Inflate(outset, outset);
+        int diameter = Math.Min(2 * (int)Math.Round(CardCornerRadius * DeviceDpi / 96d), Math.Min(card.Width, card.Height));
+        using var path = new GraphicsPath();
+        path.AddArc(card.Left, card.Top, diameter, diameter, 180, 90);
+        path.AddArc(card.Right - diameter, card.Top, diameter, diameter, 270, 90);
+        path.AddArc(card.Right - diameter, card.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(card.Left, card.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        var smoothing = e.Graphics.SmoothingMode;
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var pen = new Pen(ActiveBorderColor, thickness);
+        e.Graphics.DrawPath(pen, path);
+        e.Graphics.SmoothingMode = smoothing;
     }
     public void SetStatus(string message) { localizedStatus = null; RenderStatus(message); }
     private void RenderStatus(string message)
@@ -893,6 +960,7 @@ public sealed partial class ExplorerPane : UserControl
         tabMenu.Items.Add(sort);
         var view = new ToolStripMenuItem(text.T("View"));
         BuildViewMenu(view);
+        AddActivePaneColorMenu(view);
         tabMenu.Items.Add(view);
         tabMenu.Items.Add(text.T("Undo tab close in this pane"), null, (_, _) => UndoCloseRequested?.Invoke(this, EventArgs.Empty)).Enabled = undoClose.Enabled;
         tabMenu.Items.Add(text.T("Redo tab close in this pane"), null, (_, _) => RedoCloseRequested?.Invoke(this, EventArgs.Empty)).Enabled = redoClose.Enabled;

@@ -49,6 +49,12 @@ internal static partial class Program
         try
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
+            if (args is ["--active-pane"])
+            {
+                RunActivePaneAppearanceScenario(root);
+                Console.WriteLine($"PASS {checks} active pane checks");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--native-theme"])
             {
                 RunNativeDetailsThemeScenario(root);
@@ -189,6 +195,7 @@ internal static partial class Program
             RunNativeDetailsThemeScenario(root);
             RunHelpDialogScenario(root);
             RunStatusChromeScenario(root);
+            RunActivePaneAppearanceScenario(root);
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
             RunAppearanceScenario(root);

@@ -25,6 +25,8 @@ public sealed record SessionState
 {
     public string Language { get; init; } = "ko";
     public string ColorTheme { get; init; } = "light";
+    // Application-wide active pane outline; default follows the selected palette.
+    public string ActivePaneColor { get; init; } = "default";
     // Null keeps the standard font; TextSize is small, normal or large.
     public string? FontFamily { get; init; }
     public string TextSize { get; init; } = "normal";
@@ -178,6 +180,7 @@ public static class SessionStore
         {
             Language = NormalizeLanguage(state.Language),
             ColorTheme = NormalizeColorTheme(state.ColorTheme),
+            ActivePaneColor = NormalizeActivePaneColor(state.ActivePaneColor),
             FontFamily = string.IsNullOrWhiteSpace(state.FontFamily) || state.FontFamily.Trim().Length > 64 ? null : state.FontFamily.Trim(),
             TextSize = state.TextSize is "small" or "large" ? state.TextSize : "normal",
             Layout = layout,
@@ -238,6 +241,11 @@ public static class SessionStore
 
     public static readonly string[] ColorThemes = ["light", "dark", "beige", "green", "sky", "pastel", "dim",
         "solarized", "everforest", "gruvbox", "rosepine", "latte", "everforest-dark", "nord", "mocha"];
+
+    public static string NormalizeActivePaneColor(string? color) => color?.Trim().ToLowerInvariant() switch
+    {
+        "blue" => "blue", "green" => "green", "amber" => "amber", _ => "default"
+    };
 
     private static List<string> NormalizeFavorites(List<string>? source)
     {

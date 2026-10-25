@@ -46,6 +46,7 @@ public sealed class MainForm : Form, IMessageFilter
     private bool trayNoticeShown;
     private readonly ToolStripDropDownButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
+    private string activePaneColor;
     private bool showFolderTree;
     private readonly List<Action> languageBindings = [];
     private readonly ToolStripComboBox languageSelector = new()
@@ -145,6 +146,7 @@ public sealed class MainForm : Form, IMessageFilter
         this.sessionPath = sessionPath;
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
         colorTheme = initialState.ColorTheme;
+        activePaneColor = initialState.ActivePaneColor;
         fontFamily = initialState.FontFamily is { } face && FontInstalled(face) ? face : null;
         textSize = initialState.TextSize;
         showFolderTree = initialState.ShowFolderTree;
@@ -211,6 +213,8 @@ public sealed class MainForm : Form, IMessageFilter
         highlightSortedColumn = initialState.HighlightSortedColumn;
         foreach (var pane in panes)
         {
+            pane.SetActivePaneColor(activePaneColor);
+            pane.ActivePaneColorRequested += SetActivePaneColor;
             pane.SetCommandBarVisible(showCommandBar);
             pane.SetDetailsAppearance(showVerticalSeparators, comfortableRows, highlightSortedColumn);
             pane.CommandBarToggled += (_, _) =>
@@ -789,6 +793,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal bool FavoritesExpanded => favoritesExpanded;
     internal string ColorTheme => colorTheme;
+    internal string ActivePaneColor => activePaneColor;
     internal bool FolderTreeVisible => showFolderTree;
     internal FolderTree FolderTree => folderTree;
 
@@ -797,6 +802,13 @@ public sealed class MainForm : Form, IMessageFilter
         colorTheme = SessionStore.NormalizeColorTheme(mode);
         Theme.Set(colorTheme);
         ApplyAppearance();
+        ScheduleSave();
+    }
+
+    internal void SetActivePaneColor(string color)
+    {
+        activePaneColor = SessionStore.NormalizeActivePaneColor(color);
+        foreach (var pane in panes) pane.SetActivePaneColor(activePaneColor);
         ScheduleSave();
     }
 
@@ -2260,6 +2272,7 @@ public sealed class MainForm : Form, IMessageFilter
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowDetails = showDetails, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
+                ActivePaneColor = activePaneColor,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate, ShowCommandBar = showCommandBar,
                 ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows, HighlightSortedColumn = highlightSortedColumn,
