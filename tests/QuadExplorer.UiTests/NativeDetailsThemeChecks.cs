@@ -78,6 +78,7 @@ internal static partial class Program
                 Theme.ApplyNative(host.Handle);
                 host.ApplyThemeColors();
                 host.SetDetailsAppearance(false, true, true);
+                CheckNativeCachedRows(host, list);
                 nint header = SendMessage(list, 0x101F, 0, 0);
                 var dateColumn = new HeaderRect();
                 HeaderItemRect(header, 0x1207, 1, ref dateColumn);
@@ -177,6 +178,65 @@ internal static partial class Program
 
     private static int NativeThemeDifference(Color a, Color b) =>
         Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
+
+    private static void CheckNativeCachedRows(ShellViewHost host, nint list)
+    {
+        host.SelectPaths([]);
+        using var image = NativeThemeCapture(list, "cached-rows-before-prepaint");
+        var row = new NativeRect();
+        NativeAppearanceRectMessage(list, 0x100E, 0, ref row);
+        var label = new Rectangle(24, row.Top, 150, row.Bottom - row.Top);
+        int before = NativeThemeCount(image, label, Theme.Text, 70);
+        Check(before > 20, "cached first row contains real native text");
+        // Shell can retain already painted rows during an incremental paint. The background
+        // notification must not erase those rows before their own item notifications arrive.
+        using (var graphics = Graphics.FromImage(image))
+        {
+            nint dc = graphics.GetHdc();
+            nint data = Marshal.AllocHGlobal(Marshal.SizeOf<ThemeListDraw>());
+            try
+            {
+                var draw = new ThemeListDraw
+                {
+                    Draw = new ThemeItemDraw
+                    {
+                        Header = new ThemeNotify { Window = list, Code = -12 },
+                        Stage = 1, Dc = dc,
+                        Bounds = new NativeRect { Right = image.Width, Bottom = image.Height }
+                    }
+                };
+                Marshal.StructureToPtr(draw, data, false);
+                SendMessage(WheelGetParent(list), 0x004E, 0, data);
+            }
+            finally { Marshal.FreeHGlobal(data); graphics.ReleaseHdc(dc); }
+        }
+        Check(NativeThemeCount(image, label, Theme.Text, 70) == before,
+            "sorted-column background repaint preserves cached file names and icons");
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ThemeNotify { public nint Window; public nuint Id; public int Code; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ThemeItemDraw
+    {
+        public ThemeNotify Header;
+        public uint Stage;
+        public nint Dc;
+        public NativeRect Bounds;
+        public nuint Item;
+        public uint State;
+        public nint Data;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ThemeListDraw
+    {
+        public ThemeItemDraw Draw;
+        public int Text, TextBack, SubItem;
+        public uint ItemType;
+        public int Face, IconEffect, IconPhase, Part, State;
+        public NativeRect TextBounds;
+        public uint Align;
+    }
 
     private static int NativeThemeCount(Bitmap image, Rectangle region, Color expected, int tolerance)
     {

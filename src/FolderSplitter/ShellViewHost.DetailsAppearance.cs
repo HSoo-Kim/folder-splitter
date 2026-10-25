@@ -72,6 +72,10 @@ public sealed partial class ShellViewHost
                 detailsHeader = WatchDetailsWindow(header, DetailsWindowKind.Header);
             }
             ApplyRowSpacing(list, header);
+            // Switching from Details to the icon views leaves the Shell's column header visible over the
+            // items; File Explorer shows no header outside Details.
+            if (header != 0 && SendMessage(list, 0x108F, 0, 0) != 1 && DetailsNative.IsWindowVisible(header))
+                DetailsNative.ShowWindow(header, 0); // SW_HIDE
             // Both Explorer and ItemsView draw body separators. Disable body visual styles only
             // when requested; native list colors and the independently themed header remain intact.
             DetailsNative.SetWindowTheme(list, showVerticalSeparators
@@ -254,7 +258,17 @@ public sealed partial class ShellViewHost
                     DetailsNative.GetClientRect(list, out var client);
                     column.Top = column.Bottom;
                     column.Bottom = client.Bottom;
-                    DetailsNative.FillColor(dc, column, Theme.SortColumn);
+                    // Shell may reuse cached rows on an incremental repaint. Tinting the whole
+                    // column here erases their names/icons without item notifications to repaint them.
+                    // Item backgrounds are set below; only the space after the last row is ours.
+                    int items = (int)SendMessage(list, 0x1004, 0, 0); // LVM_GETITEMCOUNT
+                    if (items > 0)
+                    {
+                        var last = new DetailsNative.Rect();
+                        if (DetailsNative.SendMessage(list, 0x100E, items - 1, ref last) != 0)
+                            column.Top = Math.Max(column.Top, last.Bottom);
+                    }
+                    if (column.Top < column.Bottom) DetailsNative.FillColor(dc, column, Theme.SortColumn);
                     break;
                 }
                 message.Result |= 0x20; // CDRF_NOTIFYITEMDRAW
@@ -460,6 +474,8 @@ public sealed partial class ShellViewHost
             public byte Italic, Underlined, StruckOut, PitchAndFamily, CharacterSet;
         }
         [DllImport("user32.dll")] internal static extern nint GetParent(nint window);
+        [DllImport("user32.dll")] internal static extern bool IsWindowVisible(nint window);
+        [DllImport("user32.dll")] internal static extern bool ShowWindow(nint window, int command);
         [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(nint window);
         [DllImport("user32.dll")] internal static extern nint GetFocus();
         [DllImport("user32.dll")] internal static extern bool DrawFocusRect(nint dc, ref Rect rect);

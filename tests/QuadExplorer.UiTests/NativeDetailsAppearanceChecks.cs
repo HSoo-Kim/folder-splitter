@@ -124,6 +124,12 @@ internal static partial class Program
                 Check(Math.Abs(NativeAppearanceRowHeight(list) - target) <= 1,
                     "comfortable rows survive a native view-mode round trip");
                 CheckNativeAppearanceHeader(list, "dark header survives a native view-mode round trip");
+                await NativeAppearanceIdle(() => host.SetViewModeAndSize(1, 48));
+                list = NativeAppearanceList(host);
+                Check(!DemoIsVisible(SendMessage(list, 0x101F, 0, 0)), "the column header is hidden in icon view");
+                await NativeAppearanceIdle(() => host.SetViewModeAndSize(4, 16));
+                list = NativeAppearanceList(host);
+                Check(DemoIsVisible(SendMessage(list, 0x101F, 0, 0)), "the column header is shown again in Details view");
 
                 await Navigate(host, () => host.Navigate(folders[1]));
                 await NativeAppearancePopulated(host, () => host.Navigate(folder), 8);
@@ -150,12 +156,15 @@ internal static partial class Program
                 Check(Math.Abs(NativeAppearanceRowHeight(list) - target) <= 1,
                     "native DPI notification retains comfortable row spacing");
                 CheckNativeAppearanceHeader(list, "dark header survives native DPI notification");
-                Theme.Set("light");
-                Theme.ApplyNative(host.Handle);
-                host.ApplyThemeColors();
-                Theme.Set("dark");
-                Theme.ApplyNative(host.Handle);
-                host.ApplyThemeColors();
+                await NativeAppearanceIdle(() =>
+                {
+                    Theme.Set("light");
+                    Theme.ApplyNative(host.Handle);
+                    host.ApplyThemeColors();
+                    Theme.Set("dark");
+                    Theme.ApplyNative(host.Handle);
+                    host.ApplyThemeColors();
+                });
                 CheckNativeAppearanceHeader(list, "dark header survives light/dark theme round trip");
                 CheckNativeAppearanceBody(host, list, "after-theme-roundtrip", false);
             }
