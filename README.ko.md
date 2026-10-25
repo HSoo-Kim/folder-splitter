@@ -1,33 +1,59 @@
-<img src="src/FolderSplitter/Assets/app.png" width="88" alt="Folder Splitter icon">
+<div align="center">
+
+<img src="src/FolderSplitter/Assets/app.png" width="96" alt="Folder Splitter icon">
 
 # Folder Splitter
 
-[![누적 다운로드](https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=flat-square&label=%EB%88%84%EC%A0%81%20%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C&color=007ec6)](https://github.com/HSoo-Kim/folder-splitter/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=social&label=Stars)](https://github.com/HSoo-Kim/folder-splitter/stargazers)
+**한 창에 최대 4개 폴더, 영역마다 독립 탭. 이름 조각만 입력하면 바로 찾습니다.**
 
-[English](README.md) · **한국어** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
+<p>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Windows용 Folder Splitter 다운로드" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge" alt="License MIT" /></a>
+</p>
 
-한 창에서 최대 **4개 폴더를 동시에 보고, 각 영역에서 독립적인 탭을 사용하는 Windows 파일 관리자**입니다.
+<p>
+  <a href="README.md">English</a> ·
+  <b>한국어</b> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.ja.md">日本語</a>
+</p>
 
-Windows 기본 파일 목록(Shell `IExplorerBrowser`)을 사용합니다. 기존 `explorer.exe`를 수정하거나 교체하지 않으며, 별도 앱으로 실행됩니다.
+<img src="docs/images/folder-splitter-overview-v0.8.4.png" alt="Folder Splitter의 4분할 화면과 영역별 독립 탭" width="100%">
+
+</div>
+
+Windows 기본 파일 목록(Shell `IExplorerBrowser`)을 사용하는 Windows 파일 관리자입니다. 기존 `explorer.exe`를 수정하거나 교체하지 않으며, 별도 앱으로 실행됩니다.
 
 ## 핵심 기능 (Key Capabilities)
 
-- **자체 인메모리 경로 인덱스 기반 빠른 검색** — 주소창에 파일·폴더 이름이나 경로 일부만 입력해 찾습니다. 앱이 작은 크기의 인덱스를 직접 관리하므로 Everything을 따로 설치할 필요가 없고, 검색할 때 파일 내용은 읽지 않습니다.
-- **최대 4분할과 영역별 독립 탭** — 원본·대상·참고 폴더를 한 화면에 나란히 둡니다. 탐색기 창을 여러 개 배치하는 대신 분할 비율을 바꾸거나 탭을 다른 영역으로 옮깁니다.
-- **닫은 탭·영역 되돌리기와 다시 실행** — 영역별 기록으로 그 영역의 탭만 복원하거나, 전체 기록으로 모든 영역의 탭·분할을 복원합니다. `Ctrl+Shift+T`로 마지막 닫기를 되돌리면 분할 위치와 비율도 돌아옵니다.
-- **파일 탐색기 안에서 미리보기·비교** — 이미지와 여러 쪽 PDF를 보고, 참고 파일을 고정하거나 미리보기를 별도 창으로 분리해 나란히 비교합니다. 다른 문서 형식은 설치된 Windows 미리보기 표시기를 사용합니다.
-- **두 폴더 비교와 파일 정리를 함께** — 한쪽에만 있는 파일, 더 새 파일, 크기가 다른 파일을 찾고 다른 영역으로 복사·이동합니다. 여러 파일의 이름도 바뀔 결과를 미리 확인하고 한 번에 고칩니다.
-- **하던 작업 그대로 이어가기** — 다시 실행하면 탭과 배치가 복원됩니다. 프로젝트별로 작업 구성을 저장해 전환하고, `Win+Alt+E`로 앱을 바로 불러옵니다.
-- **Windows 기본 파일 동작과 화면 설정** — 우클릭 메뉴·끌어 놓기·복사 대화상자는 Windows 방식을 유지합니다. 15가지 테마, 글꼴·줄 간격, 명령 막대·세로 구분선·정렬 열 강조를 필요에 맞게 고릅니다.
+| 기능 | 설명 |
+|---|---|
+| **빠른 검색** | 주소창에 이름이나 경로 조각만 입력합니다. 앱이 직접 관리하는 인덱스로 약 230만 개 경로에서 보통 10ms 안에 찾으며, Everything 설치도 파일 내용 읽기도 필요 없습니다. [자세히](#주소창이-곧-검색창) |
+| **4분할, 영역별 독립 탭** | 원본·대상·참고 폴더를 한 화면에 나란히 둡니다. 탭을 다른 영역으로 끌어 옮기거나 가장자리에 놓아 분할합니다. |
+| **닫은 탭·영역 되돌리기** | `Ctrl+Shift+T`가 마지막으로 닫은 탭이나 분할을 위치·비율까지 복원합니다. 영역별 되돌리기 버튼도 있습니다. |
+| **제자리 미리보기** | 이미지와 여러 쪽 PDF를 목록 옆에서 봅니다. 파일을 고정하거나 별도 창으로 띄워 나란히 비교합니다. |
+| **비교와 정리** | 한쪽에만 있는 파일, 더 새 파일, 크기가 다른 파일을 찾아 다른 영역으로 복사·이동합니다. 일괄 이름 변경은 바뀔 이름을 먼저 보여 줍니다. |
+| **하던 작업 그대로** | 실행하면 탭과 배치가 복원됩니다. 작업 구성을 이름으로 저장하고, `Win+Alt+E`로 어디서든 불러옵니다. |
+| **Windows 기본 동작, 내 취향대로** | 우클릭 메뉴·끌어 놓기·복사 대화상자는 Windows 방식 그대로입니다. 15가지 테마, 글꼴, 줄 간격, 명령 막대 표시를 고릅니다. |
 
-[Windows용 다운로드](https://github.com/HSoo-Kim/folder-splitter/releases/latest) · [검색 사용법과 측정 결과](#주소창이-곧-검색창) · [전체 기능 안내](#기능)
+[전체 기능 안내](#기능)
+
+## 빠른 시작
+
+1. [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip)을 내려받습니다(Windows 11 또는 Windows 10 버전 2004 이상, x64).
+2. 압축을 풀고 `FolderSplitter.exe`를 실행합니다. 설치가 필요 없고 .NET 런타임이 들어 있습니다.
+3. 영역의 주소창에 이름 조각을 입력하거나 사이드바에서 폴더를 고릅니다.
+
+초기 버전은 코드 서명되지 않아 Windows가 게시자를 확인할 수 없다는 안내를 표시할 수 있습니다. 개발과 검사는 Windows 11에서 합니다.
 
 ## 주소창이 곧 검색창
 
 경로를 다 기억하지 못해도 됩니다. 주소창에 **기억나는 이름 조각**을 입력하면 입력하는 즉시 맞는 폴더와 파일이 아래에 펼쳐집니다. `공유용/월별연구계획`처럼 폴더와 파일 이름 조각을 `/`로 이어 쓰면 범위가 좁혀집니다.
 
-![주소창에 '공유용/월별연구계획'을 입력하자 폴더와 파일 후보가 바로 나타난 화면](docs/images/folder-splitter-search-v0.7.2.png)
+![주소창에 '공유용/월별연구계획'을 입력하자 폴더와 파일 후보가 바로 나타난 화면](docs/images/folder-splitter-search-v0.8.4.png)
 
 - **폴더**를 고르면 그 폴더로 이동하고, **파일**을 고르면 파일이 있는 폴더를 열어 그 파일을 바로 선택해 줍니다.
 - ↑/↓와 Enter, 또는 클릭으로 고릅니다. 현재 폴더, 열린 탭, 즐겨찾기, 최근 닫은 탭과 가까운 결과가 먼저 나옵니다.
@@ -76,20 +102,6 @@ C: 드라이브 전체(색인 제외 폴더 적용, 경로 2,298,670개)에서 3
 | 새 파일이 검색에 반영되기까지 | 2~3초 |
 
 자주 바뀌는 시스템 폴더(Windows, `ProgramData`, `AppData` 등)는 색인하지 않고, 변경을 모아서 반영하기 때문에 쉬는 동안 CPU를 거의 쓰지 않습니다. 개발자 PC 기준이며 파일 수에 따라 다르고, 오래 켜 두면 메모리가 다소 늘어날 수 있습니다(이 PC에서 몇 시간 뒤 약 460MB). 0.7.14에서는 같은 PC에서 켠 직후 약 1.2GB였습니다.
-
-## 예시 화면
-
-![Folder Splitter의 4분할 화면과 영역별 독립 탭](docs/images/folder-splitter-overview-v0.7.2.png)
-
-실제 앱에서 샘플 폴더를 연 화면입니다. 각 영역의 탭과 주소창은 독립적으로 동작합니다.
-
-## 실행
-
-[최신 Windows 실행 파일 다운로드](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
-
-Windows 11과 Windows 10(버전 2004 이상) x64에서 같은 실행 파일로 동작합니다. 개발과 검사는 Windows 11에서 합니다. 릴리스의 `folder-splitter-win-x64.zip`을 풀고 `FolderSplitter.exe`를 실행합니다. 배포 실행 파일에는 .NET 런타임이 포함되므로 별도 런타임 설치가 필요 없습니다.
-
-초기 버전은 코드 서명되지 않았습니다. Windows가 다운로드한 앱의 게시자를 확인할 수 없다는 안내를 표시할 수 있습니다.
 
 ## 기능
 

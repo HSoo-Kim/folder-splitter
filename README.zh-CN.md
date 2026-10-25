@@ -1,33 +1,59 @@
-<img src="src/FolderSplitter/Assets/app.png" width="88" alt="Folder Splitter icon">
+<div align="center">
+
+<img src="src/FolderSplitter/Assets/app.png" width="96" alt="Folder Splitter icon">
 
 # Folder Splitter
 
-[![累计下载](https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=flat-square&label=%E7%B4%AF%E8%AE%A1%E4%B8%8B%E8%BD%BD&color=007ec6)](https://github.com/HSoo-Kim/folder-splitter/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=social&label=Stars)](https://github.com/HSoo-Kim/folder-splitter/stargazers)
+**一个窗口最多 4 个文件夹，每个区域独立标签页。输入名称片段即可立即查找。**
 
-[English](README.md) · [한국어](README.ko.md) · **简体中文** · [日本語](README.ja.md)
+<p>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="下载 Windows 版 Folder Splitter" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge" alt="License MIT" /></a>
+</p>
 
-一款 Windows 文件管理器，可在一个窗口中**同时查看最多 4 个文件夹，每个区域都有各自独立的标签页**。
+<p>
+  <a href="README.md">English</a> ·
+  <a href="README.ko.md">한국어</a> ·
+  <b>简体中文</b> ·
+  <a href="README.ja.md">日本語</a>
+</p>
 
-文件列表使用 Windows 原生组件（Shell `IExplorerBrowser`）。它不会修改或替换现有的 `explorer.exe`，而是作为独立应用运行。
+<img src="docs/images/folder-splitter-overview-v0.8.4.png" alt="Folder Splitter 的四分屏界面与各区域的独立标签页" width="100%">
+
+</div>
+
+基于 Windows 原生文件列表（Shell `IExplorerBrowser`）的文件管理器。它不会修改或替换 `explorer.exe`，而是作为独立应用运行。
 
 ## 核心功能
 
-- **基于自有内存路径索引的快速搜索** — 在地址栏输入名称或路径片段即可查找文件和文件夹。应用自行维护紧凑索引，无需另装 Everything，搜索时不读取文件内容。
-- **最多四个区域，各自拥有独立标签页** — 将源文件夹、目标文件夹和参考资料并排放在一个窗口中。调整分屏比例或跨区域拖动标签页，无需摆放多个资源管理器窗口。
-- **撤销与重做标签页、区域关闭** — 区域内的记录只恢复本区域的标签页，全局记录涵盖所有区域的标签页和分屏。`Ctrl+Shift+T` 撤销最近一次关闭，并恢复分屏的位置和比例。
-- **在文件管理器中预览与对照** — 查看图片和多页 PDF，固定参考文件，或将预览分离到独立窗口并排比较。其他文档格式使用已安装的 Windows 预览处理程序。
-- **同时比较和整理文件夹** — 找出仅一侧存在、较新或大小不同的文件，将选中项复制或移动到另一区域，并在批量重命名前预览结果。
-- **接着上次的工作继续** — 启动时恢复标签页和布局，为不同项目保存工作区，用 `Win+Alt+E` 随时调出应用。
-- **原生文件操作，可调整的外观** — 保留 Windows 右键菜单、拖放和复制对话框，提供 15 种主题、字体和行间距设置，以及命令栏、垂直分隔线和排序列强调开关。
+| 功能 | 说明 |
+|---|---|
+| **快速搜索** | 在地址栏输入名称或路径片段。应用自行维护的索引在约 230 万条路径中通常 10 ms 内返回结果，无需安装 Everything，也不读取文件内容。[详情](#地址栏就是搜索框) |
+| **四分区，各自独立标签页** | 将源、目标和参考文件夹并排放在一个窗口中。可跨区域拖动标签页，或拖到边缘进行分屏。 |
+| **撤销关闭的标签页和区域** | `Ctrl+Shift+T` 恢复最近关闭的标签页或分屏，包括位置和比例。每个区域也有自己的撤销按钮。 |
+| **就地预览** | 在列表旁查看图片和多页 PDF。可固定文件，或在独立窗口中并排对照。 |
+| **比较与整理** | 找出仅一侧存在、较新或大小不同的文件，并复制或移动到另一区域。批量重命名会先显示所有新名称。 |
+| **接着上次继续** | 启动时恢复标签页和布局。可按名称保存工作区，用 `Win+Alt+E` 随时调出。 |
+| **原生操作，可自定义** | Windows 右键菜单、拖放和复制对话框保持原生。提供 15 种主题、字体、行间距和命令栏开关。 |
 
-[下载 Windows 版](https://github.com/HSoo-Kim/folder-splitter/releases/latest) · [搜索方法与实测结果](#地址栏就是搜索框) · [完整功能介绍](#功能)
+[完整功能介绍](#功能)
+
+## 快速开始
+
+1. 下载 [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip)（Windows 11，或 Windows 10 2004 及更高版本，x64）。
+2. 解压后运行 `FolderSplitter.exe`。无需安装，已内置 .NET 运行时。
+3. 在区域的地址栏输入名称片段，或从侧边栏选择文件夹。
+
+早期版本没有代码签名，Windows 可能会提示无法验证发布者。开发与测试在 Windows 11 上进行。
 
 ## 地址栏就是搜索框
 
 无需记住完整路径。在地址栏输入**记得的任意名称片段**，匹配的文件夹和文件会随输入立即显示。用 `/` 连接文件夹名和文件名片段，例如 `공유용/월별연구계획`，即可缩小范围。
 
-![在地址栏输入“공유용/월별연구계획”后立即显示文件夹和文件候选](docs/images/folder-splitter-search-v0.7.2.png)
+![在地址栏输入“공유용/월별연구계획”后立即显示文件夹和文件候选](docs/images/folder-splitter-search-v0.8.4.png)
 
 - 选择**文件夹**会进入该文件夹；选择**文件**会打开其所在文件夹并选中该文件。
 - 使用上下键和 Enter，或直接点击选择。靠近当前文件夹、已打开标签页、收藏夹和最近关闭标签页的结果优先显示。
@@ -76,20 +102,6 @@
 | 新文件出现在搜索中 | 2–3 秒 |
 
 不索引频繁变化的系统文件夹（Windows、`ProgramData`、`AppData` 等），并批量应用变化，因此空闲时几乎不占用 CPU。以上为开发者电脑上的数值，会因文件数量而不同；长时间运行后内存可能有所增加（本机数小时后约 460MB）。0.7.14 在同一台电脑上刚启动时约为 1.2GB。
-
-## 界面预览
-
-![Folder Splitter 的四分屏界面与各区域的独立标签页](docs/images/folder-splitter-overview-v0.7.2.png)
-
-这是在实际应用中打开示例文件夹的画面。每个区域都有独立的标签页和地址栏。
-
-## 运行
-
-[下载最新的 Windows 可执行文件](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
-
-同一个可执行文件可在 Windows 11 和 Windows 10（2004 或更高版本）x64 上运行。开发与测试在 Windows 11 上进行。解压发布页中的 `folder-splitter-win-x64.zip`，然后运行 `FolderSplitter.exe`。发布的可执行文件已内置 .NET 运行时，无需另行安装运行时。
-
-早期版本没有代码签名。Windows 可能会提示无法验证所下载应用的发布者。
 
 ## 功能
 

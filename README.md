@@ -1,33 +1,59 @@
-<img src="src/FolderSplitter/Assets/app.png" width="88" alt="Folder Splitter icon">
+<div align="center">
+
+<img src="src/FolderSplitter/Assets/app.png" width="96" alt="Folder Splitter icon">
 
 # Folder Splitter
 
-[![Total downloads](https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=flat-square&label=Total%20downloads&color=007ec6)](https://github.com/HSoo-Kim/folder-splitter/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=social&label=Stars)](https://github.com/HSoo-Kim/folder-splitter/stargazers)
+**Up to four folders in one window, each pane with its own tabs. Find anything by typing a fragment.**
 
-**English** · [한국어](README.ko.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
+<p>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Download Folder Splitter for Windows" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge" alt="License MIT" /></a>
+</p>
 
-A **Windows file manager that shows up to 4 folders at once in a single window, with independent tabs in each pane**.
+<p>
+  <b>English</b> ·
+  <a href="README.ko.md">한국어</a> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.ja.md">日本語</a>
+</p>
 
-It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modify or replace the existing `explorer.exe` and runs as a separate app.
+<img src="docs/images/folder-splitter-overview-v0.8.4.png" alt="Folder Splitter showing four panes with independent tabs" width="100%">
+
+</div>
+
+A Windows file manager built on the native Shell file list (`IExplorerBrowser`). It doesn't modify or replace `explorer.exe` and runs as a separate app.
 
 ## Key Capabilities
 
-- **Fast search backed by an in-memory path index** — Find files and folders from name or path fragments in the address bar. The app maintains its own compact index; no Everything installation is required, and search does not read file contents.
-- **Up to four panes, each with its own tabs** — Keep source files, destinations and references side by side. Resize the splits or drag tabs between panes instead of arranging several Explorer windows.
-- **Undo and redo closed tabs and panes** — Restore a pane's tabs locally, or use the global history for tabs and closed splits across the window. `Ctrl+Shift+T` restores the most recent close, including a split's position and proportions.
-- **Preview without leaving the file manager** — View images and multi-page PDFs, pin a reference, or detach previews into separate windows for comparison. Other document formats use installed Windows preview handlers.
-- **Compare and organize folders together** — Compare two panes for missing, newer or differently sized files, copy or move selections to the other pane, and preview bulk name changes before applying them.
-- **Pick up where you left off** — Restore tabs and layout on launch, save named workspaces for different projects, and bring the app back with `Win+Alt+E`.
-- **Native file operations, adjustable appearance** — Keep Windows context menus, drag and drop, and copy dialogs, with 15 color themes, adjustable fonts and row spacing, and optional command bars, separators and sorted-column highlighting.
+| Feature | What it does |
+|---|---|
+| **Fast search** | Type name or path fragments into the address bar. An index the app keeps itself typically answers in about 10 ms across 2.3 million paths, with no Everything install and no file contents read. [Details](#the-address-bar-is-a-search-box) |
+| **Four panes, independent tabs** | Keep source, destination and reference folders side by side. Drag tabs between panes, or to an edge to split. |
+| **Undo closed tabs and panes** | `Ctrl+Shift+T` restores the last closed tab or split with its position and proportions. Each pane also has its own undo. |
+| **Preview in place** | View images and multi-page PDFs beside the list. Pin a file, or open previews in separate windows to compare. |
+| **Compare and organize** | Find files that exist on one side only, are newer or differ in size, then copy or move them to the other pane. Batch renames show every new name first. |
+| **Pick up where you left off** | Tabs and layout restore on launch. Save named workspaces, and bring the app back from anywhere with `Win+Alt+E`. |
+| **Native, and yours to adjust** | Windows context menus, drag and drop and copy dialogs stay native. Choose from 15 themes, fonts, row spacing and an optional command bar. |
 
-[Download for Windows](https://github.com/HSoo-Kim/folder-splitter/releases/latest) · [Search details and measurements](#the-address-bar-is-a-search-box) · [Full feature guide](#features)
+[Full feature list](#features)
+
+## Quick Start
+
+1. Download [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) (Windows 11, or Windows 10 version 2004 or later, x64).
+2. Extract it and run `FolderSplitter.exe`. There is nothing to install; the .NET runtime is bundled.
+3. Type a name fragment into a pane's address bar, or pick a folder from the sidebar.
+
+Early versions aren't code-signed, so Windows may warn that it can't verify the publisher. Development and testing happen on Windows 11.
 
 ## The address bar is a search box
 
 You don't need the full path. Type **any fragment you remember** into the address bar and matching folders and files appear as you type. Join folder and file name fragments with `/`, such as `공유용/월별연구계획`, to narrow the results.
 
-![Typing '공유용/월별연구계획' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-v0.7.2.png)
+![Typing '공유용/월별연구계획' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-v0.8.4.png)
 
 - Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
 - Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
@@ -76,20 +102,6 @@ Measured over the whole C drive (index exclusions applied, 2,298,670 paths) with
 | New files reach search | in 2–3 seconds |
 
 Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on) are not indexed, and changes are applied in batches, so the app uses almost no CPU while idle. Figures are from the developer's PC and depend on the number of files; memory can grow somewhat over a long session (about 460 MB after several hours here). 0.7.14 used about 1.2 GB on the same PC just after launch.
-
-## Screenshot
-
-![Folder Splitter showing four panes with independent tabs](docs/images/folder-splitter-overview-v0.7.2.png)
-
-The actual app with sample folders open. Each pane has independent tabs and an address bar.
-
-## Running
-
-[Download the latest Windows executable](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
-
-The same executable runs on Windows 11 and Windows 10 (version 2004 or later), x64. Development and testing happen on Windows 11. Extract `folder-splitter-win-x64.zip` from the release and run `FolderSplitter.exe`. The distributed executable bundles the .NET runtime, so you don't need to install a runtime separately.
-
-Early versions aren't code-signed. Windows may warn that it can't verify the publisher of the downloaded app.
 
 ## Features
 

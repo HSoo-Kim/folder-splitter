@@ -1,33 +1,59 @@
-<img src="src/FolderSplitter/Assets/app.png" width="88" alt="Folder Splitter アイコン">
+<div align="center">
+
+<img src="src/FolderSplitter/Assets/app.png" width="96" alt="Folder Splitter アイコン">
 
 # Folder Splitter
 
-[![累計ダウンロード](https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=flat-square&label=%E7%B4%AF%E8%A8%88%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89&color=007ec6)](https://github.com/HSoo-Kim/folder-splitter/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=social&label=Stars)](https://github.com/HSoo-Kim/folder-splitter/stargazers)
+**1つのウィンドウに最大4フォルダー、ペインごとに独立したタブ。名前の断片を入力するだけで検索できます。**
 
-[English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-CN.md) · **日本語**
+<p>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Windows 版 Folder Splitter をダウンロード" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge" alt="License MIT" /></a>
+</p>
 
-**1つのウィンドウで最大4つのフォルダーを同時に表示し、各ペインで独立したタブを使える Windows ファイルマネージャー**です。
+<p>
+  <a href="README.md">English</a> ·
+  <a href="README.ko.md">한국어</a> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <b>日本語</b>
+</p>
 
-ファイル一覧には Windows 標準の Shell `IExplorerBrowser` を使用します。既存の `explorer.exe` を変更・置換せず、独立したアプリとして動作します。
+<img src="docs/images/folder-splitter-overview-v0.8.4.png" alt="Folder Splitter の4分割画面" width="100%">
+
+</div>
+
+Windows 標準のファイル一覧（Shell `IExplorerBrowser`）を使うファイルマネージャーです。既存の `explorer.exe` を変更・置換せず、独立したアプリとして動作します。
 
 ## 主な機能
 
-- **独自のインメモリ・パス索引による高速検索** — アドレスバーに名前やパスの一部を入力してファイル・フォルダーを探せます。コンパクトな索引をアプリ自身が管理するため、Everything の別途インストールは不要で、検索時にファイルの内容を読みません。
-- **最大 4 ペイン、それぞれ独立したタブ** — 元のフォルダー、移動先、参考資料を一つのウィンドウに並べます。複数のエクスプローラーを配置する代わりに、分割比率を変えたりペイン間でタブを移動したりできます。
-- **閉じたタブ・ペインを元に戻す／やり直す** — ペイン内の履歴ではそのタブだけを、全体の履歴ではすべてのペインのタブと分割を復元します。`Ctrl+Shift+T` で直前の操作を取り消すと、分割の位置と比率も戻ります。
-- **ファイル管理画面の中でプレビューと比較** — 画像や複数ページの PDF を確認し、参考ファイルを固定したり、プレビューを別ウィンドウに切り離して並べたりできます。他の文書形式はインストール済みの Windows プレビューハンドラーを使います。
-- **フォルダーの比較と整理をまとめて** — 片側だけにあるファイル、新しいファイル、サイズの違うファイルを調べ、選択項目を別のペインへコピー・移動できます。一括名前変更では適用前に結果を確認できます。
-- **前の作業をそのまま続ける** — 起動時にタブと配置を復元し、プロジェクト別の作業セットを保存できます。`Win+Alt+E` でアプリをすぐに呼び出せます。
-- **Windows 標準の操作と選べる表示** — 右クリックメニュー、ドラッグ＆ドロップ、コピーのダイアログは Windows のままです。15 種類のテーマ、フォントと行間、コマンドバー・縦の区切り線・並べ替え列の強調表示を選べます。
+| 機能 | 説明 |
+|---|---|
+| **高速検索** | アドレスバーに名前やパスの一部を入力します。アプリ自身が管理する索引により、約230万パスでも通常 10 ms 前後で結果が出ます。Everything の導入もファイル内容の読み取りも不要です。[詳細](#アドレスバーがそのまま検索ボックス) |
+| **最大4ペイン、ペインごとに独立したタブ** | 元・先・参考のフォルダーを一つのウィンドウに並べます。タブはペイン間でドラッグでき、端に置くと分割できます。 |
+| **閉じたタブ・ペインを元に戻す** | `Ctrl+Shift+T` で直前に閉じたタブや分割を位置と比率ごと復元します。ペインごとの元に戻すボタンもあります。 |
+| **その場でプレビュー** | 画像や複数ページの PDF を一覧の横で確認できます。ファイルを固定したり、別ウィンドウに分けて並べて比べられます。 |
+| **比較と整理** | 片側だけにあるファイル、新しいファイル、サイズの違うファイルを探し、別のペインへコピー・移動できます。一括名前変更は新しい名前を先に確認できます。 |
+| **前の作業をそのまま** | 起動時にタブと配置を復元します。作業セットを名前で保存でき、`Win+Alt+E` でどこからでも呼び出せます。 |
+| **Windows 標準の操作、好みの表示** | 右クリックメニュー、ドラッグ＆ドロップ、コピーのダイアログは Windows のままです。15種類のテーマ、フォント、行間、コマンドバーの表示を選べます。 |
 
-[Windows 版をダウンロード](https://github.com/HSoo-Kim/folder-splitter/releases/latest) · [検索方法と測定結果](#アドレスバーがそのまま検索ボックス) · [全機能の説明](#機能)
+[全機能の説明](#機能)
+
+## クイックスタート
+
+1. [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) をダウンロードします（Windows 11、または Windows 10 バージョン 2004 以降、x64）。
+2. 展開して `FolderSplitter.exe` を実行します。インストールは不要で、.NET ランタイムも同梱しています。
+3. ペインのアドレスバーに名前の断片を入力するか、サイドバーからフォルダーを選びます。
+
+現在の実行ファイルにはコード署名がなく、Windows が発行元を確認できない旨の警告を表示する場合があります。開発とテストは Windows 11 で行っています。
 
 ## アドレスバーがそのまま検索ボックス
 
 フルパスを覚えていなくても大丈夫です。アドレスバーに**覚えている名前の一部**を入力すると、入力と同時に一致するフォルダーとファイルが表示されます。`공유용/월별연구계획` のようにフォルダー名とファイル名の断片を `/` でつなぐと絞り込めます。
 
-![アドレスバーに「공유용/월별연구계획」と入力すると、フォルダーとファイルの候補がすぐに表示される画面](docs/images/folder-splitter-search-v0.7.2.png)
+![アドレスバーに「공유용/월별연구계획」と入力すると、フォルダーとファイルの候補がすぐに表示される画面](docs/images/folder-splitter-search-v0.8.4.png)
 
 - **フォルダー**を選ぶとそのフォルダーへ移動し、**ファイル**を選ぶとそのファイルがあるフォルダーを開いてファイルを選択します。
 - 上下キーと Enter、またはクリックで選びます。現在のフォルダー、開いているタブ、お気に入り、最近閉じたタブに近い結果が先に並びます。
@@ -76,20 +102,6 @@ C ドライブ全体（索引除外を適用、2,298,670 件のパス）で、37
 | 新しいファイルが検索に反映されるまで | 2～3 秒 |
 
 頻繁に変化するシステムフォルダー（Windows、`ProgramData`、`AppData` など）は索引化せず、変更をまとめて反映するため、待機中は CPU をほとんど使いません。開発者の PC での値で、ファイル数によって異なります。長時間起動しているとメモリが多少増えることがあります（この PC では数時間後に約 460MB）。0.7.14 は同じ PC で起動直後に約 1.2GB でした。
-
-## 画面
-
-![Folder Splitter の4分割画面](docs/images/folder-splitter-overview-v0.7.2.png)
-
-サンプルフォルダーを開いた実際の画面です。各ペインに独立したタブとアドレスバーがあります。未使用のペインは空白のままです。
-
-## 実行
-
-[最新の Windows 実行ファイルをダウンロード](https://github.com/HSoo-Kim/folder-splitter/releases/latest)
-
-同じ実行ファイルが Windows 11 と Windows 10（バージョン 2004 以降）の x64 で動作します。開発とテストは Windows 11 で行っています。リリースの `folder-splitter-win-x64.zip` を展開し、`FolderSplitter.exe` を実行します。.NET ランタイムを同梱しているため、別途インストールする必要はありません。
-
-現在の実行ファイルにはコード署名がありません。Windows が発行元を確認できない旨の警告を表示する場合があります。
 
 ## 機能
 
