@@ -57,9 +57,9 @@ internal static partial class Program
             base.WndProc(ref message);
             if (message.Msg is not (0x0114 or 0x0115)) return;
             Inputs++;
-            var bar = ScrollInfo(Handle, -6);
+            var bar = ScrollInfo(Handle, message.Msg == 0x0115 ? -5 : -6);
             Console.WriteLine($"SCROLL_DEMO_INPUT msg={message.Msg:X} code={(long)message.WParam & 0xFFFF} thumb={bar.ThumbTop}..{bar.ThumbBottom}");
-            if (message.Msg == 0x0114) ScrollCheckNativeClip(Handle);
+            ScrollCheckNativeClip(Handle);
         }
     }
 }

@@ -97,7 +97,7 @@ public sealed partial class ShellViewHost
             // Keep sorting native; apply its optional color through the same draw path as selection.
             SendMessage(list, 0x108C, -1, 0); // LVM_SETSELECTEDCOLUMN
             DetailsNative.RedrawWindow(list, 0, 0, 0x0001 | 0x0004 | 0x0080);
-            UpdateHorizontalScrollbar(list);
+            UpdateScrollbars(list);
         }
         finally { applyingDetailsAppearance = false; }
     }
@@ -194,15 +194,14 @@ public sealed partial class ShellViewHost
         detailsWindows.Clear();
         detailsList = detailsHeader = null;
         rowFont = 0;
-        horizontalScrollbar?.Destroy();
-        horizontalScrollbar = null;
+        ReleaseScrollbars();
     }
 
     private enum DetailsWindowKind { Container, List, Header }
 
     private sealed class DetailsWindow(ShellViewHost owner, DetailsWindowKind kind) : NativeWindow
     {
-        private bool horizontalHover;
+        private bool horizontalHover, verticalHover;
 
         protected override void WndProc(ref Message message)
         {
@@ -216,16 +215,20 @@ public sealed partial class ShellViewHost
             bool external = !owner.applyingDetailsAppearance;
             if (kind == DetailsWindowKind.List && message.Msg == 0x108C)
                 message.WParam = -1; // sorting still updates header flags and row order
-            bool horizontalDrag = kind == DetailsWindowKind.List && message.Msg == 0x00A1 && message.WParam == 6;
-            if (horizontalDrag)
+            bool nativeDrag = kind == DetailsWindowKind.List && message.Msg is 0x00A1 or 0x00A3;
+            bool horizontalDrag = nativeDrag && message.WParam == 6;
+            bool verticalDrag = nativeDrag && message.WParam == 7;
+            if (horizontalDrag || verticalDrag)
             {
-                owner.horizontalTracking = true;
-                owner.UpdateHorizontalScrollbar(Handle, true);
+                owner.horizontalTracking |= horizontalDrag;
+                owner.verticalTracking |= verticalDrag;
+                owner.UpdateScrollbars(Handle, horizontalHover || horizontalDrag, verticalHover || verticalDrag);
             }
             base.WndProc(ref message);
             if (horizontalDrag) owner.horizontalTracking = false;
+            if (verticalDrag) owner.verticalTracking = false;
             if (kind == DetailsWindowKind.List)
-                owner.PaintHorizontalScrollbar(ref message, ref horizontalHover);
+                owner.PaintScrollbars(ref message, ref horizontalHover, ref verticalHover);
             if (message.Msg == 0x004E && message.LParam != 0 && kind == DetailsWindowKind.List
                 && Marshal.ReadIntPtr(message.LParam) == owner.detailsHeader?.Handle
                 && Marshal.ReadInt32(message.LParam, 2 * IntPtr.Size) == -12)
