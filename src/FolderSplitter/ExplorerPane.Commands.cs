@@ -14,9 +14,9 @@ public sealed partial class ExplorerPane
     private readonly System.Windows.Forms.Timer filterTimer = new() { Interval = 250 };
     private ToolStripDropDownButton sortMenu = null!, viewMenu = null!;
     private ToolStripButton compare = null!;
-    private bool showVerticalSeparators, comfortableRows = true;
+    private bool showVerticalSeparators, comfortableRows = true, highlightSortedColumn;
     private bool commandBarVisible = true;
-    internal event Action<bool, bool>? DetailsAppearanceRequested;
+    internal event Action<bool, bool, bool>? DetailsAppearanceRequested;
     internal event EventHandler? CommandBarToggled;
     private readonly ToolStripButton undoClose = new CloseHistoryButton(false) { AutoSize = false },
         redoClose = new CloseHistoryButton(true) { AutoSize = false };
@@ -195,24 +195,28 @@ public sealed partial class ExplorerPane
         commandBar.Click += (_, _) => CommandBarToggled?.Invoke(this, EventArgs.Empty);
         menu.DropDownItems.Add(commandBar);
         var separators = new ToolStripMenuItem(text.T("Vertical separators")) { Checked = showVerticalSeparators };
-        separators.Click += (_, _) => DetailsAppearanceRequested?.Invoke(!showVerticalSeparators, comfortableRows);
+        separators.Click += (_, _) => DetailsAppearanceRequested?.Invoke(!showVerticalSeparators, comfortableRows, highlightSortedColumn);
         menu.DropDownItems.Add(separators);
+        var highlight = new ToolStripMenuItem(text.T("Highlight sorted column")) { Checked = highlightSortedColumn };
+        highlight.Click += (_, _) => DetailsAppearanceRequested?.Invoke(showVerticalSeparators, comfortableRows, !highlightSortedColumn);
+        menu.DropDownItems.Add(highlight);
         var spacing = new ToolStripMenuItem(text.T("Row spacing"));
         foreach (var (comfortable, label) in new[] { (false, "Compact"), (true, "Comfortable") })
         {
             var item = new ToolStripMenuItem(text.T(label)) { Checked = comfortableRows == comfortable };
-            item.Click += (_, _) => DetailsAppearanceRequested?.Invoke(showVerticalSeparators, comfortable);
+            item.Click += (_, _) => DetailsAppearanceRequested?.Invoke(showVerticalSeparators, comfortable, highlightSortedColumn);
             spacing.DropDownItems.Add(item);
         }
         menu.DropDownItems.Add(spacing);
     }
 
-    internal void SetDetailsAppearance(bool separators, bool comfortable)
+    internal void SetDetailsAppearance(bool separators, bool comfortable, bool highlightSortedColumn = false)
     {
         showVerticalSeparators = separators;
         comfortableRows = comfortable;
+        this.highlightSortedColumn = highlightSortedColumn;
         foreach (var tab in tabs)
-            tab.Host?.SetDetailsAppearance(separators, comfortable);
+            tab.Host?.SetDetailsAppearance(separators, comfortable, highlightSortedColumn);
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 

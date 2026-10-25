@@ -49,6 +49,19 @@ internal static partial class Program
         try
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
+            if (args is ["--native-theme"])
+            {
+                RunNativeDetailsThemeScenario(root);
+                Console.WriteLine($"PASS {checks} native theme checks");
+                return 0;
+            }
+            if (args is ["--native-appearance"])
+            {
+                RunNativeDetailsAppearanceScenario(root, folders);
+                RunNativeDetailsThemeScenario(root);
+                Console.WriteLine($"PASS {checks} native appearance checks");
+                return 0;
+            }
             string child = Directory.CreateDirectory(Path.Combine(folders[0], "\ud55c\uae00 \ud3f4\ub354")).FullName;
             File.WriteAllText(Path.Combine(folders[0], "sample.txt"), "QuadExplorer integration fixture");
             string session = Path.Combine(root, "session.json");
@@ -173,6 +186,7 @@ internal static partial class Program
             RunCloseHistoryScopeScenario(root, folders);
             RunCommandBarPreferenceScenario(root);
             RunNativeDetailsAppearanceScenario(root, folders);
+            RunNativeDetailsThemeScenario(root);
             RunHelpDialogScenario(root);
             RunStatusChromeScenario(root);
             RunLanguageScenario(session, folders);
@@ -512,7 +526,7 @@ internal static partial class Program
                     .GetField("view", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                     .GetValue(pane.ActiveView!)!;
                 Check(visual.GetColor(2, out int listBack) == 0 && listBack == ColorTranslator.ToWin32(Theme.Surface)
-                    && visual.GetColor(3, out int sortColumn) == 0 && sortColumn == ColorTranslator.ToWin32(Theme.Canvas)
+                    && visual.GetColor(3, out int sortColumn) == 0 && sortColumn == ColorTranslator.ToWin32(Theme.ListBack)
                     && visual.GetColor(1, out int listText) == 0 && listText == ColorTranslator.ToWin32(Theme.Text),
                     "dark theme sets the Shell folder view's own text, background and sorted-column colors");
                 CaptureLanguage(form, "theme-dark");
@@ -531,9 +545,9 @@ internal static partial class Program
                     form.SetColorTheme(mode);
                     Check(form.ColorTheme == mode && Theme.IsDark == dark && form.FolderTree.Tree.BackColor == Theme.Sidebar
                         && visual.GetColor(2, out int back) == 0 && back == ColorTranslator.ToWin32(Theme.ListBack)
-                        && visual.GetColor(3, out int sort) == 0 && sort == ColorTranslator.ToWin32(Theme.SortColumn)
+                        && visual.GetColor(3, out int sort) == 0 && sort == ColorTranslator.ToWin32(Theme.ListBack)
                         && visual.GetColor(1, out int fore) == 0 && fore == ColorTranslator.ToWin32(Theme.Text),
-                        $"{mode} palette colors the sidebar, file list and sorted column separately");
+                        $"{mode} palette preserves sidebar and list colors with sorted-column highlighting off");
                 }
                 Check(Theme.Sidebar != Theme.Canvas || Theme.ListBack != Theme.Surface, "mixed palettes use more than one background color");
                 var mainToolbar = (ToolStrip)typeof(MainForm).GetField("toolbar", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(form)!;

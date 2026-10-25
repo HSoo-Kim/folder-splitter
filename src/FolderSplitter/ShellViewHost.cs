@@ -167,7 +167,7 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
         if (view is not IVisualProperties visual) return;
         visual.SetColor(1, ColorTranslator.ToWin32(Theme.Text));
         visual.SetColor(2, ColorTranslator.ToWin32(Theme.ListBack));
-        visual.SetColor(3, ColorTranslator.ToWin32(Theme.SortColumn));
+        visual.SetColor(3, ColorTranslator.ToWin32(highlightSortedColumn ? Theme.SortColumn : Theme.ListBack));
         visual.SetColor(4, ColorTranslator.ToWin32(Theme.Muted));
         visual.SetColor(5, ColorTranslator.ToWin32(Theme.ListBack));
         ApplyListFont();

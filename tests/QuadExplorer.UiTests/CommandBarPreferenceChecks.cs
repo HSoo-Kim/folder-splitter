@@ -13,8 +13,42 @@ internal static partial class Program
         SessionStore.Save(session, new SessionState
         {
             Language = "en", Layout = 3, ExplorerFavoritesImported = true,
-            Panes = [new PaneState { Tabs = [left] }, new PaneState { Tabs = [right] }, new PaneState()]
+            Panes = [new PaneState { Tabs = [left, right] }, new PaneState { Tabs = [right] },
+                new PaneState(), new PaneState { Tabs = [right] }]
         });
+        ContextMenuStrip Options(ExplorerPane owner)
+        {
+            Descendants(owner).OfType<Button>().Single(b => b.AccessibleName == $"Pane {owner.PaneNumber} Pane options").PerformClick();
+            return (ContextMenuStrip)typeof(ExplorerPane).GetField("tabMenu",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(owner)!;
+        }
+        ToolStripMenuItem ViewMenu(ExplorerPane owner) => Options(owner).Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "View");
+        void ToggleHighlight(ExplorerPane owner)
+        {
+            var menu = ViewMenu(owner);
+            menu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Highlight sorted column").PerformClick();
+            ((ContextMenuStrip)menu.Owner!).Close();
+        }
+        void CheckNativeHighlight(ShellViewHost host, bool expected, string context)
+        {
+            var view = (IVisualProperties)typeof(ShellViewHost).GetField("view",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(host)!;
+            Check(view.GetColor(3, out int sorted) == 0
+                && sorted == ColorTranslator.ToWin32(expected ? Theme.SortColumn : Theme.ListBack),
+                context + " applies the preference to the native sorted-column color");
+        }
+        async Task CheckHighlight(ExplorerPane owner, bool expected, string context)
+        {
+            var menu = ViewMenu(owner);
+            Check(menu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Highlight sorted column").Checked == expected,
+                context + " keeps the common menu preference");
+            ((ContextMenuStrip)menu.Owner!).Close();
+            if (owner.ActiveView is not { } view) return;
+            if (!view.HasNavigated) await NavigationSignal(view).WaitAsync(TimeSpan.FromSeconds(20));
+            view.SetViewModeAndSize(4, 16);
+            await NativeAppearanceDispatch(view);
+            CheckNativeHighlight(view, expected, context);
+        }
         using (var form = new MainForm(session, []))
         {
             form.Shown += async (_, _) =>
@@ -28,13 +62,6 @@ internal static partial class Program
                     var bar = Descendants(pane).OfType<ToolStrip>().Single(s => s.AccessibleName == "Pane 1 commands");
                     var common = form.Controls.OfType<ToolStrip>().Single();
                     var settings = common.Items.OfType<ToolStripDropDownButton>().Single(i => i.AccessibleName == "Settings");
-                    ContextMenuStrip Options(ExplorerPane owner)
-                    {
-                        Descendants(owner).OfType<Button>().Single(b => b.AccessibleName == $"Pane {owner.PaneNumber} Pane options").PerformClick();
-                        return (ContextMenuStrip)typeof(ExplorerPane).GetField("tabMenu",
-                            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(owner)!;
-                    }
-                    ToolStripMenuItem ViewMenu(ExplorerPane owner) => Options(owner).Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "View");
                     void ToggleBar(ExplorerPane owner)
                     {
                         var menu = ViewMenu(owner);
@@ -96,20 +123,26 @@ internal static partial class Program
                     var viewMenu = options.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "View");
                     var separatorItem = viewMenu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Vertical separators");
                     var spacingItem = viewMenu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Row spacing");
+                    var highlightItem = viewMenu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Highlight sorted column");
                     Check(!separatorItem.Checked && spacingItem.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Comfortable").Checked,
                         "detail appearance defaults to no separators and comfortable rows");
+                    Check(!highlightItem.Checked, "sorted column highlighting is disabled by default");
                     host.SetViewModeAndSize(4, 16);
                     var otherHost = form.GetPane(1).ActiveView!;
                     otherHost.SetViewModeAndSize(4, 16);
                     int oldRows = NativeAppearanceRowHeight(NativeAppearanceList(host));
                     int otherOldRows = NativeAppearanceRowHeight(NativeAppearanceList(otherHost));
+                    CheckNativeHighlight(host, false, "the first native list default");
+                    CheckNativeHighlight(otherHost, false, "the second native list default");
+                    highlightItem.PerformClick();
                     separatorItem.PerformClick();
                     spacingItem.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Compact").PerformClick();
                     options.Close();
                     var otherMenu = ViewMenu(form.GetPane(1));
                     Check(otherMenu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Vertical separators").Checked
                         && otherMenu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Row spacing")
-                            .DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Compact").Checked,
+                            .DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Compact").Checked
+                        && otherMenu.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "Highlight sorted column").Checked,
                         "view preferences changed from one pane are reflected in the other pane's menu");
                     Check(NativeAppearanceRowHeight(NativeAppearanceList(host)) < oldRows
                         && NativeAppearanceRowHeight(NativeAppearanceList(otherHost)) < otherOldRows,
@@ -124,6 +157,15 @@ internal static partial class Program
                     Check(NativeAppearanceRowHeight(NativeAppearanceList(host)) == oldRows
                         && NativeAppearanceRowHeight(NativeAppearanceList(otherHost)) == otherOldRows,
                         "common view settings remain usable from an empty pane and restore both native lists");
+                    await CheckHighlight(pane, true, "changing separators and spacing");
+                    await CheckHighlight(form.GetPane(1), true, "the other populated pane");
+                    ToggleHighlight(blank);
+                    await CheckHighlight(pane, false, "disabling highlighting from an empty pane");
+                    await CheckHighlight(form.GetPane(1), false, "disabling highlighting across panes");
+                    Check(NativeAppearanceRowHeight(NativeAppearanceList(host)) == oldRows
+                        && NativeAppearanceRowHeight(NativeAppearanceList(otherHost)) == otherOldRows,
+                        "highlight toggles preserve comfortable row spacing");
+                    ToggleHighlight(blank);
                     foreach (string theme in new[] { "light", "dark" })
                     {
                         form.SetColorTheme(theme);
@@ -156,6 +198,26 @@ internal static partial class Program
                     options.Close();
                     await created.Task.WaitAsync(TimeSpan.FromSeconds(10));
                     Check(Directory.GetDirectories(left).Length == 1, "pane options create a real folder while the command bar is hidden");
+                    pane.SelectTab(1);
+                    await CheckHighlight(pane, true, "an existing inactive tab");
+                    ToggleHighlight(form.GetPane(1));
+                    pane.SelectTab(0);
+                    await CheckHighlight(pane, false, "an inactive native tab updated while hidden");
+                    ToggleHighlight(form.GetPane(1));
+                    pane.AddTab(right);
+                    await CheckHighlight(pane, true, "a newly created tab");
+                    pane.CloseTab(remember: false);
+                    pane.SelectTab(0);
+                    form.ApplyLayout(4);
+                    await CheckHighlight(form.GetPane(3), true, "a previously hidden pane");
+                    ToggleHighlight(form.GetPane(3));
+                    for (int i = 0; i < 4; i++)
+                        await CheckHighlight(form.GetPane(i), false, $"pane {i + 1} after disabling from a revealed pane");
+                    form.SaveWorkspace("Highlight preferences");
+                    ToggleHighlight(pane);
+                    form.LoadWorkspace("Highlight preferences");
+                    for (int i = 0; i < 4; i++)
+                        await CheckHighlight(form.GetPane(i), true, $"workspace pane {i + 1}");
                 }
                 catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
                 finally { form.ExitApplication(); }
@@ -163,18 +225,28 @@ internal static partial class Program
             Application.Run(form);
         }
         Check(!SessionStore.Load(session).ShowCommandBar, "hidden command bar preference is saved");
-        Check(!SessionStore.Load(session).ShowVerticalSeparators && SessionStore.Load(session).ComfortableRows,
+        Check(!SessionStore.Load(session).ShowVerticalSeparators && SessionStore.Load(session).ComfortableRows
+            && SessionStore.Load(session).HighlightSortedColumn,
             "detail appearance preferences are saved globally");
         using var reopened = new MainForm(session, []);
-        reopened.Shown += (_, _) =>
+        reopened.Shown += async (_, _) =>
         {
             try
             {
                 Check(!Descendants(reopened.GetPane(0)).OfType<ToolStrip>().Single(s => s.AccessibleName == "Pane 1 commands").Visible,
                     "hidden command bar preference is applied after restarting");
+                for (int i = 0; i < 4; i++)
+                    await CheckHighlight(reopened.GetPane(i), true, $"reopened pane {i + 1}");
+                ToggleHighlight(reopened.GetPane(1));
+                for (int i = 0; i < 4; i++)
+                    await CheckHighlight(reopened.GetPane(i), false, $"reopened pane {i + 1} after disabling");
             }
+            catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
             finally { reopened.ExitApplication(); }
         };
         Application.Run(reopened);
+        Check(!SessionStore.Load(session).HighlightSortedColumn
+            && !SessionStore.Load(session).ShowVerticalSeparators && SessionStore.Load(session).ComfortableRows,
+            "disabling highlighting persists without dropping the other appearance preferences");
     }
 }

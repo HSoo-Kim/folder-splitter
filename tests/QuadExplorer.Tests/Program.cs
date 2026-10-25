@@ -63,6 +63,7 @@ internal static class Program
         Equal("ko", state.Language);
         Equal("light", state.ColorTheme);
         Equal(true, state.ShowFolderTree);
+        Equal(false, state.HighlightSortedColumn);
         Equal(1, state.Layout);
         Equal(PaneLayout.Leaf(0), state.LayoutTree);
         Equal(4, state.Panes.Count);
@@ -117,10 +118,11 @@ internal static class Program
         Equal(true, legacy.ShowCommandBar);
         Equal(false, legacy.ShowVerticalSeparators);
         Equal(true, legacy.ComfortableRows);
+        Equal(false, legacy.HighlightSortedColumn);
         SessionStore.Save(path, legacy with
         {
             ColorTheme = "dark", ShowFolderTree = false, ShowCommandBar = false,
-            ShowVerticalSeparators = true, ComfortableRows = false,
+            ShowVerticalSeparators = true, ComfortableRows = false, HighlightSortedColumn = true,
             Workspaces = [new Workspace { Name = "Appearance", Panes = legacy.Panes }]
         });
         var restored = SessionStore.Load(path);
@@ -129,11 +131,20 @@ internal static class Program
         Equal(false, restored.ShowCommandBar);
         Equal(true, restored.ShowVerticalSeparators);
         Equal(false, restored.ComfortableRows);
+        Equal(true, restored.HighlightSortedColumn);
         Sequence(legacy.Panes[0].Tabs, restored.Workspaces[0].Panes[0].Tabs);
         Sequence(legacy.Panes[0].Tabs, restored.Panes[0].Tabs);
         Equal(legacy.LayoutTree, restored.LayoutTree);
         Equal("light", legacy.ColorTheme);
         Equal(true, legacy.ShowFolderTree);
+        Equal(false, legacy.HighlightSortedColumn);
+        SessionStore.Save(path, restored with { HighlightSortedColumn = false });
+        var disabled = SessionStore.Load(path);
+        Equal(false, disabled.HighlightSortedColumn);
+        Equal(true, disabled.ShowVerticalSeparators);
+        Equal(false, disabled.ComfortableRows);
+        Sequence(restored.Panes[0].Tabs, disabled.Panes[0].Tabs);
+        Sequence(restored.Workspaces[0].Panes[0].Tabs, disabled.Workspaces[0].Panes[0].Tabs);
     }
 
     private static void LanguageRetention()

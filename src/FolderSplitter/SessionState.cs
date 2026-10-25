@@ -32,6 +32,7 @@ public sealed record SessionState
     public bool ShowCommandBar { get; init; } = true;
     public bool ShowVerticalSeparators { get; init; }
     public bool ComfortableRows { get; init; } = true;
+    public bool HighlightSortedColumn { get; init; }
     public int FolderTreeHeight { get; init; }
     public bool GlobalHotkey { get; init; } = true;
     // Replaces 0.7.5's CloseToTray (stored off by default) so everyone starts with the new default.

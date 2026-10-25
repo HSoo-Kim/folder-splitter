@@ -52,6 +52,7 @@ internal static partial class Program
                 uint dpi = NativeAppearanceDpi(list);
                 Console.WriteLine($"NATIVE_DETAILS compact={compact} dpi={dpi} small=0x{smallImages:X}");
                 Check(compact > 0, "native details reports actual item bounds");
+                await NativeAppearanceRedrawn(redrawWatcher, list);
                 CheckNativeAppearanceHeader(list, "initial dark header");
                 CheckNativeAppearanceBody(host, list, "initial-with-separators", true);
                 // Compare against compact rows drawn the same way: no separators or grid lines in either capture.
@@ -67,7 +68,6 @@ internal static partial class Program
                 await NativeAppearanceRedrawn(redrawWatcher, list);
                 var spacedIcon = NativeAppearanceInk(list, 1, "comfortable-icon");
                 var spacedText = NativeAppearanceInk(list, 2, "comfortable-label");
-                redrawWatcher.ReleaseHandle();
                 Check(!compactIcon.IsEmpty && Math.Abs(spacedIcon.Width - compactIcon.Width) <= 1
                     && Math.Abs(spacedIcon.Height - compactIcon.Height) <= 1,
                     "comfortable rows draw the file icon at its compact pixel size, not stretched");
@@ -93,11 +93,9 @@ internal static partial class Program
                 Check(NativeAppearanceRowHeight(list) == comfortable, "theme reset retains comfortable row spacing");
                 CheckNativeAppearanceBody(host, list, "after-reset", false);
 
-                form.WindowState = FormWindowState.Maximized;
-                await NativeAppearanceDispatch(host);
+                await NativeAppearanceIdle(() => form.WindowState = FormWindowState.Maximized);
                 CheckNativeAppearanceHeader(NativeAppearanceList(host), "dark header survives maximize");
-                form.WindowState = FormWindowState.Normal;
-                await NativeAppearanceDispatch(host);
+                await NativeAppearanceIdle(() => form.WindowState = FormWindowState.Normal);
                 CheckNativeAppearanceHeader(NativeAppearanceList(host), "dark header survives restore");
 
                 host.SetDetailsAppearance(true, false);
@@ -116,16 +114,19 @@ internal static partial class Program
                 Theme.ListFont = null;
                 host.ApplyListFont();
                 await NativeAppearanceDispatch(host);
-                host.SetViewModeAndSize(1, 48);
-                host.SetViewModeAndSize(4, 16);
-                await NativeAppearanceDispatch(host);
+                await NativeAppearanceIdle(() =>
+                {
+                    host.SetViewModeAndSize(1, 48);
+                    host.SetViewModeAndSize(4, 16);
+                });
                 list = NativeAppearanceList(host);
+                await NativeAppearanceRedrawn(redrawWatcher, list);
                 Check(Math.Abs(NativeAppearanceRowHeight(list) - target) <= 1,
                     "comfortable rows survive a native view-mode round trip");
                 CheckNativeAppearanceHeader(list, "dark header survives a native view-mode round trip");
 
                 await Navigate(host, () => host.Navigate(folders[1]));
-                await Navigate(host, () => host.Navigate(folder));
+                await NativeAppearancePopulated(host, () => host.Navigate(folder), 8);
                 await NativeAppearanceDispatch(host);
                 list = NativeAppearanceList(host);
                 Check(Math.Abs(NativeAppearanceRowHeight(list) - target) <= 1,
@@ -135,9 +136,9 @@ internal static partial class Program
                 string item = Path.Combine(folder, "item-00.txt");
                 Check(host.SelectPaths([item]) == 1 && SelectedPaths(host).SequenceEqual([item]),
                     "native appearance preserves real file selection");
-                await Navigate(host, () => typeof(Control)
+                await NativeAppearancePopulated(host, () => typeof(Control)
                     .GetMethod("RecreateHandle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-                    .Invoke(host, null));
+                    .Invoke(host, null), 8);
                 host.SetViewModeAndSize(4, 16);
                 await NativeAppearanceDispatch(host);
                 list = NativeAppearanceList(host);
@@ -161,6 +162,7 @@ internal static partial class Program
             catch (Exception ex) { failure = ex; }
             finally
             {
+                redrawWatcher?.ReleaseHandle();
                 host.ItemCountChanged -= CountChanged;
                 form.Close();
             }
@@ -171,6 +173,43 @@ internal static partial class Program
             if (failure is not null) throw new InvalidOperationException("Native details appearance scenario failed.", failure);
         }
         finally { Theme.ListFont = previousFont; }
+    }
+
+    private static async Task NativeAppearancePopulated(ShellViewHost host, Action trigger, int count)
+    {
+        var populated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Changed(object? sender, EventArgs e)
+        {
+            if (host.ItemCount == count) populated.TrySetResult();
+        }
+        host.ItemCountChanged += Changed;
+        try
+        {
+            await Navigate(host, trigger);
+            var redraw = new NativeAppearanceRedrawWatcher();
+            redraw.AssignHandle(NativeAppearanceList(host));
+            try
+            {
+                await populated.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                await NativeAppearanceDispatch(host);
+                await NativeAppearanceRedrawn(redraw, redraw.Handle);
+            }
+            finally { redraw.ReleaseHandle(); }
+        }
+        finally { host.ItemCountChanged -= Changed; }
+    }
+
+    private static async Task NativeAppearanceIdle(Action trigger)
+    {
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Idle(object? sender, EventArgs e) => done.TrySetResult();
+        Application.Idle += Idle;
+        try
+        {
+            trigger();
+            await done.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally { Application.Idle -= Idle; }
     }
 
     // This is an exact posted UI dispatch barrier: no elapsed-time settling or polling.
@@ -303,23 +342,8 @@ internal static partial class Program
     private static void CheckNativeAppearanceHeader(nint list, string description)
     {
         nint header = SendMessage(list, 0x101F, 0, 0);
-        // Hosted Shell windows use DirectComposition and return blank white PrintWindow frames on
-        // a private desktop. Rasterize the live HWND's theme association with the native renderer;
-        // this verifies real theme pixels after reset without accepting a blank composed frame.
-        using var image = NativeAppearancePaintTheme(header, "Header", 1, Color.Magenta); // HP_HEADERITEM
-        Console.WriteLine($"NATIVE_HEADER_PIXELS {description} corner={image.GetPixel(3, 3)} center={image.GetPixel(image.Width / 2, image.Height / 2)}");
-        if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR") is { Length: > 0 } output)
-            image.Save(Path.Combine(output, "native-header-" + description.Replace(' ', '-').Replace('/', '-') + ".png"));
-        int dark = 0, total = 0;
-        for (int y = Math.Max(1, image.Height / 2); y < image.Height - 2; y++)
-        for (int x = 4; x < image.Width - 4; x += 3)
-        {
-            Color pixel = image.GetPixel(x, y);
-            if (Math.Max(pixel.R, Math.Max(pixel.G, pixel.B)) < 128) dark++;
-            total++;
-        }
-        Console.WriteLine($"NATIVE_HEADER {description} dark={dark}/{total}");
-        Check(total > 0 && dark > total * 0.75, description);
+        using var image = NativeThemeCapture(header, "header-" + description.Replace(' ', '-').Replace('/', '-'));
+        NativeThemeHeaderPixels(list, image, description);
     }
 
     private static void CheckNativeAppearanceBody(ShellViewHost host, nint list, string name, bool separators)
@@ -332,9 +356,8 @@ internal static partial class Program
         Color sorted = ColorTranslator.FromWin32(sortColor), normal = ColorTranslator.FromWin32(background);
         Console.WriteLine($"NATIVE_BODY {name} sorted={sorted} normal={normal}");
         int Difference(Color a, Color b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
-        Check(Difference(sorted, Theme.SortColumn) <= 6 && Difference(normal, Theme.ListBack) <= 6 &&
-            Difference(sorted, normal) > 6,
-            $"native sorted column and body remain dark {name}");
+        Check(Difference(sorted, Theme.ListBack) <= 6 && Difference(normal, Theme.ListBack) <= 6,
+            $"native sorted column and body share the background when highlighting is off {name}");
         if (!separators)
         {
             Check(NativeAppearanceGetWindowTheme(list) == 0 && (SendMessage(list, 0x1037, 0, 0) & 1) == 0,

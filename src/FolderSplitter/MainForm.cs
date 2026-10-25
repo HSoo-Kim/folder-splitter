@@ -24,6 +24,7 @@ public sealed class MainForm : Form, IMessageFilter
     private bool showCommandBar;
     private bool showVerticalSeparators;
     private bool comfortableRows;
+    private bool highlightSortedColumn;
     private int previewWidth;
     private readonly Button treeHeader;
     private readonly Panel treePanel = new() { Dock = DockStyle.Bottom };
@@ -207,21 +208,23 @@ public sealed class MainForm : Form, IMessageFilter
         showCommandBar = initialState.ShowCommandBar;
         showVerticalSeparators = initialState.ShowVerticalSeparators;
         comfortableRows = initialState.ComfortableRows;
+        highlightSortedColumn = initialState.HighlightSortedColumn;
         foreach (var pane in panes)
         {
             pane.SetCommandBarVisible(showCommandBar);
-            pane.SetDetailsAppearance(showVerticalSeparators, comfortableRows);
+            pane.SetDetailsAppearance(showVerticalSeparators, comfortableRows, highlightSortedColumn);
             pane.CommandBarToggled += (_, _) =>
             {
                 showCommandBar = !showCommandBar;
                 foreach (var target in panes) target.SetCommandBarVisible(showCommandBar);
                 ScheduleSave();
             };
-            pane.DetailsAppearanceRequested += (separators, comfortable) =>
+            pane.DetailsAppearanceRequested += (separators, comfortable, highlight) =>
             {
                 showVerticalSeparators = separators;
                 comfortableRows = comfortable;
-                foreach (var target in panes) target.SetDetailsAppearance(separators, comfortable);
+                highlightSortedColumn = highlight;
+                foreach (var target in panes) target.SetDetailsAppearance(separators, comfortable, highlight);
                 ScheduleSave();
             };
             pane.Activated += (_, _) => ActivatePane(Array.IndexOf(panes, pane));
@@ -2259,7 +2262,7 @@ public sealed class MainForm : Form, IMessageFilter
                 ColorTheme = colorTheme, ShowDetails = showDetails, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate, ShowCommandBar = showCommandBar,
-                ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows,
+                ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows, HighlightSortedColumn = highlightSortedColumn,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible, Workspaces = [.. workspaces],
                 FavoritesExpanded = favoritesExpanded,

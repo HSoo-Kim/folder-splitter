@@ -28,6 +28,7 @@ public sealed class UiText
         ["Windows settings"] = ("Windows 공통 설정", "Windows 共享设置", "Windows 共通設定"),
         ["Apply"] = ("적용", "应用", "適用"),
         ["Vertical separators"] = ("세로 구분선", "垂直分隔线", "縦の区切り線"),
+        ["Highlight sorted column"] = ("정렬 열 강조", "突出显示排序列", "並べ替え列を強調表示"),
         ["Row spacing"] = ("줄 간격", "行间距", "行間"),
         ["Compact"] = ("빽빽하게", "紧凑", "コンパクト"),
         ["Comfortable"] = ("보통", "标准", "標準"),

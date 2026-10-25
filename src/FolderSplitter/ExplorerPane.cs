@@ -498,7 +498,7 @@ public sealed partial class ExplorerPane : UserControl
             path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string? selectFile = File.Exists(path) ? Path.GetFullPath(path) : null;
         var host = new ShellViewHost(selectFile is null ? path : Path.GetDirectoryName(selectFile)!, text) { Visible = false };
-        host.SetDetailsAppearance(showVerticalSeparators, comfortableRows);
+        host.SetDetailsAppearance(showVerticalSeparators, comfortableRows, highlightSortedColumn);
         if (selectFile is not null) host.NavigateAndSelect(selectFile);
         tab.Host = host;
         var button = tab.Button;
