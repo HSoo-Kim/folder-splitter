@@ -2,11 +2,26 @@
 
 # Folder Splitter
 
+[![Total downloads](https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=flat-square&label=Total%20downloads&color=007ec6)](https://github.com/HSoo-Kim/folder-splitter/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=social&label=Stars)](https://github.com/HSoo-Kim/folder-splitter/stargazers)
+
 **English** · [한국어](README.ko.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
 A **Windows file manager that shows up to 4 folders at once in a single window, with independent tabs in each pane**.
 
 It uses the native Windows file list (Shell `IExplorerBrowser`). It doesn't modify or replace the existing `explorer.exe` and runs as a separate app.
+
+## Key Capabilities
+
+- **Fast search backed by an in-memory path index** — Find files and folders from name or path fragments in the address bar. The app maintains its own compact index; no Everything installation is required, and search does not read file contents.
+- **Up to four panes, each with its own tabs** — Keep source files, destinations and references side by side. Resize the splits or drag tabs between panes instead of arranging several Explorer windows.
+- **Undo and redo closed tabs and panes** — Restore a pane's tabs locally, or use the global history for tabs and closed splits across the window. `Ctrl+Shift+T` restores the most recent close, including a split's position and proportions.
+- **Preview without leaving the file manager** — View images and multi-page PDFs, pin a reference, or detach previews into separate windows for comparison. Other document formats use installed Windows preview handlers.
+- **Compare and organize folders together** — Compare two panes for missing, newer or differently sized files, copy or move selections to the other pane, and preview bulk name changes before applying them.
+- **Pick up where you left off** — Restore tabs and layout on launch, save named workspaces for different projects, and bring the app back with `Win+Alt+E`.
+- **Native file operations, adjustable appearance** — Keep Windows context menus, drag and drop, and copy dialogs, with 15 color themes, adjustable fonts and row spacing, and optional command bars, separators and sorted-column highlighting.
+
+[Download for Windows](https://github.com/HSoo-Kim/folder-splitter/releases/latest) · [Search details and measurements](#the-address-bar-is-a-search-box) · [Full feature guide](#features)
 
 ## The address bar is a search box
 
@@ -125,7 +140,7 @@ Early versions aren't code-signed. Windows may warn that it can't verify the pub
 - **Color themes**: Choose from 15 in the menu at the top right: the standard `Light` and `Dark`, the easier-on-the-eyes `Beige`, `Soft green`, `Sky blue`, `Pastel blue` and `Soft dark`, and eight mixed palettes based on well-known design palettes (Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin, Nord) that give the top bar, sidebar, file list and sorted column their own colors.
   ![The 15 Folder Splitter color theme palettes](docs/images/folder-splitter-themes-v0.7.29.png)
 - **Font and text size**: In `Settings` → `Font and text size`, pick an installed font (Malgun Gothic, Pretendard, NanumGothic and others) and small, normal or large text; the file lists change too.
-- **List appearance**: Each pane's `View` menu groups its options by scope: this pane only, all panes, and Windows-wide settings. For all panes you can hide the command bar (the filter is still on `Ctrl+F` and the other commands are in the pane options), turn vertical column separators on or off (off by default) and choose `Compact` or `Comfortable` row spacing (default). Comfortable spacing only adds room between rows; icons and text keep their size.
+- **List appearance**: Each pane's `View` menu groups its options by scope: this pane only, all panes, and Windows-wide settings. For all panes you can hide the command bar (the filter is still on `Ctrl+F` and the other commands are in the pane options), toggle vertical separators and sorted-column highlighting (both off by default), and choose `Compact` or `Comfortable` row spacing (default). Comfortable spacing only adds room between rows; icons and text keep their size.
 - **Folder file total**: The status line shows the total size of the files directly in the current folder, such as `Files here: 18.4 MB`. Subfolders are not scanned, so it is a single folder read with no load on the PC; network folders are skipped.
 - **Languages**: 한국어, English, 简体中文, 日本語.
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
