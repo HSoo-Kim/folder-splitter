@@ -238,7 +238,10 @@ public sealed partial class ShellViewHost
             if (!external) return;
             if (message.Msg == 0x031A && kind != DetailsWindowKind.Container) // WM_THEMECHANGED
                 owner.ApplyDetailsAppearance();
-            else if (message.Msg is 0x0210 or 0x02E3 || // WM_PARENTNOTIFY, WM_DPICHANGED_AFTERPARENT
+            // Mouse parent notifications do not change appearance. Recalibrating row fonts
+            // on a click can briefly remove the scrollbar and reset the native scroll origin.
+            else if (message.Msg == 0x0210 && ((long)message.WParam & 0xffff) is 1 or 2 // WM_PARENTNOTIFY: create/destroy
+                || message.Msg == 0x02E3 || // WM_DPICHANGED_AFTERPARENT
                 kind == DetailsWindowKind.List && (message.Msg is 0x108E or 0x1003 or 0x0030
                     || message.Msg == 0x104D && !owner.rowCalibrated)) // LVM_SETVIEW / SETIMAGELIST / WM_SETFONT / INSERTITEMW
                 owner.QueueDetailsAppearance();

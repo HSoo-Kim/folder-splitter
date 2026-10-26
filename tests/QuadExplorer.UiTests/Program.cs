@@ -42,6 +42,8 @@ internal static partial class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        if (args is ["--native-open-receipt", var receiptPipe])
+            return RunNativeOpenReceipt(receiptPipe);
         // Design review: captures the app chrome in several themes instead of running the checks.
         if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_DESIGN_CAPTURE") is { Length: > 0 } designOutput)
             return RunDesignCapture(designOutput);
@@ -51,6 +53,12 @@ internal static partial class Program
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--native-open-selection"])
+            {
+                RunNativeOpenSelectionScenario(root);
+                Console.WriteLine($"NATIVE_OPEN_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--navigation-theme"])
             {
                 RunNativeNavigationThemeScenario(root);
@@ -222,6 +230,7 @@ internal static partial class Program
             RunNativeGroupThemeScenario(root);
             RunNativeNavigationThemeScenario(root);
             RunNativeScrollbarScenario(root);
+            RunNativeOpenSelectionScenario(root);
             RunNativeShortcutMenuScenario(root);
             RunHelpDialogScenario(root);
             RunStatusChromeScenario(root);
