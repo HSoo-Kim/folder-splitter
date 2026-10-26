@@ -53,6 +53,18 @@ internal static partial class Program
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--breadcrumb-dpi", var breadcrumbOutput])
+            {
+                RunBreadcrumbDpiScenario(root, breadcrumbOutput);
+                Console.WriteLine($"BREADCRUMB_DPI_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--explorer-parity"])
+            {
+                RunExplorerParityScenario(root);
+                Console.WriteLine($"EXPLORER_PARITY_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--native-open-selection"])
             {
                 RunNativeOpenSelectionScenario(root);
@@ -244,6 +256,7 @@ internal static partial class Program
             RunPdfScenario(root);
             RunTabStripScenario(root);
             RunConvenienceScenario(root);
+            RunBreadcrumbDpiScenario(root, null);
             RunExplorerParityScenario(root);
             RunResizeMetric(root);
         }

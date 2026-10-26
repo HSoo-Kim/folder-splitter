@@ -72,7 +72,9 @@ internal static partial class Program
                 var commandStrip = search.Owner!;
                 using (var image = new Bitmap(commandStrip.Width, commandStrip.Height))
                 {
-                    commandStrip.DrawToBitmap(image, new Rectangle(Point.Empty, commandStrip.Size));
+                    using var graphics = Graphics.FromImage(image);
+                    graphics.Clear(QuadExplorer.Theme.Canvas);
+                    commandStrip.Renderer.DrawToolStripBackground(new ToolStripRenderEventArgs(graphics, commandStrip));
                     var field = QuadExplorer.Theme.SearchFieldBounds(search);
                     int middle = field.Top + field.Height / 2;
                     Check(ReferenceEquals(search.Tag, QuadExplorer.Theme.SearchField) && !search.Focused
