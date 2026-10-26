@@ -51,6 +51,12 @@ internal static partial class Program
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--native-groups"])
+            {
+                RunNativeGroupThemeScenario(root);
+                Console.WriteLine($"PASS {checks} native group theme checks");
+                return 0;
+            }
             if (args is ["--native-scrollbars"])
             {
                 RunNativeScrollbarScenario(root);
@@ -207,6 +213,7 @@ internal static partial class Program
             RunCommandBarPreferenceScenario(root);
             RunNativeDetailsAppearanceScenario(root, folders);
             RunNativeDetailsThemeScenario(root);
+            RunNativeGroupThemeScenario(root);
             RunNativeScrollbarScenario(root);
             RunNativeShortcutMenuScenario(root);
             RunHelpDialogScenario(root);

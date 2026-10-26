@@ -168,6 +168,9 @@ internal static partial class Program
             try
             {
                 if (!PrintWindow(window, dc, 3)) throw new InvalidOperationException("Native theme capture failed.");
+                // PrintWindow can return the old DWM surface immediately after a resize, leaving
+                // the enlarged area black. Render the current HWND synchronously into the same DC.
+                SendMessage(window, 0x0317, dc, 0x1E); // WM_PRINT: client, nonclient, background and children
             }
             finally { graphics.ReleaseHdc(dc); }
         }

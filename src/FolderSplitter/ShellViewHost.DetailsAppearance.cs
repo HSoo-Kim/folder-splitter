@@ -256,9 +256,17 @@ public sealed partial class ShellViewHost
                 return;
             }
             if (code != -12) return; // NM_CUSTOMDRAW
-            if (SendMessage(list, 0x108F, 0, 0) != 1) return;
             int stage = Marshal.ReadInt32(message.LParam, 3 * IntPtr.Size);
             nint dc = Marshal.ReadIntPtr(message.LParam, 4 * IntPtr.Size);
+            var groupDraw = Marshal.PtrToStructure<DetailsNative.ListCustomDraw>(message.LParam);
+            if (groupDraw.ItemType == 1)
+            {
+                // Groups use PRE/POSTPAINT, not ITEMPREPAINT. Their themed header ignores clrText.
+                if (stage == 1) message.Result |= 0x30; // preserve item drawing, request group postpaint
+                else if (stage == 2) owner.DrawGroupHeader(list, groupDraw.Draw);
+                return;
+            }
+            if (SendMessage(list, 0x108F, 0, 0) != 1) return;
             if (stage == 0x1)
             {
                 owner.sortedColumn = -1;
