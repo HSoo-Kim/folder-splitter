@@ -310,6 +310,8 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
             initialized = false;
             cookie = 0;
         }
+        foreach (var background in navigationBackgrounds.ToArray()) background.ReleaseHandle();
+        navigationBackgrounds.Clear();
         base.OnHandleDestroyed(e);
     }
 
