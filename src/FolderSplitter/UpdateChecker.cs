@@ -10,7 +10,7 @@ public sealed record ReleaseInfo(Version Version, string Tag, string Url, Uri? P
 internal static class UpdateChecker
 {
     private const string LatestReleaseApi = "https://api.github.com/repos/HSoo-Kim/folder-splitter/releases/latest";
-    internal const string PackageName = "folder-splitter-win-x64.zip";
+    private const string LegacyPackageName = "folder-splitter-win-x64.zip";
 
     public static Version Current => Normalize(typeof(UpdateChecker).Assembly.GetName().Version ?? new Version(0, 0, 0));
 
@@ -36,9 +36,13 @@ internal static class UpdateChecker
         Uri? package = null;
         string? sha256 = null;
         if (release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+        {
+            string versionedPackageName = $"folder-splitter-{tag}-win-x64.zip";
             foreach (var asset in assets.EnumerateArray())
             {
-                if (asset.GetProperty("name").GetString() != PackageName) continue;
+                string? name = asset.GetProperty("name").GetString();
+                bool versioned = name == versionedPackageName;
+                if (!versioned && (name != LegacyPackageName || package is not null)) continue;
                 string download = asset.TryGetProperty("browser_download_url", out var link) ? link.GetString() ?? "" : "";
                 string digest = asset.TryGetProperty("digest", out var hash) && hash.ValueKind == JsonValueKind.String ? hash.GetString() ?? "" : "";
                 if (download.StartsWith("https://github.com/", StringComparison.Ordinal)
@@ -47,8 +51,9 @@ internal static class UpdateChecker
                     package = new Uri(download);
                     sha256 = digest[7..];
                 }
-                break;
+                if (versioned && package is not null) break;
             }
+        }
         return new ReleaseInfo(Normalize(version), tag, url, package, sha256);
     }
 }

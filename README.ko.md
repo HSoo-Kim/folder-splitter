@@ -7,7 +7,7 @@
 **한 창에 최대 4개 폴더, 영역마다 독립 탭. 이름 조각만 입력하면 바로 찾습니다.**
 
 <p>
-  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Windows용 Folder Splitter 다운로드" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Windows용 Folder Splitter 다운로드" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
@@ -55,7 +55,7 @@ Windows 기본 파일 목록(Shell `IExplorerBrowser`)을 사용하는 Windows �
 
 ## 빠른 시작
 
-1. [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip)을 내려받습니다(Windows 11 또는 Windows 10 버전 2004 이상, x64).
+1. [최신 릴리즈](https://github.com/HSoo-Kim/folder-splitter/releases/latest)에서 `folder-splitter-<tag>-win-x64.zip`을 내려받습니다(Windows 11 또는 Windows 10 버전 2004 이상, x64).
 2. 압축을 풀고 `FolderSplitter.exe`를 실행합니다. 설치가 필요 없고 .NET 런타임이 들어 있습니다.
 3. 영역의 주소창에 이름 조각을 입력하거나 사이드바에서 폴더를 고릅니다.
 
@@ -285,8 +285,10 @@ UI 통합 테스트는 `tools/PrivateDesktopQa`가 만든 별도의 비공개 Wi
 
 ```text
 artifacts/FolderSplitter/FolderSplitter.exe
-artifacts/folder-splitter-win-x64.zip
+artifacts/folder-splitter-<tag>-win-x64.zip
 ```
+
+`<tag>`는 프로젝트 버전 앞에 `v`를 붙인 값입니다(예: `v0.8.13`). 릴리즈에는 0.8.12 이하 버전의 앱 내 업데이트를 위해 바이트가 동일한 `folder-splitter-win-x64.zip`도 포함합니다.
 
 ## 구성
 

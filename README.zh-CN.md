@@ -7,7 +7,7 @@
 **一个窗口最多 4 个文件夹，每个区域独立标签页。输入名称片段即可立即查找。**
 
 <p>
-  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="下载 Windows 版 Folder Splitter" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="下载 Windows 版 Folder Splitter" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
@@ -55,7 +55,7 @@
 
 ## 快速开始
 
-1. 下载 [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip)（Windows 11，或 Windows 10 2004 及更高版本，x64）。
+1. 从[最新版本](https://github.com/HSoo-Kim/folder-splitter/releases/latest)下载 `folder-splitter-<tag>-win-x64.zip`（Windows 11，或 Windows 10 2004 及更高版本，x64）。
 2. 解压后运行 `FolderSplitter.exe`。无需安装，已内置 .NET 运行时。
 3. 在区域的地址栏输入名称片段，或从侧边栏选择文件夹。
 
@@ -285,8 +285,10 @@ UI 集成测试在 `tools/PrivateDesktopQa` 创建的独立私有 Windows 桌面
 
 ```text
 artifacts/FolderSplitter/FolderSplitter.exe
-artifacts/folder-splitter-win-x64.zip
+artifacts/folder-splitter-<tag>-win-x64.zip
 ```
+
+`<tag>` 为项目版本前加 `v`，例如 `v0.8.13`。发布版本还包含字节完全相同的 `folder-splitter-win-x64.zip`，供 0.8.12 及更早版本进行应用内更新。
 
 ## 项目结构
 

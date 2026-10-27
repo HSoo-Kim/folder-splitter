@@ -7,7 +7,7 @@
 **Up to four folders in one window, each pane with its own tabs. Find anything by typing a fragment.**
 
 <p>
-  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Download Folder Splitter for Windows" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Download Folder Splitter for Windows" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
@@ -55,7 +55,7 @@ A chat panel for finding files by describing them in plain language:
 
 ## Quick Start
 
-1. Download [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) (Windows 11, or Windows 10 version 2004 or later, x64).
+1. Download `folder-splitter-<tag>-win-x64.zip` from the [latest release](https://github.com/HSoo-Kim/folder-splitter/releases/latest) (Windows 11, or Windows 10 version 2004 or later, x64).
 2. Extract it and run `FolderSplitter.exe`. There is nothing to install; the .NET runtime is bundled.
 3. Type a name fragment into a pane's address bar, or pick a folder from the sidebar.
 
@@ -285,8 +285,10 @@ Output:
 
 ```text
 artifacts/FolderSplitter/FolderSplitter.exe
-artifacts/folder-splitter-win-x64.zip
+artifacts/folder-splitter-<tag>-win-x64.zip
 ```
+
+`<tag>` is `v` followed by the project version, for example `v0.8.13`. Releases also include a byte-identical `folder-splitter-win-x64.zip` for in-app updates from version 0.8.12 and earlier.
 
 ## Project layout
 
