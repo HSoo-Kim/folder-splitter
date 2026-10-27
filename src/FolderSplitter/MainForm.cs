@@ -136,6 +136,8 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly DateTime startedAt = DateTime.UtcNow;
     private readonly System.Windows.Forms.Timer memoryTimer = new() { Interval = 5 * 60 * 1000 };
     private readonly ToolStripMenuItem memoryMenu = new();
+    private readonly FolderVisits folderVisits;
+    private readonly ToolStripMenuItem forgetVisitsItem = new();
     private (nint Header, nint List, int Column, int StartX, int StartWidth)? columnDrag;
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartMinimized { get; init; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartHidden { get; init; }
@@ -182,6 +184,7 @@ public sealed class MainForm : Form, IMessageFilter
         favorites = [.. initialState.Favorites];
         deletedFavorites = [.. initialState.DeletedFavorites];
         workspaces = [.. initialState.Workspaces];
+        folderVisits = new FolderVisits(initialState.FrequentFolders);
         autoRestartMemory = initialState.AutoRestartMemory;
         memoryTimer.Tick += (_, _) => CheckMemory();
         explorerFavoritesImported = initialState.ExplorerFavoritesImported;
@@ -268,6 +271,8 @@ public sealed class MainForm : Form, IMessageFilter
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
             pane.TransferRequested += (source, move) => { ActivatePane(Array.IndexOf(panes, source)); TransferSelection(move); };
+            pane.OpenInOtherPaneRequested += source => { ActivatePane(Array.IndexOf(panes, source)); OpenFolderInOtherPane(); };
+            pane.FolderVisited += (_, path) => { if (ready) { folderVisits.Record(path); ScheduleSave(); } };
             pane.BulkRenameRequested += (_, _) => OpenBulkRename(pane);
             pane.CompareRequested += (_, _) => OpenCompare(pane);
             pane.DetailsPaneToggled += (_, _) => SetDetailsPaneVisible(!(showDetails && showPreview));
@@ -551,8 +556,10 @@ public sealed class MainForm : Form, IMessageFilter
     private IReadOnlyList<string> SearchRoots() => new[] { Active.CurrentPath }
         .Concat(panes.SelectMany(p => p.CaptureState().Tabs)).Concat(favorites)
         .Concat(panes.SelectMany(p => p.RecentPaths))
+        .Concat(folderVisits.Frequent())
         .Where(Path.IsPathRooted).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     internal PaneLayout CurrentLayout => layoutTree;
+    internal IReadOnlyList<FolderVisit> FolderVisitEntries => folderVisits.Entries;
     internal ExplorerPane GetPane(int id) => panes[id];
     internal string Language => text.Language;
 
@@ -810,6 +817,14 @@ public sealed class MainForm : Form, IMessageFilter
         fontMenu.DropDownItems.Add("\u2026");
         fontMenu.DropDownOpening += (_, _) => BuildFontMenu();
         settings.DropDownItems.Add(fontMenu);
+        BindText(forgetVisitsItem, "Forget frequently opened folders");
+        forgetVisitsItem.Click += (_, _) =>
+        {
+            folderVisits.Clear();
+            ScheduleSave();
+            Active.SetLocalizedStatus("Frequently opened folders were cleared.");
+        };
+        settings.DropDownItems.Add(forgetVisitsItem);
         toolbar.Items.Add(settings);
         toolbar.Items.Add(redoClose);
         toolbar.Items.Add(undoClose);
@@ -1127,7 +1142,7 @@ public sealed class MainForm : Form, IMessageFilter
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
     }
 
-    // The other pane is the one used just before the active pane, or else the next visible pane.
+    // The other pane is the one used just before the active pane, or else the first other visible pane (lowest number).
     internal ExplorerPane? OtherPane()
     {
         if (previousPane >= 0 && previousPane != activePane && visiblePanes.Contains(previousPane)) return panes[previousPane];
@@ -1169,6 +1184,42 @@ public sealed class MainForm : Form, IMessageFilter
                 FileOperationFinished?.Invoke(done, error);
             });
         });
+    }
+
+    // F6 and Shift+F6 walk the visible panes in order, wrapping around.
+    private void CyclePane(int step)
+    {
+        int count = visiblePanes.Length;
+        int at = Math.Max(0, Array.IndexOf(visiblePanes, activePane));
+        FocusPane(visiblePanes[((at + step) % count + count) % count]);
+    }
+
+    // Alt+1 to Alt+4 go straight to a pane; one that is not open says so instead of doing nothing.
+    private void FocusPane(int index)
+    {
+        if (!visiblePanes.Contains(index))
+        {
+            Active.SetLocalizedStatus("Pane {0} is not open.", index + 1);
+            return;
+        }
+        ActivatePane(index);
+        Active.FocusFiles();
+    }
+
+    // Opens the active pane's folder in the other pane (see OtherPane) and moves there.
+    internal void OpenFolderInOtherPane()
+    {
+        var source = Active;
+        string path = source.CurrentPath;
+        if (path.Length == 0 || source.ActiveView is null) { source.SetLocalizedStatus("Open a folder first."); return; }
+        if (OtherPane() is not { } target) { source.SetLocalizedStatus("There is no other pane. Choose 2, 3 or 4 panes first."); return; }
+        int number = target.PaneNumber;
+        switch (target.ShowFolder(path))
+        {
+            case ExplorerPane.ShowResult.Full: source.SetLocalizedStatus("Pane {0} already has 32 tabs. Close a tab first.", number); break;
+            case ExplorerPane.ShowResult.AlreadyOpen: source.SetLocalizedStatus("Pane {0} already shows this folder.", number); break;
+            default: source.SetLocalizedStatus("Opened this folder in pane {0}.", number); break;
+        }
     }
 
     internal IReadOnlyList<Workspace> Workspaces => workspaces;
@@ -2174,7 +2225,7 @@ public sealed class MainForm : Form, IMessageFilter
         }
         var receiving = panes[destination];
         if (path is null) receiving.AddBlankTab();
-        else receiving.AddTab(path);
+        else receiving.AddTab(path, countVisit: false);
         bool emptyPane = source.TabCount == 1;
         source.CloseTab(source.IndexOfTab(tab), remember: false);
         if (emptyPane && edge is null) RenderLayout(RemovePane(layoutTree, sourceId)!);
@@ -2243,12 +2294,20 @@ public sealed class MainForm : Form, IMessageFilter
             Keys key = (Keys)(int)m.WParam | ModifierKeys;
             if (key != (Keys.Alt | Keys.P) && key != (Keys.Control | Keys.Shift | Keys.F11) &&
                 (previewWindow?.ContainsFocus == true || ShellNative.IsChild(previewPane.Handle, m.HWnd))) return false;
-            if (HandleShortcut(key)) return true;
+            if (!AltGrDown(key) && HandleShortcut(key)) return true;
         }
         if (toolbar.ContainsFocus) return false; // Let ToolStrip handle Enter, Space and arrow navigation.
         if (m.Msg >= 0x100 && m.Msg <= 0x109) return Active.ActiveView?.TranslateKey(ref m) ?? false;
         return false;
     }
+
+    // Layouts with an AltGr key (Polish, US-International and others) report AltGr as Ctrl+Alt, so AltGr+O is the
+    // letter "o" with an acute accent and not the app's Ctrl+Alt+O. The right Alt key being down tells them apart.
+    private static bool AltGrDown(Keys key) =>
+        (key & (Keys.Control | Keys.Alt)) == (Keys.Control | Keys.Alt) && GetKeyState(0xA5) < 0;
+
+    [DllImport("user32.dll")]
+    private static extern short GetKeyState(int key);
 
     // The hosted file list waits until the button is released to resize a column. Track the divider
     // here instead and set the width on every mouse move, as File Explorer does.
@@ -2521,7 +2580,13 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.D3: ApplyLayout(3); break;
             case Keys.Control | Keys.Shift | Keys.D3: ApplyLayout(3, false); break;
             case Keys.Control | Keys.D4: ApplyLayout(4); break;
-            case Keys.F6: ActivatePane(visiblePanes[(Array.IndexOf(visiblePanes, activePane) + 1) % visiblePanes.Length]); Active.FocusFiles(); break;
+            case Keys.F6: CyclePane(1); break;
+            case Keys.Shift | Keys.F6: CyclePane(-1); break;
+            case Keys.Alt | Keys.D1: FocusPane(0); break;
+            case Keys.Alt | Keys.D2: FocusPane(1); break;
+            case Keys.Alt | Keys.D3: FocusPane(2); break;
+            case Keys.Alt | Keys.D4: FocusPane(3); break;
+            case Keys.Control | Keys.Alt | Keys.O: OpenFolderInOtherPane(); break;
             case Keys.F5: Active.ActiveView?.RefreshFolder(); break;
             case Keys.Alt | Keys.Left: Active.ActiveView?.Travel(0x4000); break;
             case Keys.Alt | Keys.Right: Active.ActiveView?.Travel(0x8000); break;
@@ -2558,6 +2623,7 @@ public sealed class MainForm : Form, IMessageFilter
                 ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows, HighlightSortedColumn = highlightSortedColumn,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible, Workspaces = [.. workspaces],
+                FrequentFolders = [.. folderVisits.Entries],
                 FavoritesExpanded = favoritesExpanded,
                 SidebarWidth = sidebarWidth, DeletedFavorites = [.. deletedFavorites],
                 ExplorerFavoritesImported = explorerFavoritesImported,

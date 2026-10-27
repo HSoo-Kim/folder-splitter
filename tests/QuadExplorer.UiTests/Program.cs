@@ -59,6 +59,24 @@ internal static partial class Program
                 Console.WriteLine($"ADDRESS_ICONS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--pane-navigation"])
+            {
+                RunPaneNavigationScenario(root);
+                Console.WriteLine($"PANE_NAVIGATION_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--address-more-results"])
+            {
+                RunAddressMoreResultsScenario(root);
+                Console.WriteLine($"ADDRESS_MORE_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--frequent-folders"])
+            {
+                RunFrequentFolderScenario(root);
+                Console.WriteLine($"FREQUENT_FOLDERS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--breadcrumb-dpi", var breadcrumbOutput])
             {
                 RunBreadcrumbDpiScenario(root, breadcrumbOutput);
@@ -269,6 +287,9 @@ internal static partial class Program
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
             RunAddressCandidateIconScenario(root);
+            RunAddressMoreResultsScenario(root);
+            RunFrequentFolderScenario(root);
+            RunPaneNavigationScenario(root);
             RunAppearanceScenario(root);
             RunTrayScenario(root);
             RunUpdateScenario(root);
@@ -283,7 +304,7 @@ internal static partial class Program
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
         finally { Directory.Delete(root, recursive: true); }
         Console.WriteLine(failures == 0 ? $"PASS {checks} native UI integration checks" : $"FAIL {failures} native UI checks ({checks} passed)");
-        return failures == 0 ? 0 : 1;
+        return QuitWithoutDriverTeardown(failures == 0 ? 0 : 1);
     }
 
     private static void RunDockingScenario(string session, string[] folders)

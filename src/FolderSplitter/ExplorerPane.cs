@@ -89,6 +89,9 @@ public sealed partial class ExplorerPane : UserControl
     private readonly System.Windows.Forms.Timer searchTimer = new() { Interval = 50 };
     private CancellationTokenSource? searchCancellation;
     private int searchGeneration;
+    // Which of AddressCandidates.ResultLimits the popup shows; every new query starts at the first.
+    private int resultStep;
+    private int pendingSelect;
     internal event EventHandler? CandidatesUpdated;
     internal event EventHandler? SearchSettled;
     internal IReadOnlyList<SearchHit> SearchCandidates => candidates.Hits;
@@ -112,6 +115,8 @@ public sealed partial class ExplorerPane : UserControl
     public event Action<ExplorerPane, string, int>? MoveTabRequested;
     internal event Action<ExplorerPane, FolderTab>? TabDragRequested;
     internal event Action<ExplorerPane, FolderTab, SplitEdge>? SplitTabRequested;
+    public event EventHandler<string>? FolderVisited;
+    internal event Action<ExplorerPane>? OpenInOtherPaneRequested;
     internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
 
     public ExplorerPane(int number, PaneState state, UiText? text = null,
@@ -122,6 +127,7 @@ public sealed partial class ExplorerPane : UserControl
         this.searchRoots = searchRoots;
         candidates = new AddressCandidates(number);
         candidates.Chosen += OpenCandidate;
+        candidates.MoreRequested += ShowMoreCandidates;
         searchTimer.Tick += async (_, _) => { searchTimer.Stop(); await QueryCandidates(); };
         if (search is not null) search.IndexChanged += SearchIndexChanged;
         PaneNumber = number;
@@ -166,7 +172,8 @@ public sealed partial class ExplorerPane : UserControl
             }
             else if (e.KeyCode == Keys.Enter)
             {
-                if (candidates.Visible && candidates.SelectedHit is { } hit) OpenCandidate(hit);
+                if (candidates.Visible && candidates.MoreSelected) ShowMoreCandidates();
+                else if (candidates.Visible && candidates.SelectedHit is { } hit) OpenCandidate(hit);
                 else { CloseCandidates(); Navigate(address.Text); }
                 e.SuppressKeyPress = true;
             }
@@ -280,7 +287,7 @@ public sealed partial class ExplorerPane : UserControl
         emptyHint.Click += (_, _) => FocusAddress();
         Enter += (_, _) => Activated?.Invoke(this, EventArgs.Empty);
         MouseDown += (_, _) => Activated?.Invoke(this, EventArgs.Empty);
-        foreach (string path in state.Tabs) AddTab(path, select: false);
+        foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
         if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
         else ShowEmptyState();
         address.TextChanged += (_, _) => ScheduleSearch();
@@ -330,6 +337,9 @@ public sealed partial class ExplorerPane : UserControl
     {
         if (!address.Focused || search is not { IsAvailable: true }) return;
         int generation = searchGeneration;
+        int limit = AddressCandidates.ResultLimits[resultStep];
+        int select = pendingSelect;
+        pendingSelect = 0;
         string input = address.Text;
         var source = new CancellationTokenSource();
         searchCancellation = source;
@@ -337,10 +347,11 @@ public sealed partial class ExplorerPane : UserControl
         {
             if (!search.IsReady) { candidates.Present(address, [], text.T("Building search index...")); return; }
             var roots = searchRoots?.Invoke() ?? new[] { CurrentPath };
-            var hits = await Task.Run(() => search.QueryAsync(input, roots, 50, source.Token), source.Token);
+            // Asking for one more than is shown tells whether the list continues.
+            var hits = await Task.Run(() => search.QueryAsync(input, roots, limit + 1, source.Token), source.Token);
             if (source.IsCancellationRequested || IsDisposed || generation != searchGeneration ||
                 address.Text != input || !address.Focused) return;
-            candidates.Present(address, hits);
+            candidates.Present(address, hits.Take(limit).ToArray(), null, FooterFor(hits.Count > limit, limit), select);
             CandidatesUpdated?.Invoke(this, EventArgs.Empty);
         }
         catch (OperationCanceledException) when (source.IsCancellationRequested) { }
@@ -359,6 +370,24 @@ public sealed partial class ExplorerPane : UserControl
             source.Dispose();
             if (!IsDisposed) SearchSettled?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    private (CandidateFooter Kind, string Text)? FooterFor(bool more, int limit)
+    {
+        if (!more) return null;
+        return resultStep + 1 < AddressCandidates.ResultLimits.Length
+            ? (CandidateFooter.More, text.T("Show more results"))
+            : (CandidateFooter.Limit, text.T("Showing the first {0} matches. Type more of the name to narrow the search.", limit));
+    }
+
+    // The "show more" row asks again for the next, larger page and selects the first new result.
+    private async void ShowMoreCandidates()
+    {
+        if (resultStep + 1 >= AddressCandidates.ResultLimits.Length || !candidates.Visible || !address.Focused) return;
+        resultStep++;
+        pendingSelect = candidates.Hits.Count;
+        searchCancellation?.Cancel();
+        await QueryCandidates();
     }
 
     private void SearchIndexChanged(object? sender, EventArgs e)
@@ -382,6 +411,9 @@ public sealed partial class ExplorerPane : UserControl
     private void CloseCandidates()
     {
         searchGeneration++;
+        // Every closed popup starts over at the first page; "show more" never closes it.
+        resultStep = 0;
+        pendingSelect = 0;
         searchTimer.Stop();
         searchCancellation?.Cancel();
         candidates.Hide();
@@ -469,12 +501,12 @@ public sealed partial class ExplorerPane : UserControl
         candidates.RefreshTheme();
     }
 
-    public void AddTab(string path, bool select = true) => InsertTab(path, select);
+    public void AddTab(string path, bool select = true, bool countVisit = true) => InsertTab(path, select, countVisit);
 
     // A tab with no folder yet: the address bar takes focus so the user can type a path or search.
     public void AddBlankTab() => InsertTab(null, select: true);
 
-    private void InsertTab(string? path, bool select)
+    private void InsertTab(string? path, bool select, bool countVisit = true)
     {
         if (tabs.Count >= 32) { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return; }
         string title = text.T("New tab");
@@ -497,13 +529,13 @@ public sealed partial class ExplorerPane : UserControl
         };
         tabs.Add(tab);
         tabStrip.Items.Insert(tabStrip.Items.IndexOf(newTab), button);
-        if (path is not null) AttachHost(tab, path);
+        if (path is not null) AttachHost(tab, path, countVisit);
         if (select) SelectTab(tabs.Count - 1);
         else LayoutTabs();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private void AttachHost(FolderTab tab, string path)
+    private void AttachHost(FolderTab tab, string path, bool countVisit = true)
     {
         if (string.IsNullOrWhiteSpace(path))
             path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -535,6 +567,16 @@ public sealed partial class ExplorerPane : UserControl
         host.NavigationError += (_, message) => SetLocalizedStatus(() => host.ErrorStatus ?? message);
         host.FilterChanged += (_, _) => { if (host == ActiveView) UpdateCommands(); };
         host.Navigated += (_, _) => { if (host == ActiveView) UpdateCommands(); };
+        // A folder the user opens counts as a visit. The folder a restored tab starts on does not, even if it never loads.
+        string? lastVisit = countVisit ? null : FolderVisits.NormalizePath(host.LocationPath);
+        host.Navigated += (_, _) =>
+        {
+            string location = host.LocationPath;
+            string? key = FolderVisits.NormalizePath(location);
+            bool changed = !string.Equals(key, lastVisit, StringComparison.OrdinalIgnoreCase);
+            lastVisit = key;
+            if (changed && key is not null) FolderVisited?.Invoke(this, location);
+        };
         // Tab removal hides the host while the selected index is still being updated.
         host.ItemCountChanged += (_, _) =>
         {
@@ -643,6 +685,29 @@ public sealed partial class ExplorerPane : UserControl
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
         else AddTab(path);
+    }
+
+    internal enum ShowResult { Opened, AlreadyOpen, Full }
+
+    // Opens a folder here for another pane: a tab already showing it is selected, a blank tab is filled,
+    // otherwise a new tab is added. The pane takes focus, as with any tab the user opens.
+    internal ShowResult ShowFolder(string path)
+    {
+        for (int i = 0; i < tabs.Count; i++)
+        {
+            if (tabs[i].Host is not { } host
+                || !string.Equals(host.LocationPath.TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) continue;
+            SelectTab(i);
+            return ShowResult.AlreadyOpen;
+        }
+        if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host is null)
+        {
+            Navigate(path);
+            return ShowResult.Opened;
+        }
+        if (tabs.Count >= 32) return ShowResult.Full;
+        AddTab(path);
+        return ShowResult.Opened;
     }
 
     public void FocusAddress() { breadcrumb.Visible = false; address.Focus(); address.SelectAll(); }
@@ -956,6 +1021,7 @@ public sealed partial class ExplorerPane : UserControl
         tabMenu.Items.Add(new ToolStripSeparator());
         tabMenu.Items.Add(text.T("Copy selection to other pane    Ctrl+Alt+C"), null, (_, _) => TransferRequested?.Invoke(this, false));
         tabMenu.Items.Add(text.T("Move selection to other pane    Ctrl+Alt+X"), null, (_, _) => TransferRequested?.Invoke(this, true));
+        tabMenu.Items.Add(text.T("Open this folder in the other pane    Ctrl+Alt+O"), null, (_, _) => OpenInOtherPaneRequested?.Invoke(this)).Enabled = ActiveView is not null;
         tabMenu.Items.Add(new ToolStripSeparator());
         tabMenu.Items.Add(text.T("New folder"), null, (_, _) => ActiveView?.InvokeBackgroundVerb("NewFolder")).Enabled = ActiveView is not null;
         tabMenu.Items.Add(text.T("Filter this folder"), null, (_, _) => FocusFolderFilter()).Enabled = ActiveView is not null;
@@ -1005,7 +1071,7 @@ public sealed partial class ExplorerPane : UserControl
     internal void ReplaceTabs(PaneState state)
     {
         while (tabs.Count > 0) CloseTab(tabs.Count - 1, remember: false);
-        foreach (string path in state.Tabs) AddTab(path, select: false);
+        foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
         if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
     }
 

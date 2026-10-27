@@ -2,9 +2,12 @@ using QuadExplorer.Search;
 
 namespace QuadExplorer;
 
+// The row after the last result: "show more" asks for the next page; the limit note only explains.
+internal enum CandidateFooter { More, Limit }
+
 internal sealed class AddressCandidates : Form
 {
-    private readonly ListBox rows = new()
+    private readonly ListBox rows = new ResultList()
     {
         Dock = DockStyle.Fill, IntegralHeight = false, BorderStyle = BorderStyle.None,
         DrawMode = DrawMode.OwnerDrawFixed, DisplayMember = nameof(SearchHit.FullPath)
@@ -20,6 +23,15 @@ internal sealed class AddressCandidates : Form
     private Form? ownerForm;
     private string? hoveredPath;
     internal event Action<SearchHit>? Chosen;
+    internal event Action? MoreRequested;
+    // Result pages shown in turn; choosing the "show more" row asks for the next one.
+    internal static readonly int[] ResultLimits = [50, 200, 500];
+    private sealed record FooterRow(CandidateFooter Kind, string Text)
+    {
+        public override string ToString() => Text;
+    }
+    private int lastSelectable;
+    internal bool MoreSelected => rows.SelectedItem is FooterRow { Kind: CandidateFooter.More };
     internal IReadOnlyList<SearchHit> Hits => rows.Items.OfType<SearchHit>().ToArray();
     internal SearchHit? SelectedHit => rows.SelectedItem as SearchHit;
 
@@ -40,7 +52,9 @@ internal sealed class AddressCandidates : Form
         {
             if (e.Button != MouseButtons.Left) return;
             int index = rows.IndexFromPoint(e.Location);
-            if (index >= 0 && rows.Items[index] is SearchHit hit) Chosen?.Invoke(hit);
+            if (index < 0) return;
+            if (rows.Items[index] is SearchHit hit) Chosen?.Invoke(hit);
+            else if (rows.Items[index] is FooterRow { Kind: CandidateFooter.More }) MoreRequested?.Invoke();
         };
         rows.MouseMove += (_, e) =>
         {
@@ -49,6 +63,11 @@ internal sealed class AddressCandidates : Form
             if (path == hoveredPath) return;
             hoveredPath = path;
             tips.SetToolTip(rows, path);
+        };
+        rows.SelectedIndexChanged += (_, _) =>
+        {
+            // The note after the last result is not a choice; stay on the last real row.
+            if (rows.SelectedItem is FooterRow { Kind: CandidateFooter.Limit }) rows.SelectedIndex = lastSelectable;
         };
         RefreshTheme();
     }
@@ -73,7 +92,8 @@ internal sealed class AddressCandidates : Form
         base.WndProc(ref m);
     }
 
-    internal void Present(TextBox address, IReadOnlyList<SearchHit> hits, string? message = null)
+    internal void Present(TextBox address, IReadOnlyList<SearchHit> hits, string? message = null,
+        (CandidateFooter Kind, string Text)? footer = null, int select = 0)
     {
         QueueIcons(message is null ? hits : []);
         rows.BeginUpdate();
@@ -86,7 +106,13 @@ internal sealed class AddressCandidates : Form
             rows.Enabled = message is null;
             if (message is not null) rows.Items.Add(message);
             else foreach (var hit in hits) rows.Items.Add(hit);
-            if (rows.Items.Count > 0 && message is null) rows.SelectedIndex = 0;
+            lastSelectable = Math.Max(0, rows.Items.Count - 1);
+            if (message is null && footer is { } note)
+            {
+                rows.Items.Add(new FooterRow(note.Kind, note.Text));
+                if (note.Kind == CandidateFooter.More) lastSelectable = rows.Items.Count - 1;
+            }
+            if (rows.Items.Count > 0 && message is null) rows.SelectedIndex = Math.Clamp(select, 0, lastSelectable);
         }
         finally { rows.EndUpdate(); }
         if (rows.Items.Count == 0) { Hide(); return; }
@@ -97,6 +123,8 @@ internal sealed class AddressCandidates : Form
         int y = anchor.Bottom + 2;
         if (y + height > work.Bottom) y = Math.Max(work.Top, anchor.Top - height - 2);
         Bounds = new Rectangle(Math.Clamp(anchor.Left, work.Left, work.Right - width), y, width, height);
+        // After "show more", the first new result is on screen with one earlier row for context.
+        if (select > 0 && rows.SelectedIndex > 0) rows.TopIndex = rows.SelectedIndex - 1;
         if (ownerForm is null)
         {
             ownerForm = address.FindForm();
@@ -113,7 +141,7 @@ internal sealed class AddressCandidates : Form
     internal void MoveSelection(int delta)
     {
         if (rows.Enabled && rows.Items.Count > 0)
-            rows.SelectedIndex = Math.Clamp(rows.SelectedIndex + delta, 0, rows.Items.Count - 1);
+            rows.SelectedIndex = Math.Clamp(rows.SelectedIndex + delta, 0, lastSelectable);
     }
 
     private void HideOnOwnerChange(object? sender, EventArgs e) => Hide();
@@ -124,20 +152,26 @@ internal sealed class AddressCandidates : Form
     {
         base.OnDpiChanged(e);
         rows.ItemHeight = Math.Max(Scale(42), Font.Height * 2 + Scale(10));
-        QueueIcons(Hits);
+        QueueIcons(Hits, reload: true);
         rows.Invalidate();
     }
 
-    private void QueueIcons(IReadOnlyList<SearchHit> hits)
+    private void QueueIcons(IReadOnlyList<SearchHit> hits, bool reload = false)
     {
         lock (iconGate)
         {
             iconGeneration++;
-            foreach (Bitmap image in icons.Values) image.Dispose();
-            icons.Clear();
-            // The address search backend supplies at most 50 results. Bound memory
+            // The popup never shows more than its largest page. Bound memory
             // even if another caller supplies an unexpectedly large result set.
-            pendingIcons = hits.Take(200).Distinct().ToArray();
+            var current = hits.Take(ResultLimits[^1]).Distinct().ToArray();
+            HashSet<SearchHit> wanted = reload ? [] : new(current);
+            // Icons already loaded for results that stay (the page before "show more") are kept; the rest are dropped.
+            foreach (SearchHit stale in icons.Keys.Where(hit => !wanted.Contains(hit)).ToArray())
+            {
+                icons[stale].Dispose();
+                icons.Remove(stale);
+            }
+            pendingIcons = current.Where(hit => !icons.ContainsKey(hit)).ToArray();
             if (iconsDisposed || iconWorkerRunning || pendingIcons.Length == 0) return;
             iconWorkerRunning = true;
             _ = Task.Run(LoadIcons);
@@ -204,6 +238,16 @@ internal sealed class AddressCandidates : Form
     {
         if (e.Index < 0) return;
         e.DrawBackground();
+        if (rows.Items[e.Index] is FooterRow footer)
+        {
+            // "Show more" is an action in the accent colour; the note on the last page is plain muted text.
+            Color color = (e.State & DrawItemState.Selected) != 0 ? SystemColors.HighlightText
+                : footer.Kind == CandidateFooter.More ? Theme.Accent : Theme.Muted;
+            var bounds = new Rectangle(e.Bounds.Left + Scale(39), e.Bounds.Top, Math.Max(0, e.Bounds.Width - Scale(46)), e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, footer.Text, Font, bounds, color,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            return;
+        }
         if (rows.Items[e.Index] is not SearchHit hit)
         {
             TextRenderer.DrawText(e.Graphics, rows.Items[e.Index]?.ToString(), Font, e.Bounds,
@@ -225,6 +269,32 @@ internal sealed class AddressCandidates : Form
         var path = new Rectangle(title.Left, title.Bottom, title.Width, Font.Height + 2);
         TextRenderer.DrawText(e.Graphics, hit.FullPath, Font, path, selected ? foreground : Theme.Muted,
             TextFormatFlags.SingleLine | TextFormatFlags.PathEllipsis | TextFormatFlags.NoPrefix);
+    }
+
+    // The popup only presents the address box's results. A Win32 list box focuses itself when clicked, which would
+    // take keyboard focus from the address box (typing would stop working and "show more" would find it unfocused),
+    // so a click chooses the row here without ever reaching that default handling.
+    private sealed class ResultList : ListBox
+    {
+        internal ResultList()
+        {
+            SetStyle(ControlStyles.Selectable, false);
+            TabStop = false;
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x203) return; // WM_LBUTTONDBLCLK: the first click of the pair already acted; the list may have changed since
+            if (m.Msg == 0x201) // WM_LBUTTONDOWN
+            {
+                var point = new Point(unchecked((short)(long)m.LParam), unchecked((short)((long)m.LParam >> 16)));
+                int index = IndexFromPoint(point);
+                if (index >= 0) SelectedIndex = index;
+                OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, point.X, point.Y, 0));
+                return;
+            }
+            base.WndProc(ref m);
+        }
     }
 
     protected override void Dispose(bool disposing)

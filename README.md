@@ -69,7 +69,8 @@ You don't need the full path. Type **any fragment you remember** into the addres
 
 - Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
 - Results show the Windows Shell icons for their files and folders.
-- Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
+- Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first, then those inside folders you open often (three times or more).
+- The list starts with the 50 best matches. If there are more, choose **Show more results** (press Down to the last row and Enter, or click it) to see up to 200, then up to 500. After that, type more of the name to narrow the search.
 - Local drives are indexed by the app itself, so no separate tool such as Everything is needed. File contents are never read.
 
 ### How to search
@@ -126,6 +127,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **Drag tabs into place**: Drop a tab near a file-list edge to split in that direction, or in the center to move it into that pane. Empty panes accept tabs too.
 - **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
 - **Keep the pane you are using**: Switching to one pane keeps the active pane; if it has no tabs, a visible pane with tabs is kept instead. Hidden panes retain their tabs.
+- **Moving between panes**: `F6` goes to the next pane and `Shift+F6` to the previous one, wrapping around. `Alt+1` to `Alt+4` jump straight to that pane; if it isn't open, the status line says so.
 - **Close and restore splits**: `Ctrl+W` closes a tab. Press it again when the pane has no tabs to collapse that split; the final pane stays open. `Ctrl+Shift+T` reverses the close order: restore the empty split at its original position and proportions, then press again to restore its tab. Choosing a new layout clears earlier split-restore records.
 - **Readable shortcut help**: `?` or `F1` opens a themed guide with category navigation and separate shortcut/description columns. It follows your font settings and wraps on narrow windows.
 - **Two kinds of close history**: The circular undo/redo buttons beside each pane's filter box reopen only that pane's closed tabs. The pair at the top right, left of `Settings`, covers every tab and split closed in any pane and matches `Ctrl+Shift+T`. Restoring from either never brings the same item back twice. Hover any of them for its scope and shortcut.
@@ -156,6 +158,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **Preview**: Enable it with `Preview` or `Alt+P`, then click a file. Its visibility and width are remembered.
 - **Pin and new window**: `Pin` at the top of the preview keeps the current file while you select others. `New window` opens that file in its own preview window, so several can sit side by side for comparison (up to 8; PDF wheel paging works there too).
 - **Copy or move to the other pane**: `Ctrl+Alt+C` (copy), `Ctrl+Alt+X` (move) or the pane options (⚙) send the selection to the other pane's folder, meaning the pane you used just before. The same Windows copy dialog as File Explorer handles progress, name conflicts and undo (`Ctrl+Z`).
+- **Open this folder in the other pane**: `Ctrl+Alt+O` or the pane options (⚙) open the current folder in the other pane and move you there. A tab that already shows the folder is selected, the selected tab is filled if it is empty, and otherwise a new tab is added. With only one pane open, the status line asks you to choose 2 to 4 panes first.
 - **Copy path, terminal**: `Ctrl+Shift+C` copies the selected items' paths in quotes, like File Explorer (the current folder when nothing is selected). `Open terminal here` in the pane options opens Windows Terminal (or PowerShell) in that folder.
   - **Multi-page PDFs**: No separate PDF app is needed. Wheel down over the preview for the next page, or up for the previous page. The page number and previous/next buttons appear below.
   - **Separate window**: Drag the file-name header or click `Detach preview`. Drag it back over the main window's right side or click `Dock preview` to put it back; the current PDF page is preserved.
@@ -219,6 +222,8 @@ The two apps find files in different ways.
 |---|---|
 | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4` | Switch layout |
 | `F6` | Move to the next pane |
+| `Shift+F6` | Move to the previous pane |
+| `Alt+1`, `Alt+2`, `Alt+3`, `Alt+4` | Go to that pane |
 | `Ctrl+T`, `+` | New blank tab |
 | `Ctrl+W`, tab ×, middle-click a tab | Close tab |
 | `Ctrl+W` in a pane with no tabs | Close that split (keep at least one pane) |
@@ -232,6 +237,7 @@ The two apps find files in different ways.
 | `Ctrl+D` | Add the current folder to favorites |
 | `Ctrl+Shift+C` | Copy the selected items' paths (current folder if nothing is selected) |
 | `Ctrl+Alt+C`, `Ctrl+Alt+X` | Copy / move the selection to the other pane |
+| `Ctrl+Alt+O` | Open the current folder in the other pane |
 | Right-click back or forward | Recent locations |
 | `Ctrl+Shift+E` | Collapse or expand the folder tree |
 | `Ctrl+Shift+F11` | Pin / unpin the top toolbar |
@@ -252,6 +258,7 @@ The two apps find files in different ways.
 - The settings path is unchanged so tabs and favorites from earlier QuadExplorer versions carry over.
 - Run only one app instance at a time against the same settings file.
 - Limits: up to 32 tabs per pane and 100 favorites.
+- Frequently opened folders: to rank search results, the app counts how often you open each folder. Only folder paths and counts are kept (at most 100 folders, stored in the settings file, and counts fade over time). Clear them with `Settings` → `Forget frequently opened folders`. Earlier versions ignore this entry.
 - For a disconnected drive or a folder that no longer exists, the app shows an error and you can pick another folder from the address bar.
 - Deleting, overwriting, and conflict handling are delegated to the Windows Shell. The app itself never recursively deletes user files.
 - OneDrive/Dropbox status indicators, third-party Shell extensions, and network shares depend on the provider's installation state and permissions.

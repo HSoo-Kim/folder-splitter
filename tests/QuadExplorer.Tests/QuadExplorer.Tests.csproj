@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/FolderSplitter/PaneLayout.cs" Link="PaneLayout.cs" />
+    <Compile Include="../../src/FolderSplitter/FolderVisits.cs" Link="FolderVisits.cs" />
     <Compile Include="../../src/FolderSplitter/SessionState.cs" Link="SessionState.cs" />
   </ItemGroup>
 </Project>

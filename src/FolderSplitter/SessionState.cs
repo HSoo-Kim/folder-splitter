@@ -64,6 +64,8 @@ public sealed record SessionState
     public double LeftRowRatio { get; init; } = .5;
     public double RightRowRatio { get; init; } = .5;
     public List<Workspace> Workspaces { get; init; } = [];
+    // Folders opened often, used to rank address-bar search results; older versions ignore this entry.
+    public List<FolderVisit> FrequentFolders { get; init; } = [];
     // Restart quietly once private memory grew this many MB since startup; 0 turns it off.
     public int AutoRestartMemory { get; init; } = 100;
 }
@@ -191,6 +193,7 @@ public static class SessionStore
             Favorites = NormalizeFavorites(state.Favorites),
             DeletedFavorites = NormalizeFavorites(state.DeletedFavorites),
             Workspaces = NormalizeWorkspaces(state.Workspaces),
+            FrequentFolders = FolderVisits.Normalize(state.FrequentFolders),
             AutoRestartMemory = state.AutoRestartMemory is 0 or 100 or 200 or 300 or 500 ? state.AutoRestartMemory : 100,
             ActivePane = active,
             WindowWidth = Math.Clamp(state.WindowWidth, 900, 10000),

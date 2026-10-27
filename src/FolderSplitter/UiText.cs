@@ -244,6 +244,17 @@ public sealed class UiText
         ["Select files or folders first."] = ("먼저 파일이나 폴더를 선택해 주세요.", "请先选择文件或文件夹。", "先にファイルまたはフォルダーを選択してください。"),
         ["Items without a file path cannot be copied or moved."] = ("파일 경로가 없는 항목은 복사하거나 이동할 수 없습니다.", "没有文件路径的项目无法复制或移动。", "ファイル パスのない項目はコピーまたは移動できません。"),
         ["The other pane shows the same folder."] = ("다른 영역도 같은 폴더를 보고 있습니다.", "另一个区域显示的是同一个文件夹。", "別のペインも同じフォルダーを表示しています。"),
+        ["Open this folder in the other pane    Ctrl+Alt+O"] = ("이 폴더를 다른 영역에서 열기    Ctrl+Alt+O", "在另一个区域中打开此文件夹    Ctrl+Alt+O", "このフォルダーを別のペインで開く    Ctrl+Alt+O"),
+        ["Open a folder first."] = ("먼저 폴더를 열어 주세요.", "请先打开文件夹。", "先にフォルダーを開いてください。"),
+        ["There is no other pane. Choose 2, 3 or 4 panes first."] = ("다른 영역이 없습니다. 먼저 영역을 2~4개로 나눠 주세요.", "没有另一个区域。请先将窗格数量设为 2、3 或 4。", "別のペインがありません。先にペイン数を 2、3、4 のいずれかにしてください。"),
+        ["Opened this folder in pane {0}."] = ("이 폴더를 영역 {0}에서 열었습니다.", "已在窗格 {0} 中打开此文件夹。", "このフォルダーをペイン {0} で開きました。"),
+        ["Pane {0} already shows this folder."] = ("영역 {0}에서 이미 이 폴더를 보고 있습니다.", "窗格 {0} 已显示此文件夹。", "ペイン {0} は既にこのフォルダーを表示しています。"),
+        ["Pane {0} already has 32 tabs. Close a tab first."] = ("영역 {0}에 탭이 32개 있습니다. 먼저 탭을 닫아 주세요.", "窗格 {0} 已有 32 个标签页。请先关闭一个标签页。", "ペイン {0} にはタブが 32 個あります。先にタブを閉じてください。"),
+        ["Pane {0} is not open."] = ("영역 {0}은(는) 열려 있지 않습니다.", "窗格 {0} 未打开。", "ペイン {0} は開いていません。"),
+        ["Show more results"] = ("결과 더 보기", "显示更多结果", "さらに表示"),
+        ["Showing the first {0} matches. Type more of the name to narrow the search."] = ("처음 {0}개만 표시했습니다. 이름을 더 입력해 좁혀 보세요.", "仅显示前 {0} 个匹配项。请输入更多名称以缩小范围。", "先頭の {0} 件のみ表示しています。名前をさらに入力して絞り込んでください。"),
+        ["Forget frequently opened folders"] = ("자주 연 폴더 기록 지우기", "清除常用文件夹记录", "よく開くフォルダーの履歴を消去"),
+        ["Frequently opened folders were cleared."] = ("자주 연 폴더 기록을 지웠습니다.", "已清除常用文件夹记录。", "よく開くフォルダーの履歴を消去しました。"),
         ["Could not copy or move: {0}"] = ("복사하거나 이동하지 못했습니다: {0}", "无法复制或移动: {0}", "コピーまたは移動できませんでした: {0}"),
         ["Copy or move was cancelled."] = ("복사·이동을 취소했습니다.", "已取消复制或移动。", "コピーまたは移動を取り消しました。"),
         ["Moved {0} items to pane {1}."] = ("{0}개 항목을 영역 {1}(으)로 이동했습니다.", "已将 {0} 个项目移动到区域 {1}。", "{0} 個の項目をペイン {1} へ移動しました。"),
@@ -327,6 +338,8 @@ public sealed class UiText
             Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   영역 수
             Ctrl+Shift+3   왼쪽 하나, 오른쪽 둘
             F6   다음 영역
+            Shift+F6   이전 영역
+            Alt+1 / Alt+2 / Alt+3 / Alt+4   해당 번호의 영역으로 이동
             Ctrl+Shift+F11   상단 도구 모음 숨기기 / 표시·고정
             3 분할 옆 화살표에서 좌우 / 상하 2:1 배치를 선택합니다.
             구분선을 끌어 크기 조절; 균등 분할로 초기화합니다.
@@ -360,6 +373,7 @@ public sealed class UiText
             Alt+P   미리보기 칸 표시/숨기기
             Ctrl+Shift+C   선택 항목 경로 복사
             Ctrl+Alt+C / Ctrl+Alt+X   선택 항목을 다른 영역으로 복사 / 이동
+            Ctrl+Alt+O   현재 폴더를 다른 영역에서 열기
 
             탭, 즐겨찾기, 배치 및 언어는 로컬에 저장됩니다.
             영역 옵션에서 보기 방식 및 파일 탐색기에서 열기를 사용할 수 있습니다.
@@ -369,6 +383,8 @@ public sealed class UiText
             Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   窗格数量
             Ctrl+Shift+3   左侧一个，右侧两个
             F6   下一个窗格
+            Shift+F6   上一个窗格
+            Alt+1 / Alt+2 / Alt+3 / Alt+4   切换到对应编号的窗格
             Ctrl+Shift+F11   隐藏 / 显示并固定全局工具栏
             三窗格按钮旁的箭头提供左右 / 上下 2:1 布局。
             拖动分隔线调整大小；等分大小可重置。
@@ -402,6 +418,7 @@ public sealed class UiText
             Alt+P   显示/隐藏预览窗格
             Ctrl+Shift+C   复制所选项目的路径
             Ctrl+Alt+C / Ctrl+Alt+X   将所选项目复制 / 移动到另一个区域
+            Ctrl+Alt+O   在另一个区域中打开当前文件夹
 
             标签页、收藏、布局和语言保存在本地。
             窗格选项包含视图模式和在文件资源管理器中打开。
@@ -411,6 +428,8 @@ public sealed class UiText
             Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   ペイン数
             Ctrl+Shift+3   左に 1 つ、右に 2 つ
             F6   次のペイン
+            Shift+F6   前のペイン
+            Alt+1 / Alt+2 / Alt+3 / Alt+4   その番号のペインへ移動
             Ctrl+Shift+F11   共通ツールバーを隠す / 表示して固定
             3 ペインの横の矢印から左右 / 上下 2:1 の配置を選べます。
             区切り線をドラッグしてサイズを調整し、均等サイズで元に戻します。
@@ -444,6 +463,7 @@ public sealed class UiText
             Alt+P   プレビュー ウィンドウの表示/非表示
             Ctrl+Shift+C   選択した項目のパスをコピー
             Ctrl+Alt+C / Ctrl+Alt+X   選択した項目を別のペインへコピー / 移動
+            Ctrl+Alt+O   現在のフォルダーを別のペインで開く
 
             タブ、お気に入り、レイアウト、言語はローカルに保存されます。
             ペイン オプションには表示モードと エクスプローラーで開く があります。
@@ -455,6 +475,8 @@ public sealed class UiText
         Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   Pane count
         Ctrl+Shift+3   One left, two right
         F6   Next pane
+        Shift+F6   Previous pane
+        Alt+1 / Alt+2 / Alt+3 / Alt+4   Go to that pane
         Ctrl+Shift+F11   Hide / show and pin the global toolbar
         The arrow beside 3 panes offers left/right and top/bottom 2:1 arrangements.
         Drag dividers to resize; Equal size resets them.
@@ -488,6 +510,7 @@ public sealed class UiText
         Alt+P   Show / hide the preview pane
         Ctrl+Shift+C   Copy the selected items' paths
         Ctrl+Alt+C / Ctrl+Alt+X   Copy / move the selection to the other pane
+        Ctrl+Alt+O   Open the current folder in the other pane
 
         Tabs, favorites, layout and language are saved locally.
         Pane options include view modes and Open in File Explorer.

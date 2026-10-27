@@ -119,6 +119,28 @@ internal static class Program
         SearchHit[] ties = [new(@"C:\work\a", false), new(@"C:\work\A", false)];
         Check(PathRanker.Rank(SearchQuery.Parse("a"), ties, [], 2)[0].FullPath.EndsWith('A'),
             "Ordinal tie-break after case-insensitive ordering");
+        // The address popup pages by asking again with a larger limit, so each page must start with the previous one.
+        var many = Enumerable.Range(0, 700).Select(number => new SearchHit((number % 3) switch
+        {
+            0 => $@"C:\current\a{number:D4}\page-{number:D4}.txt",
+            1 => $@"C:\tab\b{number:D4}\page-{number:D4}.txt",
+            _ => $@"C:\elsewhere\c{number:D4}\page-{number:D4}.txt"
+        }, false)).ToArray();
+        var pageQuery = SearchQuery.Parse("page-");
+        string[] pageRoots = [@"C:\current", @"C:\tab"];
+        var firstPage = PathRanker.Rank(pageQuery, many, pageRoots, 50);
+        foreach (var size in new[] { 51, 200, 201, 500, 501 })
+        {
+            var larger = PathRanker.Rank(pageQuery, many.Reverse(), pageRoots, size);
+            Check(larger.Count == size && larger.Take(firstPage.Count).SequenceEqual(firstPage),
+                $"A page of {size} starts with the 50 hits of the first page");
+            Check(larger.Take(Math.Min(size - 1, 200)).SequenceEqual(PathRanker.Rank(pageQuery, many, pageRoots, Math.Min(size - 1, 200))),
+                $"A page of {size} is a stable extension of the one before it");
+        }
+        Check(PathRanker.Rank(pageQuery, many.Take(50), pageRoots, 51).Count == 50,
+            "Asking for one more than shown reports no further page when exactly 50 match");
+        Check(PathRanker.Rank(pageQuery, many.Take(51), pageRoots, 51).Count == 51,
+            "Asking for one more than shown reports a further page when 51 match");
     }
 
     private static async Task CompactIndex()
