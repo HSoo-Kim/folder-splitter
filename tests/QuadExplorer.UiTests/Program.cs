@@ -59,6 +59,18 @@ internal static partial class Program
                 Console.WriteLine($"BREADCRUMB_DPI_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--global-toolbar"])
+            {
+                RunGlobalToolbarScenario(root);
+                Console.WriteLine($"GLOBAL_TOOLBAR_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--update-notice"])
+            {
+                RunUpdateScenario(root);
+                Console.WriteLine($"UPDATE_NOTICE_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--explorer-parity"])
             {
                 RunExplorerParityScenario(root);
@@ -237,6 +249,7 @@ internal static partial class Program
             RunPaneReopenScenario(root, folders);
             RunCloseHistoryScopeScenario(root, folders);
             RunCommandBarPreferenceScenario(root);
+            RunGlobalToolbarScenario(root);
             RunNativeDetailsAppearanceScenario(root, folders);
             RunNativeDetailsThemeScenario(root);
             RunNativeGroupThemeScenario(root);
@@ -991,17 +1004,166 @@ internal static partial class Program
         var latest = new ReleaseInfo(new Version(current.Major, current.Minor, current.Build), "v-current", "https://github.com/HSoo-Kim/folder-splitter/releases");
         int requests = 0;
         using var form = new MainForm(session, [], latestRelease: _ => { requests++; return Task.FromResult<ReleaseInfo?>(latest); });
+        Rectangle workArea = Screen.PrimaryScreen!.WorkingArea;
+        form.StartPosition = FormStartPosition.Manual;
+        form.Bounds = new Rectangle(workArea.Left + 10, workArea.Top + 10,
+            Math.Min(1100, workArea.Width - 20), Math.Min(800, workArea.Height - 20));
         form.Shown += async (_, _) =>
         {
             try
             {
                 await form.CheckForUpdateAsync();
                 Check(!form.UpdateLinkShown && form.VersionText == "v" + current.ToString(3), "no update notice when the latest release is this version");
+                Check(!form.OwnedForms.OfType<UpdateNotice>().Any(window => window.Visible),
+                    "the current version does not show a separate update notification");
                 latest = new ReleaseInfo(new Version(99, 0, 0), "v99.0.0", "https://github.com/HSoo-Kim/folder-splitter/releases/tag/v99.0.0");
                 await form.CheckForUpdateAsync();
                 Check(form.UpdateLinkShown && form.VersionText.StartsWith("v" + current.ToString(3) + " ", StringComparison.Ordinal)
                     && form.VersionText.Contains("New version v99.0.0 available", StringComparison.Ordinal),
                     "a newer release shows a download link next to the version");
+                var notice = form.OwnedForms.OfType<UpdateNotice>().SingleOrDefault();
+                Check(notice is { Visible: true } && Descendants(notice).OfType<Label>().Any(label => label.Text.Contains("v99.0.0")),
+                    "a newer release shows a separate notification with its version");
+                if (notice is null) throw new InvalidOperationException("Update notification was not created");
+                int entryTop = notice.Top;
+                double entryOpacity = notice.Opacity;
+                if (entryOpacity < 1)
+                {
+                    var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void Moved(object? sender, EventArgs e)
+                    {
+                        if (notice.Top < entryTop && notice.Opacity > entryOpacity) entered.TrySetResult();
+                    }
+                    notice.LocationChanged += Moved;
+                    if (notice.Top < entryTop && notice.Opacity > entryOpacity) entered.TrySetResult();
+                    await entered.Task.WaitAsync(TimeSpan.FromSeconds(8));
+                    notice.LocationChanged -= Moved;
+                }
+                await Task.Delay(250);
+                Rectangle ownerClient = form.RectangleToScreen(form.ClientRectangle);
+                Check(notice.Right <= ownerClient.Right && notice.Bottom <= ownerClient.Bottom &&
+                    ownerClient.Right - notice.Right <= 32 * form.DeviceDpi / 96 &&
+                    ownerClient.Bottom - notice.Bottom <= 32 * form.DeviceDpi / 96,
+                    "the notification rests at the bottom-right inside the application");
+                Check(entryOpacity == 1 || (notice.Top < entryTop && notice.Opacity > entryOpacity),
+                    "the notification rises into view when Windows animations are enabled");
+                Point originalLocation = form.Location;
+                form.Location = new Point(originalLocation.X + 10, originalLocation.Y + 10);
+                ownerClient = form.RectangleToScreen(form.ClientRectangle);
+                Check(ownerClient.Right - notice.Right <= 32 * form.DeviceDpi / 96 &&
+                    ownerClient.Bottom - notice.Bottom <= 32 * form.DeviceDpi / 96,
+                    "the notification follows the application when it moves");
+                Point onScreenLocation = form.Location;
+                form.Location = new Point(workArea.Right - form.Width * 2 / 3, workArea.Bottom - form.Height * 2 / 3);
+                Check(workArea.Contains(notice.Bounds) && form.RectangleToScreen(form.ClientRectangle).Contains(notice.Bounds),
+                    "the notification stays visible when the application extends off-screen");
+                form.Location = onScreenLocation;
+                var updateMessage = Descendants(notice).OfType<Label>().Single();
+                Check(updateMessage.AccessibilityObject.Name == updateMessage.Text,
+                    "the update version is available to screen readers");
+                if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR") is { Length: > 0 } output)
+                {
+                    Directory.CreateDirectory(output);
+                    using var image = new Bitmap(notice.Width, notice.Height);
+                    notice.DrawToBitmap(image, new Rectangle(Point.Empty, notice.Size));
+                    image.Save(Path.Combine(output, "update-notice-light.png"));
+                }
+                form.SetColorTheme("dark");
+                Check(notice.BackColor == Theme.Canvas && updateMessage.ForeColor == Theme.Text,
+                    "an open update notification follows the dark theme");
+                if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR") is { Length: > 0 } darkOutput)
+                {
+                    using var image = new Bitmap(notice.Width, notice.Height);
+                    notice.DrawToBitmap(image, new Rectangle(Point.Empty, notice.Size));
+                    image.Save(Path.Combine(darkOutput, "update-notice-dark.png"));
+                }
+                form.SetColorTheme("light");
+                form.SetLanguage("ko");
+                Check(notice.Text == "업데이트 알림" && Descendants(notice).OfType<Button>().Any(button => button.Text == "닫기"),
+                    "an open update notification follows the selected language");
+                form.SetLanguage("en");
+                int restingTop = notice.Top;
+                bool movedDown = false;
+                notice.LocationChanged += (_, _) => movedDown |= notice.Top > restingTop;
+                var dismissed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                notice.FormClosed += (_, _) => dismissed.TrySetResult();
+                Descendants(notice).OfType<Button>().Single(button => button.Text == "Close").PerformClick();
+                await dismissed.Task.WaitAsync(TimeSpan.FromSeconds(8));
+                Check(notice.IsDisposed && form.UpdateLinkShown, "dismissing the notification leaves the update link available");
+                Check(entryOpacity == 1 || movedDown, "the notification slides down when its close button is pressed");
+                await form.CheckForUpdateAsync();
+                Check(!form.OwnedForms.OfType<UpdateNotice>().Any(window => window.Visible),
+                    "the same release does not repeatedly interrupt a session");
+                latest = new ReleaseInfo(new Version(100, 0, 0), "v100.0.0", "https://github.com/HSoo-Kim/folder-splitter/releases/tag/v100.0.0",
+                    new Uri("https://github.com/HSoo-Kim/folder-splitter/releases/download/v100.0.0/folder-splitter-win-x64.zip"), new string('0', 64));
+                await form.CheckForUpdateAsync();
+                var nextNotice = form.OwnedForms.OfType<UpdateNotice>().SingleOrDefault();
+                Check(nextNotice is { Visible: true } && Descendants(nextNotice).OfType<Button>().Any(button => button.Text == "Update"),
+                    "a later release has a new actionable update notification");
+                form.Hide();
+                Check(nextNotice?.IsDisposed == true, "hiding the application removes a visible notification");
+                form.Show();
+                var activateNotice = typeof(Form).GetMethod("OnActivated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                activateNotice.Invoke(form, [EventArgs.Empty]);
+                var restoredNotice = form.OwnedForms.OfType<UpdateNotice>().SingleOrDefault();
+                Check(restoredNotice is { Visible: true }, "a notification interrupted by hiding returns with the application");
+                if (restoredNotice is null) throw new InvalidOperationException("Interrupted notification was not restored");
+                await Task.Delay(TimeSpan.FromSeconds(6));
+                Check(restoredNotice.Visible && !restoredNotice.IsDisposed && form.UpdateLinkShown,
+                    "the notification remains visible until it is explicitly closed");
+                await form.CheckForUpdateAsync();
+                Check(ReferenceEquals(form.OwnedForms.OfType<UpdateNotice>().SingleOrDefault(), restoredNotice),
+                    "the same release leaves the existing notification open without duplicating it");
+                form.Hide();
+                latest = new ReleaseInfo(new Version(101, 0, 0), "v101.0.0", "https://github.com/HSoo-Kim/folder-splitter/releases/tag/v101.0.0");
+                await form.CheckForUpdateAsync();
+                Check(!form.OwnedForms.OfType<UpdateNotice>().Any(window => window.Visible),
+                    "a hidden application defers its update notification");
+                form.Show();
+                activateNotice.Invoke(form, [EventArgs.Empty]);
+                var deferredNotice = form.OwnedForms.OfType<UpdateNotice>().SingleOrDefault();
+                Check(deferredNotice is { Visible: true } && Descendants(deferredNotice).OfType<Label>().Any(label => label.Text.Contains("v101.0.0")),
+                    "the deferred notification appears when the application returns");
+                if (deferredNotice is null) throw new InvalidOperationException("Deferred notification was not created");
+                form.WindowState = FormWindowState.Minimized;
+                Check(deferredNotice.IsDisposed, "minimizing the application removes its notification");
+                await form.CheckForUpdateAsync();
+                Check(!form.OwnedForms.OfType<UpdateNotice>().Any(window => window.Visible),
+                    "a minimized application defers the notification");
+                form.WindowState = FormWindowState.Normal;
+                activateNotice.Invoke(form, [EventArgs.Empty]);
+                var resumedNotice = form.OwnedForms.OfType<UpdateNotice>().SingleOrDefault();
+                Check(resumedNotice is { Visible: true }, "the notification returns after the application is restored");
+                if (resumedNotice is null) throw new InvalidOperationException("Minimized notification was not restored");
+                using var coveringWindow = new Form
+                {
+                    StartPosition = FormStartPosition.Manual, FormBorderStyle = FormBorderStyle.None,
+                    ShowInTaskbar = false, Bounds = form.RectangleToScreen(form.ClientRectangle)
+                };
+                coveringWindow.Show();
+                coveringWindow.BringToFront();
+                await Task.Delay(100);
+                Check(resumedNotice.Visible && !resumedNotice.IsDisposed,
+                    "another window covering the application does not dismiss the notification");
+                coveringWindow.Hide();
+                activateNotice.Invoke(form, [EventArgs.Empty]);
+                Check(ReferenceEquals(form.OwnedForms.OfType<UpdateNotice>().SingleOrDefault(), resumedNotice),
+                    "the same notification remains when the application becomes visible again");
+                var closedAfterCover = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                resumedNotice.FormClosed += (_, _) => closedAfterCover.TrySetResult();
+                Descendants(resumedNotice).OfType<Button>().Single(button => button.Text == "Close").PerformClick();
+                await closedAfterCover.Task.WaitAsync(TimeSpan.FromSeconds(8));
+                coveringWindow.Show();
+                coveringWindow.BringToFront();
+                latest = new ReleaseInfo(new Version(102, 0, 0), "v102.0.0", "https://github.com/HSoo-Kim/folder-splitter/releases/tag/v102.0.0");
+                await form.CheckForUpdateAsync();
+                Check(!form.OwnedForms.OfType<UpdateNotice>().Any(window => window.Visible),
+                    "an update detected behind another window waits until the application can be seen");
+                coveringWindow.Hide();
+                activateNotice.Invoke(form, [EventArgs.Empty]);
+                Check(form.OwnedForms.OfType<UpdateNotice>().Any(window => window.Visible &&
+                    Descendants(window).OfType<Label>().Any(label => label.Text.Contains("v102.0.0"))),
+                    "the pending update appears when the application becomes visible again");
                 Check(form.AutoUpdateEnabled, "automatic update install is on by default");
                 Check(form.UpdateCheckInterval == TimeSpan.FromHours(1), "a running app checks for a new release every hour");
                 var activated = typeof(Form).GetMethod("OnActivated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -1013,6 +1175,8 @@ internal static partial class Program
                 Check(requests == recent + 1, "showing the window again after 15 minutes checks for a new release");
                 form.SetAutoUpdate(false);
                 form.SetCheckUpdates(false);
+                Check(!form.OwnedForms.OfType<UpdateNotice>().Any(window => window.Visible),
+                    "turning update checks off dismisses the separate notification");
                 int before = requests;
                 await form.CheckForUpdateAsync();
                 form.LastUpdateCheck = DateTime.MinValue;

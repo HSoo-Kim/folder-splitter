@@ -1,3 +1,30 @@
+## Folder Splitter 0.8.11: 상단 도구 모음과 업데이트 알림
+
+사이드바 버튼 바로 왼쪽의 압정으로 **전역 도구 모음**의 고정을 전환합니다. 고정하면 항상 표시되고, 고정을 해제하면 숨겨집니다. 창 제목 표시줄의 드래그 가능한 영역에 마우스를 약 0.35초 머물면 같은 도구 모음이 작업 영역 위에 일시적으로 나타나며, 그 전에 벗어나면 나타나지 않습니다. 작업 영역 상단이나 최소화·최대화·닫기 버튼 위에서는 나타나지 않습니다. 표시된 도구 모음의 압정을 누르면 다시 고정합니다. 메뉴나 입력 컨트롤을 조작하는 동안에는 자동 숨김이 조작을 방해하지 않아야 합니다. `Ctrl+Shift+F11`로도 고정을 전환할 수 있습니다. 영역별 탭·명령 막대, 분할·선택·사이드바·미리보기 상태는 바꾸지 않습니다.
+
+선택은 실행 시 지정한 세션의 `GlobalToolbarPinned`에 저장됩니다. 이전 세션에서 값이 없으면 기존처럼 표시·고정합니다. 아래 검사는 임시 폴더와 격리 세션만 사용하며 기본 앱 세션을 쓰지 않습니다.
+
+새 버전이 확인되고 앱의 알림 위치가 화면에 보이면 창 오른쪽 아래에 알림이 부드럽게 올라옵니다. 알림은 자동으로 사라지지 않으며, `닫기`를 누르면 부드럽게 내려갑니다. 닫은 뒤에도 아래쪽 버전 링크는 유지됩니다. 업데이트 또는 다운로드는 해당 버튼을 누를 때 기존 설정에 따라 진행합니다. 같은 버전은 실행 중 한 번만 알리고, 창이 숨겨졌거나 최소화됐거나 알림 위치가 다른 창에 가려졌으면 다시 보일 때 알립니다. 이미 표시된 알림이 다른 창에 가려져도 닫히지 않습니다. Windows의 애니메이션 효과가 꺼져 있으면 이동 없이 표시하고 닫습니다. 업데이트 확인을 끄면 요청과 알림이 중단됩니다.
+
+집중 회귀 검사: Windows 11 build 26100에서 상단 도구 모음 검사 196개와 업데이트 알림 검사 35개 통과. 제목 표시줄 호버 지연과 취소, 고정·해제, 메뉴·포커스 보호, 알림의 지속 표시와 수동 닫기, 숨김·최소화·가림 상태 복귀를 확인했습니다. U+E840을 채운 압정은 Windows 11의 Segoe Fluent Icons 외곽선을 사용하고, Windows 10에서는 Segoe MDL2 Assets로 돌아갑니다. 0.8.11 전체 `.\build.ps1 -UiTests -Publish`에서도 설정·분할 32개, 검색 168개 assertion, 네이티브 UI 8,632개 검사가 통과했으며 빌드 경고와 오류는 없었습니다.
+
+```powershell
+dotnet build tests/QuadExplorer.UiTests/QuadExplorer.UiTests.csproj -c Release --nologo
+dotnet build tools/PrivateDesktopQa/PrivateDesktopQa.csproj -c Release --nologo
+$env:FOLDERSPLITTER_QA_LOG_DIR = Join-Path $env:TEMP ("FolderSplitter-toolbar-" + [guid]::NewGuid().ToString("N"))
+[IO.Directory]::CreateDirectory($env:FOLDERSPLITTER_QA_LOG_DIR) | Out-Null
+$log = Join-Path $env:FOLDERSPLITTER_QA_LOG_DIR "global-toolbar.log"
+dotnet tools/PrivateDesktopQa/bin/Release/net10.0-windows/PrivateDesktopQa.dll --log $log --timeout 180 -- (Get-Command dotnet).Source tests/QuadExplorer.UiTests/bin/Release/net10.0-windows10.0.19041.0/QuadExplorer.UiTests.dll --global-toolbar
+Get-Content $log
+$log = Join-Path $env:FOLDERSPLITTER_QA_LOG_DIR "update-notice.log"
+dotnet tools/PrivateDesktopQa/bin/Release/net10.0-windows/PrivateDesktopQa.dll --log $log --timeout 120 -- (Get-Command dotnet).Source tests/QuadExplorer.UiTests/bin/Release/net10.0-windows10.0.19041.0/QuadExplorer.UiTests.dll --update-notice
+Get-Content $log
+```
+
+`--global-toolbar`는 실제 WinForms 도구 모음과 제목 표시줄에 창 메시지를 전달해 고정·숨김·지연 표시와 취소·재고정, 작업 영역 위 오버레이와 분할·탭·선택·사이드바·미리보기 상태, 메뉴·포커스 보호, 세션 재실행 및 키보드 조작을 검사합니다. 비입력 데스크톱에는 실제 포인터가 없으므로 지속 호버 검사에서는 Windows의 자동 제목줄 이탈 메시지만 걸러 냅니다. 네 언어와 글꼴 크기, 밝은/어두운 테마 및 보통/최소 창에서 압정 배치도 확인합니다. DPI 관련 검사는 글꼴 크기 변화에 따른 배치 회귀로, 실제 모니터 간 DPI 전환을 대신 검증했다고 주장하지 않습니다. 환경 변수를 지정하면 밝은/어두운 테마의 고정·숨김·호버 표시·재고정 화면과 압정 확대 이미지를 `global-toolbar-*.png`로 저장합니다. `--update-notice`는 격리된 가상 버전으로 알림 위치와 이동, 지속 표시·닫기·중복 방지·언어·숨김 및 가림 상태를 검사합니다. 물리 마우스 이동이나 전역 입력은 사용하지 않습니다.
+
+전체 기존 회귀 검사는 `.\build.ps1 -UiTests`로 실행합니다. 단축키 조합은 전역 키 입력 대신 앱의 단축키 처리기를 호출하며, Enter는 실제 도구 모음의 키 처리 경로로 전달합니다. 실제 모니터 간 100/150/200% DPI 이동, 물리 입력을 통한 단축키와 보조 기술의 읽기 순서는 별도 수동 QA 대상입니다. 아래는 이 기능과 관계없는 기존 버전 검증 이력입니다.
+
 # Folder Splitter 0.6.0 검증 기록
 
 Windows 11 build 26100, .NET SDK 10.0.402에서 다음 명령이 종료 코드 0으로 완료됐습니다.

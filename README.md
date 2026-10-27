@@ -41,6 +41,18 @@ A Windows file manager built on the native Shell file list (`IExplorerBrowser`).
 
 [Full feature list](#features)
 
+### AI search beta (in preparation)
+
+> **Not included in v0.8.11 or the current stable release.** This previews a feature that's still being prepared and tested, and details may change before it ships.
+
+A chat panel for finding files by describing them in plain language:
+
+- **Natural-language filename search** over the app's local index.
+- **Optional document reading on demand.** When you ask, it reads the content of found documents and cites the source files in its answer.
+- **Selectable, copyable conversation**, with actions on found files: open, open in the current pane, new tab, new pane or preview.
+- **Model choice:** a local endpoint, or supported Claude or Codex subscription models.
+- **Optional personal instructions** to shape how it answers.
+
 ## Quick Start
 
 1. Download [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) (Windows 11, or Windows 10 version 2004 or later, x64).
@@ -149,6 +161,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
   - **Other formats**: Photos use Windows thumbnails; Office, text and other documents use installed Explorer preview handlers. Wheel input over a document goes to its handler rather than the file list; scrolling and paging support depend on the handler.
 
 ### Appearance and settings
+- **Top toolbar**: The pin immediately left of `Sidebar` keeps the global toolbar visible. Unpin it to hide the bar; rest the pointer on the draggable title bar for about 0.35 seconds to reveal it over the workspace. Pin it again or press `Ctrl+Shift+F11` to toggle the saved preference.
 - **Color themes**: Choose from 15 in the menu at the top right: the standard `Light` and `Dark`, the easier-on-the-eyes `Beige`, `Soft green`, `Sky blue`, `Pastel blue` and `Soft dark`, and eight mixed palettes based on well-known design palettes (Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin, Nord) that give the top bar, sidebar, file list and sorted column their own colors.
   ![The 15 Folder Splitter color theme palettes](docs/images/folder-splitter-themes-v0.7.29.png)
 - **Font and text size**: In `Settings` → `Font and text size`, pick an installed font (Malgun Gothic, Pretendard, NanumGothic and others) and small, normal or large text; the file lists change too.
@@ -158,7 +171,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **Languages**: 한국어, English, 简体中文, 日本語.
 - **Session restore**: Tabs, favorites, split ratios, window size, theme and sidebar state carry over to the next launch.
 - **Workspaces**: `Workspaces` at the top saves the current panes and tabs under a name and opens them again later (up to 20). Handy when switching between projects.
-- **Version and updates**: The lower left shows the current version and, when a new release is out, `Update` beside it. Clicking it downloads the new version, swaps it in and restarts, keeping your tabs and settings. Nothing is installed until you click. It checks when the app starts, every hour while it runs, and again when you bring the window back after 15 minutes or more.
+- **Version and updates**: The lower left shows the current version and a link when a new release is available. While the app is visible, an update notice appears at the bottom right and stays until you close it; the version link remains. Clicking `Update` installs and restarts if automatic installation is enabled and the executable is writable; otherwise it opens the release page. Nothing is installed until you click. Checks run at startup, every hour while the app runs, and when the window returns after 15 minutes or more.
 - **Memory cleanup**: The Windows File Explorer component used for the file lists keeps a little memory for every folder visited and only returns it when the app exits. Once memory grew past a threshold (100 MB by default), the app saves its tabs, layout and settings and restarts quietly while the window is hidden or minimized. In `Settings` → `Memory cleanup` choose 100, 200, 300 or 500 MB or Off, or restart right away with `Clean up memory now`.
 
 File lists are native Windows lists, so column sorting and right-click menus are handled by the Windows Shell. The Windows 11 Explorer command bar and tab UI are not embedded.
@@ -220,6 +233,7 @@ The two apps find files in different ways.
 | `Ctrl+Alt+C`, `Ctrl+Alt+X` | Copy / move the selection to the other pane |
 | Right-click back or forward | Recent locations |
 | `Ctrl+Shift+E` | Collapse or expand the folder tree |
+| `Ctrl+Shift+F11` | Pin / unpin the top toolbar |
 | `Alt+P` | Show / hide the preview pane |
 | `Win+Alt+E` | Bring Folder Splitter to the front / again to hide it |
 | `F5` | Refresh |
@@ -231,7 +245,7 @@ The two apps find files in different ways.
 
 ## Data and compatibility
 
-- Update check: On launch and once a day while running, the app reads only the latest release information from GitHub (`api.github.com`). No file or user information is sent. Turn it off under `Settings` → `Check for new versions`.
+- Update check: On launch, every hour while running, and when the window returns after 15 minutes or more, the app reads only the latest release information from GitHub (`api.github.com`). No file or user information is sent. Turn it off under `Settings` → `Check for new versions`.
 - Updating: Only when you click `Update`, the app downloads the ZIP from the GitHub release, checks it against the SHA-256 GitHub reports, then replaces the executable; the previous file is deleted on the next start. If the check fails, nothing changes. If the executable sits where you can't write, or `Settings` → `Install automatically when Update is clicked` is off, the release page opens instead. The app makes no other network connections.
 - Settings location: `%LOCALAPPDATA%\QuadExplorer\session.json`
 - The settings path is unchanged so tabs and favorites from earlier QuadExplorer versions carry over.

@@ -23,6 +23,10 @@ public sealed class UiText
         ["Drag to resize favorites and the folder tree"] = ("드래그해 즐겨찾기와 폴더 트리 높이 조절", "拖动以调整收藏夹和文件夹树的高度", "ドラッグしてお気に入りとフォルダーツリーの高さを調整"),
         ["Settings"] = ("설정", "设置", "設定"),
         ["Show command bar"] = ("명령 막대 표시", "显示命令栏", "コマンドバーを表示"),
+        ["Unpin global toolbar"] = ("상단 도구 모음 고정 해제", "取消固定全局工具栏", "共通ツールバーの固定を解除"),
+        ["Pin global toolbar"] = ("상단 도구 모음 고정", "固定全局工具栏", "共通ツールバーを固定"),
+        ["Unpin global toolbar (Ctrl+Shift+F11)"] = ("상단 도구 모음 고정 해제 (Ctrl+Shift+F11)", "取消固定全局工具栏 (Ctrl+Shift+F11)", "共通ツールバーの固定を解除 (Ctrl+Shift+F11)"),
+        ["Pin global toolbar (Ctrl+Shift+F11)"] = ("상단 도구 모음 고정 (Ctrl+Shift+F11)", "固定全局工具栏 (Ctrl+Shift+F11)", "共通ツールバーを固定 (Ctrl+Shift+F11)"),
         ["All panes"] = ("모든 영역에 공통 적용", "应用于所有窗格", "すべてのペインに適用"),
         ["Active pane color"] = ("활성 영역 색상", "活动窗格颜色", "アクティブなペインの色"),
         ["Theme default"] = ("테마 기본 색상", "主题默认颜色", "テーマの既定色"),
@@ -39,6 +43,10 @@ public sealed class UiText
         ["Comfortable"] = ("보통", "标准", "標準"),
         ["Open Folder Splitter"] = ("Folder Splitter 열기", "打开 Folder Splitter", "Folder Splitter を開く"),
         ["Exit"] = ("종료", "退出", "終了"),
+        ["Update available"] = ("업데이트 알림", "更新通知", "アップデートのお知らせ"),
+        ["A new version {0} is available."] = ("새 버전 {0}을 사용할 수 있습니다.", "新版本 {0} 已发布。", "新しいバージョン {0} を利用できます。"),
+        ["Update"] = ("업데이트", "更新", "アップデート"),
+        ["Download"] = ("다운로드", "下载", "ダウンロード"),
         ["New version {0} available · Download"] = ("새 버전 {0} 있음 · 다운로드", "有新版本 {0} · 下载", "新しいバージョン {0} · ダウンロード"),
         ["Check for new versions"] = ("새 버전 확인", "检查新版本", "新しいバージョンを確認"),
         ["New version {0} available · Update"] = ("새 버전 {0} 있음 · 업데이트", "有新版本 {0} · 更新", "新しいバージョン {0} · 更新"),
@@ -319,6 +327,7 @@ public sealed class UiText
             Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   영역 수
             Ctrl+Shift+3   왼쪽 하나, 오른쪽 둘
             F6   다음 영역
+            Ctrl+Shift+F11   상단 도구 모음 숨기기 / 표시·고정
             3 분할 옆 화살표에서 좌우 / 상하 2:1 배치를 선택합니다.
             구분선을 끌어 크기 조절; 균등 분할로 초기화합니다.
 
@@ -360,6 +369,7 @@ public sealed class UiText
             Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   窗格数量
             Ctrl+Shift+3   左侧一个，右侧两个
             F6   下一个窗格
+            Ctrl+Shift+F11   隐藏 / 显示并固定全局工具栏
             三窗格按钮旁的箭头提供左右 / 上下 2:1 布局。
             拖动分隔线调整大小；等分大小可重置。
 
@@ -401,6 +411,7 @@ public sealed class UiText
             Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   ペイン数
             Ctrl+Shift+3   左に 1 つ、右に 2 つ
             F6   次のペイン
+            Ctrl+Shift+F11   共通ツールバーを隠す / 表示して固定
             3 ペインの横の矢印から左右 / 上下 2:1 の配置を選べます。
             区切り線をドラッグしてサイズを調整し、均等サイズで元に戻します。
 
@@ -444,6 +455,7 @@ public sealed class UiText
         Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4   Pane count
         Ctrl+Shift+3   One left, two right
         F6   Next pane
+        Ctrl+Shift+F11   Hide / show and pin the global toolbar
         The arrow beside 3 panes offers left/right and top/bottom 2:1 arrangements.
         Drag dividers to resize; Equal size resets them.
 

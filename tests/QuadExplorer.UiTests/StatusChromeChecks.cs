@@ -26,9 +26,6 @@ internal static partial class Program
                     await NavigationSignal(view).WaitAsync(TimeSpan.FromSeconds(20));
                 var status = Descendants(pane).OfType<Label>().Single(label => label.AccessibleName == "Pane 1 status");
                 var toolbar = form.Controls.OfType<ToolStrip>().Single();
-                Check(!string.IsNullOrWhiteSpace(form.Text) && !toolbar.Items.OfType<ToolStripLabel>().Any(label => label.Text == form.Text)
-                    && toolbar.Items[0].AccessibleName == "Sidebar",
-                    "the native title keeps the app name while the toolbar begins with its actual controls");
                 var text = new UiText("ko");
                 await pane.UpdateFolderSize();
                 Check(status.Text.StartsWith(pane.ActiveView!.DisplayName + "  |  ", StringComparison.Ordinal)

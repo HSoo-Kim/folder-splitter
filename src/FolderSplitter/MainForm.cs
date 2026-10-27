@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing.Drawing2D;
 using QuadExplorer.Search;
 
 namespace QuadExplorer;
@@ -77,6 +78,19 @@ public sealed class MainForm : Form, IMessageFilter
     private bool favoritesExpanded;
     private readonly List<string> favorites;
     private readonly ToolStrip toolbar = Theme.Strip(outlineItems: true);
+    private readonly ToolStripButton toolbarPin = new()
+    {
+        Name = "GlobalToolbarPin", Overflow = ToolStripItemOverflow.Never,
+        DisplayStyle = ToolStripItemDisplayStyle.None, AutoSize = false
+    };
+    private static readonly GraphicsPath toolbarPinPath = CreateToolbarPinPath();
+    private static readonly RectangleF toolbarPinBounds = toolbarPinPath.GetBounds();
+    private readonly System.Windows.Forms.Timer toolbarHideTimer = new() { Interval = 120 };
+    private readonly System.Windows.Forms.Timer toolbarRevealTimer = new() { Interval = 350 };
+    private bool globalToolbarPinned;
+    private bool toolbarPointerInside;
+    private bool toolbarCaptionPointerInside;
+    private bool toolbarPinMouseDown;
     private readonly LinkLabel versionLabel = new()
     {
         Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom, Margin = Padding.Empty, AutoSize = true,
@@ -104,6 +118,8 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly CancellationTokenSource updateCancellation = new();
     private readonly ToolStripMenuItem updateItem = new() { CheckOnClick = true };
     private ReleaseInfo? availableUpdate;
+    private Version? notifiedUpdateVersion;
+    private UpdateNotice? updateNotice;
     private bool checkUpdates;
     private readonly ToolStripMenuItem autoUpdateItem = new() { CheckOnClick = true };
     private bool autoUpdate;
@@ -149,6 +165,7 @@ public sealed class MainForm : Form, IMessageFilter
         activePaneColor = initialState.ActivePaneColor;
         fontFamily = initialState.FontFamily is { } face && FontInstalled(face) ? face : null;
         textSize = initialState.TextSize;
+        globalToolbarPinned = initialState.GlobalToolbarPinned;
         showFolderTree = initialState.ShowFolderTree;
         folderTreeHeight = initialState.FolderTreeHeight;
         globalHotkey = initialState.GlobalHotkey;
@@ -187,12 +204,7 @@ public sealed class MainForm : Form, IMessageFilter
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         footer.Controls.Add(versionLabel, 0, 0);
         footer.Controls.Add(authorLink, 1, 0);
-        versionLabel.LinkClicked += async (_, _) =>
-        {
-            if (availableUpdate is not { } update || updating) return;
-            if (CanInstallUpdate(update) && UpdateInstaller.InstallablePath() is { } exe) await InstallUpdateAsync(update, exe);
-            else OpenReleasePage(update);
-        };
+        versionLabel.LinkClicked += async (_, _) => await OpenAvailableUpdateAsync();
         using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("QuadExplorer.AppIcon")!)
         using (var sourceIcon = new Icon(iconStream))
             appIcon = (Icon)sourceIcon.Clone();
@@ -451,15 +463,51 @@ public sealed class MainForm : Form, IMessageFilter
         // Adjacent top buttons touch, so each run reads as one rounded group.
         foreach (ToolStripItem item in toolbar.Items)
             if (item is ToolStripButton or ToolStripDropDownButton) item.Margin = new Padding(0, 1, 0, 2);
+        languageBindings.Add(RefreshGlobalToolbar);
+        toolbar.DpiChangedAfterParent += (_, _) => RefreshGlobalToolbar();
+        RefreshGlobalToolbar();
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
         workspace.Controls.Add(paneHost);
         workspace.Controls.Add(previewSplitter);
         workspace.Controls.Add(previewPane);
         workspace.Controls.Add(sidebarSplitter);
         workspace.Controls.Add(sidebar);
+        // Choose the initial dock mode before parenting the strip. Switching an
+        // attached strip to an anchored overlay during construction can lay out
+        // controls before the form has finished initializing.
+        if (!globalToolbarPinned)
+        {
+            toolbar.Dock = DockStyle.None;
+            toolbar.AutoSize = false;
+            toolbar.Visible = false;
+        }
         Controls.Add(workspace);
         Controls.Add(footer);
         Controls.Add(toolbar);
+        ConfigureGlobalToolbar();
+        toolbar.MouseMove += (_, _) => { toolbarPointerInside = true; toolbarHideTimer.Stop(); };
+        toolbar.MouseEnter += (_, _) => { toolbarPointerInside = true; toolbarHideTimer.Stop(); };
+        toolbar.MouseLeave += (_, _) => { toolbarPointerInside = false; ScheduleToolbarHide(); };
+        toolbar.Leave += (_, _) => ScheduleToolbarHide();
+        languageSelector.ComboBox.MouseEnter += (_, _) => { toolbarPointerInside = true; toolbarHideTimer.Stop(); };
+        languageSelector.ComboBox.MouseLeave += (_, _) => { toolbarPointerInside = false; ScheduleToolbarHide(); };
+        languageSelector.DropDownClosed += (_, _) => ScheduleToolbarHide();
+        foreach (var item in toolbar.Items.OfType<ToolStripDropDownItem>())
+            item.DropDownClosed += (_, _) => ScheduleToolbarHide();
+        toolbar.OverflowButton.DropDownClosed += (_, _) => ScheduleToolbarHide();
+        toolbarHideTimer.Tick += (_, _) => HideGlobalToolbarIfIdle();
+        toolbarRevealTimer.Tick += (_, _) =>
+        {
+            toolbarRevealTimer.Stop();
+            if (toolbarCaptionPointerInside) ShowGlobalToolbarOverlay();
+        };
+        ClientSizeChanged += (_, _) =>
+        {
+            if (!globalToolbarPinned) HideGlobalToolbarOverlay();
+            PositionGlobalToolbarOverlay();
+        };
+        Deactivate += (_, _) => { if (!globalToolbarPinned) HideGlobalToolbarOverlay(); };
+        DpiChanged += (_, _) => RefreshGlobalToolbar();
         sidebar.Visible = initialState.ShowSidebar;
         sidebarSplitter.Visible = initialState.ShowSidebar;
         saveTimer.Tick += (_, _) => { saveTimer.Stop(); SaveSession(); };
@@ -488,6 +536,7 @@ public sealed class MainForm : Form, IMessageFilter
             if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab(remember: false);
             foreach (string folder in folders) Active.AddTab(folder);
             Active.FocusFiles();
+            ShowPendingUpdateNotice();
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
             updateTimer.Enabled = checkUpdates && latestRelease is not null;
             _ = CheckForStaleUpdateAsync();
@@ -575,6 +624,17 @@ public sealed class MainForm : Form, IMessageFilter
     private void BuildToolbar()
     {
         toolbar.Padding = new Padding(10, 7, 10, 7);
+        toolbar.AccessibleName = "Global toolbar";
+        toolbarPin.Paint += (_, e) => PaintToolbarPin(e.Graphics);
+        toolbarPin.MouseDown += (_, _) => toolbarPinMouseDown = true;
+        toolbarPin.MouseLeave += (_, _) => toolbarPinMouseDown = false;
+        toolbarPin.Click += (_, _) =>
+        {
+            bool mouse = toolbarPinMouseDown;
+            toolbarPinMouseDown = false;
+            SetGlobalToolbarPinned(!globalToolbarPinned, mouse);
+        };
+        toolbar.Items.Add(toolbarPin);
         sidebarButton.CheckOnClick = true;
         sidebarButton.Checked = initialState.ShowSidebar;
         BindText(sidebarButton, "Sidebar", "Show / hide quick access sidebar");
@@ -766,6 +826,151 @@ public sealed class MainForm : Form, IMessageFilter
         };
     }
 
+    private void SetGlobalToolbarPinned(bool pinned, bool mouseClick = false)
+    {
+        if (globalToolbarPinned == pinned) return;
+        bool keepOverlay = !pinned && (mouseClick || toolbarPointerInside || ToolbarHasInteraction());
+        // Resizing a SplitContainer raises SplitterMoved even without a user drag.
+        // Keep the saved ratios while the toolbar changes the available height.
+        bool wasRebuilding = rebuilding;
+        rebuilding = true;
+        try
+        {
+            globalToolbarPinned = pinned;
+            SuspendLayout();
+            try
+            {
+                RefreshGlobalToolbar();
+                ConfigureGlobalToolbar(keepOverlay);
+            }
+            finally { ResumeLayout(true); }
+            UpdateMinimumSize();
+            ApplySplitRatios();
+        }
+        finally { rebuilding = wasRebuilding; }
+        // A mouse click should not leave incidental ToolStrip focus trapping the overlay.
+        // Keyboard users keep their focus and can continue navigating the toolbar.
+        if (!pinned && mouseClick && toolbar.ContainsFocus) Active.FocusFiles();
+        if (!pinned && mouseClick) toolbarPointerInside = true;
+        if (!pinned) ScheduleToolbarHide();
+        ScheduleSave();
+    }
+
+    private static GraphicsPath CreateToolbarPinPath()
+    {
+        // Keep the solid E840 pin, using the rounder Fluent outline when available.
+        // Windows 10 falls back to the same glyph in Segoe MDL2 Assets.
+        using var family = new FontFamily(Theme.IconFont);
+        using var glyph = new GraphicsPath();
+        glyph.AddString("\uE840", family, (int)FontStyle.Regular, 1000, PointF.Empty, StringFormat.GenericTypographic);
+        PointF[] points = glyph.PathPoints;
+        byte[] types = glyph.PathTypes;
+        int count = Array.FindIndex(types, type => (type & (byte)PathPointType.CloseSubpath) != 0) + 1;
+        return new GraphicsPath(points[..count], types[..count]);
+    }
+
+    private void PaintToolbarPin(Graphics graphics)
+    {
+        float size = LogicalToDeviceUnits(14);
+        float scale = size / Math.Max(toolbarPinBounds.Width, toolbarPinBounds.Height);
+        float x = (toolbarPin.Width - toolbarPinBounds.Width * scale) / 2 - toolbarPinBounds.X * scale;
+        float y = (toolbarPin.Height - toolbarPinBounds.Height * scale) / 2 - toolbarPinBounds.Y * scale;
+        GraphicsState state = graphics.Save();
+        try
+        {
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.TranslateTransform(x, y);
+            graphics.ScaleTransform(scale, scale);
+            using var brush = new SolidBrush(Theme.Text);
+            graphics.FillPath(brush, toolbarPinPath);
+        }
+        finally { graphics.Restore(state); }
+    }
+
+    private void RefreshGlobalToolbar()
+    {
+        toolbarPin.AccessibleName = text.T(globalToolbarPinned ? "Unpin global toolbar" : "Pin global toolbar");
+        toolbarPin.ToolTipText = text.T(globalToolbarPinned
+            ? "Unpin global toolbar (Ctrl+Shift+F11)"
+            : "Pin global toolbar (Ctrl+Shift+F11)");
+        toolbarPin.AccessibleDescription = toolbarPin.ToolTipText;
+        toolbarPin.Size = new Size(LogicalToDeviceUnits(26), LogicalToDeviceUnits(24));
+        toolbarPin.Checked = globalToolbarPinned;
+        toolbar.Padding = new Padding(LogicalToDeviceUnits(10), LogicalToDeviceUnits(7),
+            LogicalToDeviceUnits(10), LogicalToDeviceUnits(7));
+        PositionGlobalToolbarOverlay();
+    }
+
+    private void ConfigureGlobalToolbar(bool showOverlay = false)
+    {
+        toolbarHideTimer.Stop();
+        toolbarRevealTimer.Stop();
+        if (globalToolbarPinned)
+        {
+            toolbarCaptionPointerInside = false;
+            toolbar.AutoSize = true;
+            toolbar.Dock = DockStyle.Top;
+            toolbar.Visible = true;
+            toolbar.SendToBack();
+        }
+        else
+        {
+            if (!showOverlay) toolbar.Visible = false;
+            toolbar.Dock = DockStyle.None;
+            toolbar.AutoSize = false;
+            PositionGlobalToolbarOverlay();
+            toolbar.Visible = showOverlay;
+            if (showOverlay) toolbar.BringToFront();
+        }
+    }
+
+    private void PositionGlobalToolbarOverlay()
+    {
+        if (!globalToolbarPinned && toolbar.Dock == DockStyle.None)
+            toolbar.SetBounds(0, 0, ClientSize.Width, toolbar.GetPreferredSize(new Size(ClientSize.Width, 0)).Height);
+    }
+
+    private void ShowGlobalToolbarOverlay()
+    {
+        if (globalToolbarPinned) return;
+        toolbarHideTimer.Stop();
+        if (toolbar.Visible) return;
+        PositionGlobalToolbarOverlay();
+        toolbar.Visible = true;
+        toolbar.BringToFront();
+    }
+
+    private void ScheduleToolbarHide()
+    {
+        if (globalToolbarPinned) return;
+        toolbarHideTimer.Stop();
+        toolbarHideTimer.Start();
+    }
+
+    private bool ToolbarHasInteraction() =>
+        toolbar.ContainsFocus || languageSelector.DroppedDown || toolbar.OverflowButton.DropDown.Visible ||
+        toolbar.Items.OfType<ToolStripDropDownItem>().Any(item => item.DropDown.Visible);
+
+    private void HideGlobalToolbarIfIdle()
+    {
+        toolbarHideTimer.Stop();
+        if (globalToolbarPinned || toolbarPointerInside || toolbarCaptionPointerInside || ToolbarHasInteraction()) return;
+        HideGlobalToolbarOverlay();
+    }
+
+    private void HideGlobalToolbarOverlay()
+    {
+        if (globalToolbarPinned) return;
+        toolbarHideTimer.Stop();
+        toolbarRevealTimer.Stop();
+        toolbarPointerInside = false;
+        toolbarCaptionPointerInside = false;
+        languageSelector.DroppedDown = false;
+        toolbar.OverflowButton.HideDropDown();
+        foreach (var item in toolbar.Items.OfType<ToolStripDropDownItem>()) item.HideDropDown();
+        toolbar.Visible = false;
+    }
+
     private void ReloadPlaces()
     {
         string? selectedPlace = (places.SelectedItem as Place?)?.Path;
@@ -907,6 +1112,11 @@ public sealed class MainForm : Form, IMessageFilter
         folderTree.RefreshTheme();
         previewPane.ApplyColors();
         previewWindow?.RefreshTheme();
+        if (updateNotice is { IsDisposed: false } notice)
+        {
+            notice.Font = Font;
+            Theme.Apply(notice);
+        }
         foreach (var (window, pane) in previewWindows)
         {
             Theme.Apply(window);
@@ -1270,6 +1480,13 @@ public sealed class MainForm : Form, IMessageFilter
 
     private bool CanInstallUpdate(ReleaseInfo update) => autoUpdate && update.PackageUrl is not null && update.PackageSha256 is not null;
 
+    private async Task OpenAvailableUpdateAsync()
+    {
+        if (availableUpdate is not { } update || updating) return;
+        if (CanInstallUpdate(update) && UpdateInstaller.InstallablePath() is { } exe) await InstallUpdateAsync(update, exe);
+        else OpenReleasePage(update);
+    }
+
     private void OpenReleasePage(ReleaseInfo update)
     {
         try { Process.Start(new ProcessStartInfo(update.Url) { UseShellExecute = true }); }
@@ -1335,6 +1552,7 @@ public sealed class MainForm : Form, IMessageFilter
     protected override void OnActivated(EventArgs e)
     {
         base.OnActivated(e);
+        ShowPendingUpdateNotice();
         _ = CheckForStaleUpdateAsync();
     }
 
@@ -1350,6 +1568,7 @@ public sealed class MainForm : Form, IMessageFilter
         if (IsDisposed || !checkUpdates) return;
         availableUpdate = latest is not null && latest.Version > UpdateChecker.Current ? latest : null;
         UpdateVersionText();
+        ShowPendingUpdateNotice();
     }
 
     private void UpdateVersionText()
@@ -1357,6 +1576,7 @@ public sealed class MainForm : Form, IMessageFilter
         string current = "v" + UpdateChecker.Current.ToString(3);
         if (availableUpdate is null)
         {
+            updateNotice?.Close();
             versionLabel.Text = current;
             versionLabel.LinkArea = new LinkArea(0, 0);
             return;
@@ -1367,6 +1587,26 @@ public sealed class MainForm : Form, IMessageFilter
         versionLabel.Text = current + "   " + notice;
         versionLabel.LinkArea = new LinkArea(current.Length + 3, notice.Length);
         versionLabel.LinkColor = versionLabel.ActiveLinkColor = versionLabel.VisitedLinkColor = Theme.Accent;
+        updateNotice?.RefreshNotice(availableUpdate, CanInstallUpdate(availableUpdate));
+    }
+
+    private void ShowPendingUpdateNotice()
+    {
+        if (!ready || !Visible || WindowState == FormWindowState.Minimized || updating ||
+            availableUpdate is not { } update || notifiedUpdateVersion == update.Version ||
+            !UpdateNotice.OwnerVisibleAtNotice(this)) return;
+        updateNotice?.Close();
+        notifiedUpdateVersion = update.Version;
+        var notice = new UpdateNotice(text, Font, update, CanInstallUpdate(update));
+        updateNotice = notice;
+        notice.UpdateRequested += async (_, _) => await OpenAvailableUpdateAsync();
+        notice.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(updateNotice, notice)) updateNotice = null;
+            if ((notice.Deferred || !Visible || WindowState == FormWindowState.Minimized) && notifiedUpdateVersion == update.Version)
+                notifiedUpdateVersion = null;
+        };
+        notice.Present(this);
     }
     internal bool TrayNoticeShown => trayNoticeShown;
 
@@ -1440,6 +1680,32 @@ public sealed class MainForm : Form, IMessageFilter
 
     protected override void WndProc(ref Message m)
     {
+        if (ready && !globalToolbarPinned && m.Msg == 0x00A0) // WM_NCMOUSEMOVE
+        {
+            if (m.WParam == 2) // HTCAPTION: the draggable title bar, excluding window buttons
+            {
+                if (!toolbarCaptionPointerInside)
+                {
+                    toolbarCaptionPointerInside = true;
+                    if (!toolbar.Visible) toolbarRevealTimer.Start();
+                }
+                toolbarHideTimer.Stop();
+                var track = new MouseTrack { Size = Marshal.SizeOf<MouseTrack>(), Flags = 0x12, Window = m.HWnd };
+                TrackMouseEvent(ref track); // TME_LEAVE | TME_NONCLIENT
+            }
+            else if (toolbarCaptionPointerInside)
+            {
+                toolbarCaptionPointerInside = false;
+                toolbarRevealTimer.Stop();
+                ScheduleToolbarHide();
+            }
+        }
+        else if (m.Msg == 0x02A2 && toolbarCaptionPointerInside) // WM_NCMOUSELEAVE
+        {
+            toolbarCaptionPointerInside = false;
+            toolbarRevealTimer.Stop();
+            ScheduleToolbarHide();
+        }
         if (m.Msg == 0x0312 && m.WParam == HotkeyId) { ToggleFromHotkey(); return; } // WM_HOTKEY
         if (activationMessage != 0 && m.Msg == (int)activationMessage) // wParam 1: Win+E toggles like Win+Alt+E
         {
@@ -1449,6 +1715,17 @@ public sealed class MainForm : Form, IMessageFilter
         }
         base.WndProc(ref m);
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseTrack
+    {
+        public int Size, Flags;
+        public nint Window;
+        public int HoverTime;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool TrackMouseEvent(ref MouseTrack track);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
@@ -1762,7 +2039,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         Size minimum = MinimumContentSize(layoutTree);
         MinimumSize = new Size(Math.Max(900, minimum.Width + (sidebar.Visible ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
-            Math.Max(600, minimum.Height + toolbar.Height + footer.Height + 12 + Height - ClientSize.Height));
+            Math.Max(600, minimum.Height + (globalToolbarPinned ? toolbar.Height : 0) + footer.Height + 12 + Height - ClientSize.Height));
     }
 
     private void ApplySplitRatios()
@@ -1964,10 +2241,11 @@ public sealed class MainForm : Form, IMessageFilter
         if (m.Msg is 0x100 or 0x104)
         {
             Keys key = (Keys)(int)m.WParam | ModifierKeys;
-            if (key != (Keys.Alt | Keys.P) &&
+            if (key != (Keys.Alt | Keys.P) && key != (Keys.Control | Keys.Shift | Keys.F11) &&
                 (previewWindow?.ContainsFocus == true || ShellNative.IsChild(previewPane.Handle, m.HWnd))) return false;
             if (HandleShortcut(key)) return true;
         }
+        if (toolbar.ContainsFocus) return false; // Let ToolStrip handle Enter, Space and arrow navigation.
         if (m.Msg >= 0x100 && m.Msg <= 0x109) return Active.ActiveView?.TranslateKey(ref m) ?? false;
         return false;
     }
@@ -2235,6 +2513,7 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.D: AddFavorite(Active.CurrentPath); break;
             case Keys.Control | Keys.Shift | Keys.E: SetFolderTreeVisible(!showFolderTree); break;
             case Keys.Alt | Keys.P: SetPreviewVisible(!showPreview); break;
+            case Keys.Control | Keys.Shift | Keys.F11: SetGlobalToolbarPinned(!globalToolbarPinned); break;
             case Keys.Control | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + 1) % Active.TabCount); break;
             case Keys.Control | Keys.Shift | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
@@ -2275,6 +2554,7 @@ public sealed class MainForm : Form, IMessageFilter
                 ActivePaneColor = activePaneColor,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate, ShowCommandBar = showCommandBar,
+                GlobalToolbarPinned = globalToolbarPinned,
                 ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows, HighlightSortedColumn = highlightSortedColumn,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
                 Favorites = [.. favorites], ShowSidebar = sidebar.Visible, Workspaces = [.. workspaces],
@@ -2330,10 +2610,13 @@ public sealed class MainForm : Form, IMessageFilter
             rebuilding = true;
             previewWindow?.Dispose();
             previewWindow = null;
+            updateNotice?.Dispose();
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
             previewTimer.Dispose();
             memoryTimer.Dispose();
+            toolbarHideTimer.Dispose();
+            toolbarRevealTimer.Dispose();
             tips.Dispose();
             trayIcon.Visible = false;
             trayIcon.ContextMenuStrip?.Dispose();

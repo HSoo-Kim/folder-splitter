@@ -32,6 +32,8 @@ public sealed record SessionState
     public string TextSize { get; init; } = "normal";
     public bool ShowFolderTree { get; init; } = true;
     public bool ShowCommandBar { get; init; } = true;
+    // Missing in older sessions: retain the existing visible global toolbar.
+    public bool GlobalToolbarPinned { get; init; } = true;
     public bool ShowVerticalSeparators { get; init; }
     public bool ComfortableRows { get; init; } = true;
     public bool HighlightSortedColumn { get; init; }
