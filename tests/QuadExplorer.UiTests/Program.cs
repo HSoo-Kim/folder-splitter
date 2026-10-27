@@ -1227,43 +1227,8 @@ internal static partial class Program
                 var parsed = UpdateChecker.Parse(json.RootElement)!;
                 Check(parsed.Version == new Version(9, 9, 9) && parsed.PackageSha256 == "2b1a10366592c46e296ad97e621adc0cde413c24983dae86e3af275bbb2689d7"
                     && parsed.PackageUrl?.AbsoluteUri.EndsWith("/v9.9.9/folder-splitter-win-x64.zip", StringComparison.Ordinal) == true,
-                    "legacy release package URL and SHA-256 remain supported");
+                    "release package URL and SHA-256 are read from the GitHub release");
             }
-            foreach (bool legacyFirst in new[] { true, false })
-            {
-                const string legacy = """
-                    {"name":"folder-splitter-win-x64.zip","browser_download_url":"https://github.com/x/legacy.zip","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-                    """;
-                const string versioned = """
-                    {"name":"folder-splitter-v9.9.9-win-x64.zip","browser_download_url":"https://github.com/x/versioned.zip","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
-                    """;
-                using var json = System.Text.Json.JsonDocument.Parse(
-                    """{"tag_name":"v9.9.9","html_url":"https://github.com/x","assets":["""
-                    + (legacyFirst ? legacy + "," + versioned : versioned + "," + legacy) + "]}");
-                var parsed = UpdateChecker.Parse(json.RootElement)!;
-                Check(parsed.PackageUrl?.AbsoluteUri == "https://github.com/x/versioned.zip"
-                    && parsed.PackageSha256 == new string('b', 64),
-                    $"tag-matching versioned package is preferred (legacyFirst={legacyFirst})");
-            }
-            using (var json = System.Text.Json.JsonDocument.Parse("""
-                {"tag_name":"v9.9.9","html_url":"https://github.com/x","assets":[
-                 {"name":"folder-splitter-v9.9.8-win-x64.zip","browser_download_url":"https://github.com/x/wrong.zip","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}
-                """))
-                Check(UpdateChecker.Parse(json.RootElement)!.PackageUrl is null, "a package named for a different version is ignored");
-            using (var json = System.Text.Json.JsonDocument.Parse("""
-                {"tag_name":"v9.9.9","html_url":"https://github.com/x","assets":[
-                 {"name":"folder-splitter-v9.9.8-win-x64.zip","browser_download_url":"https://github.com/x/wrong.zip","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-                 {"name":"folder-splitter-win-x64.zip","browser_download_url":"https://github.com/x/legacy.zip","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}
-                """))
-                Check(UpdateChecker.Parse(json.RootElement)!.PackageUrl?.AbsoluteUri == "https://github.com/x/legacy.zip",
-                    "wrong-version package does not prevent legacy fallback");
-            using (var json = System.Text.Json.JsonDocument.Parse("""
-                {"tag_name":"v9.9.9","html_url":"https://github.com/x","assets":[
-                 {"name":"folder-splitter-v9.9.9-win-x64.zip","browser_download_url":"https://example.com/versioned.zip","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-                 {"name":"folder-splitter-win-x64.zip","browser_download_url":"https://github.com/x/legacy.zip","digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}
-                """))
-                Check(UpdateChecker.Parse(json.RootElement)!.PackageUrl?.AbsoluteUri == "https://github.com/x/legacy.zip",
-                    "untrusted versioned package falls back to a verifiable legacy package");
             using (var json = System.Text.Json.JsonDocument.Parse("""
                 {"tag_name":"v9.9.9","html_url":"https://github.com/HSoo-Kim/folder-splitter/releases/tag/v9.9.9","assets":[
                  {"name":"folder-splitter-win-x64.zip","browser_download_url":"https://example.com/folder-splitter-win-x64.zip","digest":"sha256:2b1a10366592c46e296ad97e621adc0cde413c24983dae86e3af275bbb2689d7"}]}

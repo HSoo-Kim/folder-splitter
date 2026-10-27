@@ -7,7 +7,7 @@
 **1つのウィンドウに最大4フォルダー、ペインごとに独立したタブ。名前の断片を入力するだけで検索できます。**
 
 <p>
-  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Windows 版 Folder Splitter をダウンロード" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Windows 版 Folder Splitter をダウンロード" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
@@ -55,7 +55,7 @@ Windows 標準のファイル一覧（Shell `IExplorerBrowser`）を使うファ
 
 ## クイックスタート
 
-1. [最新リリース](https://github.com/HSoo-Kim/folder-splitter/releases/latest)から `folder-splitter-<tag>-win-x64.zip` をダウンロードします（Windows 11、または Windows 10 バージョン 2004 以降、x64）。
+1. [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) をダウンロードします（Windows 11、または Windows 10 バージョン 2004 以降、x64）。
 2. 展開して `FolderSplitter.exe` を実行します。インストールは不要で、.NET ランタイムも同梱しています。
 3. ペインのアドレスバーに名前の断片を入力するか、サイドバーからフォルダーを選びます。
 
@@ -285,10 +285,8 @@ UI 統合テストは `tools/PrivateDesktopQa` が作成する別の非公開 Wi
 
 ```text
 artifacts/FolderSplitter/FolderSplitter.exe
-artifacts/folder-splitter-<tag>-win-x64.zip
+artifacts/folder-splitter-win-x64.zip
 ```
-
-`<tag>` はプロジェクトのバージョンに `v` を付けた値です（例：`v0.8.13`）。リリースにはこのバージョン付きパッケージのみを添付します。0.8.12 以前のアプリはアプリ内で自動インストールできず、リリースページを開きます。
 
 公開用のビルドが成功した後、以前のバージョンの生成済み実行ファイルを整理し、ローカルには最新版のみを残します。ソース、設定、利用者のファイルは削除しません。
 

@@ -1,12 +1,12 @@
-## Folder Splitter 0.8.13: CET 완화와 버전별 배포 파일명
+## Folder Splitter 0.8.13: CET 완화
 
 [#13](https://github.com/HSoo-Kim/folder-splitter/issues/13)의 `FAST_FAIL_SET_CONTEXT_DENIED` 보고에 따라 앱 프로젝트에 `<CETCompat>false</CETCompat>`를 지정합니다. .NET SDK의 `CreateAppHost`가 일반 apphost와 단일 파일 게시 호스트에 이 설정을 적용합니다. 게시 뒤 바이너리를 직접 수정하지 않습니다. 이 변경은 프로세스에 CET 섀도 스택 보호를 적용하지 않는 완화책이며, 셸 확장 또는 RPC 오류 자체를 고치지 않습니다. 보고자는 같은 0.8.12에서도 재부팅 후 증상이 사라졌다고 했으므로, 보고자의 환경에서 해결됐다고 단정하지 않습니다.
 
-`build.ps1 -Publish`는 프로젝트 버전에서 `v<Version>` 태그를 만들고 `artifacts/folder-splitter-<tag>-win-x64.zip`을 생성합니다. ZIP 내용은 실행 파일, 네 언어 README와 LICENSE 여섯 개입니다. 릴리즈에는 이 버전별 ZIP만 첨부하며, 옛 이름(`folder-splitter-win-x64.zip`)의 같은 파일은 올리지 않습니다. 새 업데이트 검사기는 릴리즈 태그와 정확히 일치하는 버전별 파일을 우선하고 이전 이름으로 대체합니다. 기존 GitHub URL 및 SHA-256 digest 조건은 유지합니다. 0.8.12 이하 앱은 이 파일을 자동 설치하지 못하고 릴리즈 페이지를 엽니다. 회귀 검사는 두 자산 순서에서의 우선순위, 이전 이름만 있는 릴리즈, 다른 버전의 이름 제외와 대체, 신뢰할 수 없는 버전별 URL의 대체를 포함합니다.
+`build.ps1 -Publish`는 `artifacts/folder-splitter-win-x64.zip`을 생성합니다. ZIP 내용은 실행 파일, 네 언어 README와 LICENSE 여섯 개입니다. 릴리즈에는 이 ZIP 하나만 첨부하며 파일명에 버전을 넣지 않습니다. 앱의 업데이트 검사기가 이 이름의 자산을 찾으므로, 이름이 바뀌면 이미 설치된 앱이 앱 안에서 자동으로 업데이트하지 못합니다.
 
 Windows 11 build 26100, .NET SDK 10.0.402에서 `.\build.ps1 -UiTests -Publish`가 종료 코드 0으로 완료됐습니다. `TreatWarningsAsErrors`를 켠 Release 빌드에 경고·오류가 없었고, 세션·레이아웃 32/32, 경로 검색 168 assertion, Explorer 즐겨찾기 필터·정규화·중복 제거·상한 검사(실제 폴더 20개), 비공개 데스크톱 네이티브 UI 8,660개와 주소창 아이콘 집중 검사 23개가 통과했습니다.
 
-이전 0.8.12와 새 게시 단일 파일 실행 파일의 PE 디버그 디렉터리를 직접 파싱했습니다. `IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS`(20), 크기 4, 파일 오프셋 7,818,980의 값이 `0x1`에서 `0x0`으로 바뀌어 `IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT` 비트가 해제됐습니다. 새 실행 파일의 SHA-256은 `1064b57084635c7d7ea9bdfa504cc1a3906a6de0b7e0665287409f6a474816a0`이며 ZIP 안의 실행 파일과 일치합니다. 버전별 ZIP의 SHA-256은 `476536b8d28371f3fff3c1eee7afe1a5abda18c20282ef5c030c2afa669bacaf`입니다.
+이전 0.8.12와 새 게시 단일 파일 실행 파일의 PE 디버그 디렉터리를 직접 파싱했습니다. `IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS`(20), 크기 4, 파일 오프셋 7,818,980의 값이 `0x1`에서 `0x0`으로 바뀌어 `IMAGE_DLLCHARACTERISTICS_EX_CET_COMPAT` 비트가 해제됐습니다. 새 실행 파일의 SHA-256은 `1064b57084635c7d7ea9bdfa504cc1a3906a6de0b7e0665287409f6a474816a0`이며 ZIP 안의 실행 파일과 일치합니다. ZIP의 SHA-256은 `476536b8d28371f3fff3c1eee7afe1a5abda18c20282ef5c030c2afa669bacaf`입니다.
 
 게시 실행 파일은 `PrivateDesktopQa`의 비공개 데스크톱에서 고유한 임시 `--session`으로 실행했습니다. 전역 단축키·트레이 유지·업데이트 확인·자동 업데이트·자동 재시작을 끄고 별도 검색 색인을 미리 복사했습니다. 새로 만든 프로세스의 창만 `WM_CLOSE`로 닫아 종료 코드 0을 확인했습니다. 기존 앱 프로세스나 사용 중인 데스크톱에는 입력을 보내지 않았습니다. 증거와 최종 배포 파일은 `artifacts/release-0.8.13/`에 보관합니다. 보고자의 Windows 11 build 26300과 해당 셸 확장 조합에서의 재현·해결 여부는 검증하지 못했습니다.
 

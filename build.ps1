@@ -48,14 +48,12 @@ if ($UiTests) {
     }
 }
 if ($Publish) {
-    [xml]$project = Get-Content -LiteralPath "$root/src/FolderSplitter/FolderSplitter.csproj" -Raw
-    $tag = "v" + [string]$project.Project.PropertyGroup.Version
     Run-Dotnet publish "$root/src/FolderSplitter/FolderSplitter.csproj" -c Release -r win-x64 `
         --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None -p:DebugSymbols=false -o "$root/artifacts/FolderSplitter"
     Compress-Archive -Path "$root/artifacts/FolderSplitter/FolderSplitter.exe", "$root/README.md", `
         "$root/README.ko.md", "$root/README.zh-CN.md", "$root/README.ja.md", "$root/LICENSE" `
-        -DestinationPath "$root/artifacts/folder-splitter-$tag-win-x64.zip" -Force
+        -DestinationPath "$root/artifacts/folder-splitter-win-x64.zip" -Force
     Get-ChildItem "$root/artifacts" -Directory |
         Where-Object { $_.Name -like "FolderSplitter-v*" -or $_.Name -eq "win-x64" } |
         Remove-Item -Recurse -Force
