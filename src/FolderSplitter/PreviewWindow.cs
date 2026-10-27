@@ -5,6 +5,8 @@ namespace QuadExplorer;
 internal sealed class PreviewWindow : Form
 {
     private readonly UiText text;
+    private readonly string titleKey;
+    private readonly string dockKey;
     private readonly ToolStrip toolbar = Theme.Strip();
     private readonly ToolStripButton dockButton = new() { AccessibleName = "Dock preview" };
     private bool moving;
@@ -12,9 +14,11 @@ internal sealed class PreviewWindow : Form
     internal event EventHandler? DockRequested;
     internal event Action<Point>? MoveFinished;
 
-    internal PreviewWindow(UiText text)
+    internal PreviewWindow(UiText text, string titleKey = "Preview", string dockKey = "Dock preview")
     {
         this.text = text;
+        this.titleKey = titleKey;
+        this.dockKey = dockKey;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         StartPosition = FormStartPosition.Manual;
@@ -27,6 +31,9 @@ internal sealed class PreviewWindow : Form
     }
 
     internal void AddPreview(PreviewPane preview)
+        => AddContent(preview);
+
+    internal void AddContent(Control preview)
     {
         Controls.Add(preview);
         preview.Dock = DockStyle.Fill;
@@ -35,8 +42,9 @@ internal sealed class PreviewWindow : Form
 
     internal void RefreshLanguage()
     {
-        Text = text.T("Preview");
-        dockButton.Text = text.T("Dock preview");
+        Text = text.T(titleKey);
+        dockButton.Text = text.T(dockKey);
+        dockButton.AccessibleName = dockKey;
     }
 
     internal void RefreshTheme()

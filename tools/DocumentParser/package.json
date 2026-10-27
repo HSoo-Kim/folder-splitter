@@ -1,0 +1,9 @@
+{
+  "name": "folder-splitter-document-parser",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "kordoc": "4.24.8",
+    "pdfjs-dist": "4.10.38"
+  }
+}

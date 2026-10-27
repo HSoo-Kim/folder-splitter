@@ -23,6 +23,7 @@ function Run-Dotnet {
 Run-Dotnet build "$root/src/FolderSplitter/FolderSplitter.csproj" -c Release --nologo
 Run-Dotnet run --project "$root/tests/QuadExplorer.Tests/QuadExplorer.Tests.csproj" -c Release
 Run-Dotnet run --project "$root/tests/PathSearch.Tests/PathSearch.Tests.csproj" -c Release
+Run-Dotnet run --project "$root/tests/AiSearch.Tests/AiSearch.Tests.csproj" -c Release
 if ($UiTests) {
     Run-Dotnet run --project "$root/tests/ExplorerFavorites.Tests/ExplorerFavorites.Tests.csproj" -c Release
     Run-Dotnet build "$root/tools/PrivateDesktopQa/PrivateDesktopQa.csproj" -c Release --nologo
@@ -51,8 +52,10 @@ if ($Publish) {
     Run-Dotnet publish "$root/src/FolderSplitter/FolderSplitter.csproj" -c Release -r win-x64 `
         --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None -p:DebugSymbols=false -o "$root/artifacts/FolderSplitter"
+    & "$root/tools/DocumentParser/stage.ps1" -Destination "$root/artifacts/FolderSplitter/parsers"
     Compress-Archive -Path "$root/artifacts/FolderSplitter/FolderSplitter.exe", "$root/README.md", `
-        "$root/README.ko.md", "$root/README.zh-CN.md", "$root/README.ja.md", "$root/LICENSE" `
+        "$root/README.ko.md", "$root/README.zh-CN.md", "$root/README.ja.md", "$root/LICENSE", `
+        "$root/artifacts/FolderSplitter/parsers" `
         -DestinationPath "$root/artifacts/folder-splitter-win-x64.zip" -Force
     Get-ChildItem "$root/artifacts" -Directory |
         Where-Object { $_.Name -like "FolderSplitter-v*" -or $_.Name -eq "win-x64" } |

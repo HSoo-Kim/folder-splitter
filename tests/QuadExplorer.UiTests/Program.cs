@@ -10,13 +10,16 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args is ["--ai-open-receipt", var pipe, var openedFile])
+            return WriteAiOpenReceipt(pipe, openedFile);
         string? expectedDesktop = Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_DESKTOP");
         var actualDesktop = new System.Text.StringBuilder(256);
         // Demo capture runs on the user's desktop only with their consent: Shell views paint only in a visible,
         // DWM-composed window. It never takes activation and captures the window's own content.
         bool demoCapture = args is ["--demo-capture", _, _];
+        bool aiSearchDemo = args is ["--ai-search-demo", _, _];
         bool scrollbarDemo = args is ["--scrollbar-demo"];
-        if (!demoCapture && !scrollbarDemo && (expectedDesktop is null || !expectedDesktop.StartsWith("FolderSplitter-QA-", StringComparison.Ordinal) ||
+        if (!demoCapture && !scrollbarDemo && !aiSearchDemo && (expectedDesktop is null || !expectedDesktop.StartsWith("FolderSplitter-QA-", StringComparison.Ordinal) ||
             !GetUserObjectInformation(GetThreadDesktop(GetCurrentThreadId()), 2, actualDesktop, 512, out _) ||
             actualDesktop.ToString() != expectedDesktop))
         {
@@ -44,6 +47,8 @@ internal static partial class Program
         Application.SetCompatibleTextRenderingDefault(false);
         if (args is ["--native-open-receipt", var receiptPipe])
             return RunNativeOpenReceipt(receiptPipe);
+        if (args is ["--ai-search-demo", var aiOutput, var aiRoot])
+            return RunAiSearchDemo(aiOutput, aiRoot);
         // Design review: captures the app chrome in several themes instead of running the checks.
         if (Environment.GetEnvironmentVariable("FOLDERSPLITTER_DESIGN_CAPTURE") is { Length: > 0 } designOutput)
             return RunDesignCapture(designOutput);
@@ -53,10 +58,47 @@ internal static partial class Program
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--ai-reading-gpt-ui"])
+            {
+                RunAiReadingRealUiScenario(root, useGpt: true);
+                Console.WriteLine($"PASS {checks} GPT document-reading GUI checks");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--ai-model-menu"])
+            {
+                RunAiModelMenuScenario(Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR"));
+                Console.WriteLine($"PASS {checks} AI model menu checks");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--breadcrumb-dpi", var breadcrumbOutput])
+            {
+                RunBreadcrumbDpiScenario(root, breadcrumbOutput);
+                Console.WriteLine($"BREADCRUMB_DPI_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--native-open-selection"])
             {
                 RunNativeOpenSelectionScenario(root);
                 Console.WriteLine($"NATIVE_OPEN_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--ai-reading-real-ui"])
+            {
+                RunAiReadingRealUiScenario(root);
+                Console.WriteLine($"PASS {checks} real document-reading GUI checks");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--ai-search-real-ui"])
+            {
+                RunAiSearchRealUiScenario(root);
+                Console.WriteLine($"PASS {checks} real-model AI GUI checks");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--ai-search"])
+            {
+                RunAiSearchPaneScenario(root);
+                RunAiSearchIntegrationScenario(root);
+                Console.WriteLine($"PASS {checks} AI search native checks");
                 return failures == 0 ? 0 : 1;
             }
             if (args is ["--navigation-theme"])
@@ -237,6 +279,8 @@ internal static partial class Program
             RunActivePaneAppearanceScenario(root);
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
+            RunAiSearchPaneScenario(root);
+            RunAiSearchIntegrationScenario(root);
             RunAppearanceScenario(root);
             RunTrayScenario(root);
             RunUpdateScenario(root);
@@ -244,6 +288,7 @@ internal static partial class Program
             RunPdfScenario(root);
             RunTabStripScenario(root);
             RunConvenienceScenario(root);
+            RunBreadcrumbDpiScenario(root, null);
             RunExplorerParityScenario(root);
             RunResizeMetric(root);
         }
@@ -1371,7 +1416,9 @@ internal static partial class Program
             var text = new UiText(language);
             foreach (string key in strings.Keys)
             {
-                string translated = text.T(key, 1, 2, 3);
+                var values = Enumerable.Range(1, System.Text.CompositeFormat.Parse(key).MinimumArgumentCount)
+                    .Select(value => (object)value).ToArray();
+                string translated = text.T(key, values);
                 if (string.IsNullOrWhiteSpace(translated) || (language != "en" && translated == key))
                     throw new InvalidOperationException(language + " missing translation for " + key);
             }

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/FolderSplitter/Search/**/*.cs" Link="Search/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../src/FolderSplitter/AiSearch/**/*.cs" Link="AiSearch/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

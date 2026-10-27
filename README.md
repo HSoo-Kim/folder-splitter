@@ -27,6 +27,11 @@
 
 A Windows file manager built on the native Shell file list (`IExplorerBrowser`). It doesn't modify or replace `explorer.exe` and runs as a separate app.
 
+> **AI feature branch:** This checkout includes an optional conversation-search
+> beta, separate from the stable download above. See [AI search usage, provider
+> prerequisites and privacy](docs/AI-SEARCH.md) before trying **Alt+I**, especially
+> the document-reading mode that sends excerpts to the selected provider.
+
 ## Key Capabilities
 
 | Feature | What it does |

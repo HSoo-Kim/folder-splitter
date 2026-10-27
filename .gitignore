@@ -6,3 +6,4 @@ artifacts/
 *.log
 qa-workspace/
 .omo/
+**/node_modules/

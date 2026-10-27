@@ -183,7 +183,7 @@ public sealed partial class ExplorerPane : UserControl
         navigation.Paint += (_, e) => Theme.PaintField(e.Graphics,
             Rectangle.Inflate(address.Bounds, (int)Math.Round(7 * DeviceDpi / 96d), (int)Math.Round(5 * DeviceDpi / 96d)), address.Focused, DeviceDpi);
         address.GotFocus += (_, _) => navigation.Invalidate();
-        address.LostFocus += (_, _) => navigation.Invalidate();
+        address.LostFocus += (_, _) => { navigation.Invalidate(); ShowBreadcrumb(); };
         // The breadcrumb sits inside the address box and gives way to plain text while it has focus.
         breadcrumb.Dock = DockStyle.Fill;
         breadcrumb.AutoSize = false;
@@ -197,6 +197,11 @@ public sealed partial class ExplorerPane : UserControl
         };
         breadcrumb.SizeChanged += (_, _) => { if (breadcrumb.Visible) FitBreadcrumb(); };
         address.Controls.Add(breadcrumb);
+        // ToolStrip has its own default font rather than inheriting the address font.
+        // Keep both on the same metrics when DPI or the user's text size changes.
+        breadcrumb.Font = address.Font;
+        address.FontChanged += (_, _) => UpdateBreadcrumbMetrics();
+        breadcrumb.DpiChangedAfterParent += (_, _) => UpdateBreadcrumbMetrics();
         address.GotFocus += (_, _) => breadcrumb.Visible = false;
         selectionTimer.Tick += async (_, _) => { selectionTimer.Stop(); await UpdateSelectionSummary(); };
         folderSizeTimer.Tick += async (_, _) => { folderSizeTimer.Stop(); await UpdateFolderSize(); };
@@ -396,6 +401,14 @@ public sealed partial class ExplorerPane : UserControl
             else AddTab(hit.FullPath);
         }
         else SetLocalizedStatus("No longer available: {0}", hit.FullPath);
+    }
+
+    internal void OpenSearchHit(SearchHit hit, bool newTab = false)
+    {
+        if (newTab && (hit.IsDirectory ? Directory.Exists(hit.FullPath) : File.Exists(hit.FullPath)))
+            AddTab(hit.FullPath);
+        else
+            OpenCandidate(hit);
     }
 
     private Button AddButton(TableLayoutPanel row, int column, string glyph, string name, Action action)
@@ -1048,6 +1061,7 @@ public sealed partial class ExplorerPane : UserControl
             if (breadcrumbSegments.Count == 0)
             {
                 breadcrumb.Items.Add(new ToolStripLabel(ActiveView?.DisplayName ?? "") { Margin = new Padding(4, 0, 0, 0) });
+                UpdateBreadcrumbMetrics();
                 return;
             }
             foreach (var (label, path) in breadcrumbSegments)
@@ -1069,6 +1083,28 @@ public sealed partial class ExplorerPane : UserControl
             }
         }
         finally { breadcrumb.ResumeLayout(); }
+        UpdateBreadcrumbMetrics();
+    }
+
+    private void UpdateBreadcrumbMetrics()
+    {
+        breadcrumb.Font = address.Font;
+        // A borderless TextBox fits a text line, but ToolStrip items also reserve
+        // vertical content insets. Let the host fit the strip's preferred height.
+        if (breadcrumb.Items.Count > 0)
+            address.MinimumSize = new Size(0, breadcrumb.Padding.Vertical + breadcrumb.Items.Cast<ToolStripItem>()
+                .Max(item => item.GetPreferredSize(Size.Empty).Height + item.Margin.Vertical));
+        breadcrumb.Height = Math.Max(address.ClientSize.Height, address.MinimumSize.Height);
+        // TextBox.PreferredSize can remain shorter than MinimumSize. Reserve the
+        // real host height in the autosizing row so the painted field is not clipped.
+        if (address.Parent is TableLayoutPanel navigation)
+            navigation.MinimumSize = new Size(0,
+                address.MinimumSize.Height + address.Margin.Vertical + navigation.Padding.Vertical);
+        for (int i = 0; i < breadcrumbGroups.Count; i++)
+        {
+            var items = breadcrumbGroups[i].Items;
+            breadcrumbGroups[i] = (items, items.Sum(item => item.GetPreferredSize(Size.Empty).Width + item.Margin.Horizontal));
+        }
         FitBreadcrumb();
     }
 

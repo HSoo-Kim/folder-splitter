@@ -5,7 +5,7 @@ using QuadExplorer.Search;
 
 namespace QuadExplorer;
 
-public sealed class MainForm : Form, IMessageFilter
+public sealed partial class MainForm : Form, IMessageFilter
 {
     private readonly ToolStripButton undoClose = new CloseHistoryButton(false) { AutoSize = false },
         redoClose = new CloseHistoryButton(true) { AutoSize = false };
@@ -457,6 +457,21 @@ public sealed class MainForm : Form, IMessageFilter
         workspace.Controls.Add(previewPane);
         workspace.Controls.Add(sidebarSplitter);
         workspace.Controls.Add(sidebar);
+        aiSearchSettingsPath = QuadExplorer.AiSearch.AiSearchSettingsStore.PathFor(sessionPath);
+        try { aiSearchSettings = QuadExplorer.AiSearch.AiSearchSettingsStore.Load(aiSearchSettingsPath); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            aiSearchSettings = new QuadExplorer.AiSearch.AiSearchSettings();
+            aiSearchSettingsWarning = error.Message;
+        }
+        aiSearchSession = search is null ? null : new QuadExplorer.AiSearch.AiSearchSession(search, aiSearchSettings);
+        aiSearchPane = new AiSearchPane(text, aiSearchSettings) { Dock = DockStyle.Right, Width = aiSearchSettings.Width };
+        aiSearchSplitter = new Splitter
+        {
+            Dock = DockStyle.Right, Width = 6, MinSize = 320, MinExtra = 260,
+            BackColor = Theme.Border, AccessibleName = "Resize AI search"
+        };
+        InitializeAiSearch(workspace);
         Controls.Add(workspace);
         Controls.Add(footer);
         Controls.Add(toolbar);
@@ -488,6 +503,7 @@ public sealed class MainForm : Form, IMessageFilter
             if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab(remember: false);
             foreach (string folder in folders) Active.AddTab(folder);
             Active.FocusFiles();
+            if (AiSearchVisible) aiSearchPane.FocusComposer();
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
             updateTimer.Enabled = checkUpdates && latestRelease is not null;
             _ = CheckForStaleUpdateAsync();
@@ -588,6 +604,9 @@ public sealed class MainForm : Form, IMessageFilter
         BindText(previewButton, "Preview", "Show / hide preview pane (Alt+P)");
         previewButton.Click += (_, _) => SetPreviewVisible(previewButton.Checked);
         toolbar.Items.Add(previewButton);
+        BindText(aiSearchButton, "AI search", "Show / hide AI search (Alt+I)");
+        aiSearchButton.Click += (_, _) => SetAiSearchVisible(aiSearchButton.Checked);
+        toolbar.Items.Add(aiSearchButton);
         toolbar.Items.Add(new ToolStripSeparator());
         foreach (var (button, name, tip) in new[]
         {
@@ -913,6 +932,7 @@ public sealed class MainForm : Form, IMessageFilter
             pane.ApplyColors();
         }
         previewSplitter.BackColor = Theme.Border;
+        RefreshAiSearchTheme();
         RefreshThemeButton();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
     }
@@ -1055,6 +1075,9 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetPreviewVisible(bool visible)
     {
+        if (visible && AiSearchVisible && aiSearchWindow is null
+            && ClientSize.Width - (sidebar.Visible ? sidebar.Width : 0) - previewPane.Width < 600)
+            SetAiSearchVisible(false);
         showPreview = visible;
         previewPane.Visible = visible;
         previewSplitter.Visible = visible && previewWindow is null;
@@ -1933,6 +1956,15 @@ public sealed class MainForm : Form, IMessageFilter
     public bool PreFilterMessage(ref Message m)
     {
         if (TrackColumnDivider(ref m)) return true;
+        if (IsAiSearchInput(m.HWnd))
+        {
+            if (m.Msg is 0x100 or 0x104 && ((Keys)(int)m.WParam | ModifierKeys) == (Keys.Alt | Keys.I))
+            {
+                SetAiSearchVisible(!aiSearchButton.Checked);
+                return true;
+            }
+            return false;
+        }
         if ((!ContainsFocus && previewWindow?.ContainsFocus != true && !previewWindows.Any(entry => entry.Window.ContainsFocus))
             || tabDragging) return false;
         // Preview windows are owned by this form and always sit above it, so they get the wheel first.
@@ -2235,6 +2267,7 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.D: AddFavorite(Active.CurrentPath); break;
             case Keys.Control | Keys.Shift | Keys.E: SetFolderTreeVisible(!showFolderTree); break;
             case Keys.Alt | Keys.P: SetPreviewVisible(!showPreview); break;
+            case Keys.Alt | Keys.I: SetAiSearchVisible(!aiSearchButton.Checked); break;
             case Keys.Control | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + 1) % Active.TabCount); break;
             case Keys.Control | Keys.Shift | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
@@ -2330,6 +2363,9 @@ public sealed class MainForm : Form, IMessageFilter
             rebuilding = true;
             previewWindow?.Dispose();
             previewWindow = null;
+            aiSearchSession?.Dispose();
+            aiSearchWindow?.Dispose();
+            aiSearchWindow = null;
             Application.RemoveMessageFilter(this);
             saveTimer.Dispose();
             previewTimer.Dispose();
