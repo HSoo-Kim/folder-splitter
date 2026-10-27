@@ -68,6 +68,7 @@ You don't need the full path. Type **any fragment you remember** into the addres
 ![Typing 'shared/monthly' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-en-v0.8.4.png)
 
 - Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
+- Results show the Windows Shell icons for their files and folders.
 - Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first.
 - Local drives are indexed by the app itself, so no separate tool such as Everything is needed. File contents are never read.
 

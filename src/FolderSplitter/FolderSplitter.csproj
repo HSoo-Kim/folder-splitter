@@ -11,7 +11,7 @@
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <AssemblyName>FolderSplitter</AssemblyName>
     <RootNamespace>QuadExplorer</RootNamespace>
-    <Version>0.8.11</Version>
+    <Version>0.8.12</Version>
     <Product>Folder Splitter</Product>
     <Description>A native Windows file manager with independent tabbed panes.</Description>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

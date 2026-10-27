@@ -53,6 +53,12 @@ internal static partial class Program
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--address-icons"])
+            {
+                RunAddressCandidateIconScenario(root);
+                Console.WriteLine($"ADDRESS_ICONS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--breadcrumb-dpi", var breadcrumbOutput])
             {
                 RunBreadcrumbDpiScenario(root, breadcrumbOutput);
@@ -262,6 +268,7 @@ internal static partial class Program
             RunActivePaneAppearanceScenario(root);
             RunLanguageScenario(session, folders);
             RunSearchScenario(root);
+            RunAddressCandidateIconScenario(root);
             RunAppearanceScenario(root);
             RunTrayScenario(root);
             RunUpdateScenario(root);

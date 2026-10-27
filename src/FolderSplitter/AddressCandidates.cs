@@ -10,15 +10,22 @@ internal sealed class AddressCandidates : Form
         DrawMode = DrawMode.OwnerDrawFixed, DisplayMember = nameof(SearchHit.FullPath)
     };
     private readonly ToolTip tips = new();
-    private readonly Font symbols = new(Theme.IconFont, 12);
+    private readonly object iconGate = new();
+    private readonly Dictionary<SearchHit, Bitmap> icons = [];
+    private readonly Func<SearchHit, Bitmap?> loadIcon;
+    private SearchHit[] pendingIcons = [];
+    private int iconGeneration;
+    private bool iconWorkerRunning;
+    private bool iconsDisposed;
     private Form? ownerForm;
     private string? hoveredPath;
     internal event Action<SearchHit>? Chosen;
     internal IReadOnlyList<SearchHit> Hits => rows.Items.OfType<SearchHit>().ToArray();
     internal SearchHit? SelectedHit => rows.SelectedItem as SearchHit;
 
-    internal AddressCandidates(int pane)
+    internal AddressCandidates(int pane, Func<SearchHit, Bitmap?>? loadIcon = null)
     {
+        this.loadIcon = loadIcon ?? AddressShellIcons.Load;
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -68,9 +75,13 @@ internal sealed class AddressCandidates : Form
 
     internal void Present(TextBox address, IReadOnlyList<SearchHit> hits, string? message = null)
     {
+        QueueIcons(message is null ? hits : []);
         rows.BeginUpdate();
         try
         {
+            Font = address.Font;
+            rows.Font = Font;
+            rows.ItemHeight = Math.Max(Scale(42), Font.Height * 2 + Scale(10));
             rows.Items.Clear();
             rows.Enabled = message is null;
             if (message is not null) rows.Items.Add(message);
@@ -79,9 +90,6 @@ internal sealed class AddressCandidates : Form
         }
         finally { rows.EndUpdate(); }
         if (rows.Items.Count == 0) { Hide(); return; }
-        Font = address.Font;
-        rows.Font = Font;
-        rows.ItemHeight = Math.Max(42, Font.Height * 2 + 10);
         Rectangle anchor = address.RectangleToScreen(address.ClientRectangle);
         Rectangle work = Screen.FromControl(address).WorkingArea;
         int width = Math.Min(work.Width, Math.Max(anchor.Width, 560 * address.DeviceDpi / 96));
@@ -110,6 +118,88 @@ internal sealed class AddressCandidates : Form
 
     private void HideOnOwnerChange(object? sender, EventArgs e) => Hide();
 
+    private int Scale(int value) => Math.Max(1, (int)Math.Round(value * DeviceDpi / 96d));
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        rows.ItemHeight = Math.Max(Scale(42), Font.Height * 2 + Scale(10));
+        QueueIcons(Hits);
+        rows.Invalidate();
+    }
+
+    private void QueueIcons(IReadOnlyList<SearchHit> hits)
+    {
+        lock (iconGate)
+        {
+            iconGeneration++;
+            foreach (Bitmap image in icons.Values) image.Dispose();
+            icons.Clear();
+            // The address search backend supplies at most 50 results. Bound memory
+            // even if another caller supplies an unexpectedly large result set.
+            pendingIcons = hits.Take(200).Distinct().ToArray();
+            if (iconsDisposed || iconWorkerRunning || pendingIcons.Length == 0) return;
+            iconWorkerRunning = true;
+            _ = Task.Run(LoadIcons);
+        }
+    }
+
+    private void LoadIcons()
+    {
+        int com = AddressShellIcons.InitializeWorker();
+        try { LoadIconsCore(); }
+        finally { if (com >= 0) AddressShellIcons.UninitializeWorker(); }
+    }
+
+    private void LoadIconsCore()
+    {
+        while (true)
+        {
+            SearchHit[] work;
+            int generation;
+            lock (iconGate)
+            {
+                if (iconsDisposed || pendingIcons.Length == 0)
+                {
+                    iconWorkerRunning = false;
+                    return;
+                }
+                work = pendingIcons;
+                pendingIcons = [];
+                generation = iconGeneration;
+            }
+            foreach (SearchHit hit in work)
+            {
+                lock (iconGate)
+                    if (iconsDisposed || generation != iconGeneration) break;
+                Bitmap? image;
+                try { image = loadIcon(hit); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                    ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or
+                    System.Runtime.InteropServices.ExternalException)
+                { continue; }
+                if (image is null) continue;
+                lock (iconGate)
+                {
+                    if (iconsDisposed || generation != iconGeneration)
+                    {
+                        image.Dispose();
+                        break;
+                    }
+                    icons.Add(hit, image);
+                }
+                try { BeginInvoke(() => { if (!IsDisposed) rows.Invalidate(); }); }
+                catch (InvalidOperationException) { /* Handle destroyed or not yet created. */ }
+            }
+        }
+    }
+
+    // Returns a private copy so diagnostics cannot take ownership of a cached image.
+    internal Bitmap? CopyIcon(SearchHit hit)
+    {
+        lock (iconGate) return icons.TryGetValue(hit, out Bitmap? image) ? (Bitmap)image.Clone() : null;
+    }
+
     private void DrawRow(object? sender, DrawItemEventArgs e)
     {
         if (e.Index < 0) return;
@@ -122,10 +212,14 @@ internal sealed class AddressCandidates : Form
         }
         bool selected = (e.State & DrawItemState.Selected) != 0;
         Color foreground = selected ? SystemColors.HighlightText : Theme.Text;
-        TextRenderer.DrawText(e.Graphics, hit.IsDirectory ? "\uE8B7" : "\uE8A5", symbols,
-            new Rectangle(e.Bounds.Left + 7, e.Bounds.Top, 27, e.Bounds.Height), foreground,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
-        var title = new Rectangle(e.Bounds.Left + 39, e.Bounds.Top + 3, e.Bounds.Width - 46, Font.Height + 2);
+        int iconSize = Scale(20);
+        var iconBounds = new Rectangle(e.Bounds.Left + Scale(7),
+            e.Bounds.Top + (e.Bounds.Height - iconSize) / 2, iconSize, iconSize);
+        lock (iconGate)
+            if (icons.TryGetValue(hit, out Bitmap? image)) e.Graphics.DrawImage(image, iconBounds);
+        int titleLeft = e.Bounds.Left + Scale(39);
+        var title = new Rectangle(titleLeft, e.Bounds.Top + Scale(3),
+            Math.Max(0, e.Bounds.Right - titleLeft - Scale(7)), Font.Height + 2);
         TextRenderer.DrawText(e.Graphics, Path.GetFileName(hit.FullPath.TrimEnd('\\')), Font, title, foreground,
             TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         var path = new Rectangle(title.Left, title.Bottom, title.Width, Font.Height + 2);
@@ -143,8 +237,15 @@ internal sealed class AddressCandidates : Form
                 ownerForm.Move -= HideOnOwnerChange;
                 ownerForm.Resize -= HideOnOwnerChange;
             }
+            lock (iconGate)
+            {
+                iconsDisposed = true;
+                iconGeneration++;
+                pendingIcons = [];
+                foreach (Bitmap image in icons.Values) image.Dispose();
+                icons.Clear();
+            }
             tips.Dispose();
-            symbols.Dispose();
         }
         base.Dispose(disposing);
     }
