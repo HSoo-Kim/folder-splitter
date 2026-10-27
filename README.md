@@ -288,7 +288,7 @@ artifacts/FolderSplitter/FolderSplitter.exe
 artifacts/folder-splitter-<tag>-win-x64.zip
 ```
 
-`<tag>` is `v` followed by the project version, for example `v0.8.13`. Releases also include a byte-identical `folder-splitter-win-x64.zip` for in-app updates from version 0.8.12 and earlier.
+`<tag>` is `v` followed by the project version, for example `v0.8.13`. Each release attaches only this versioned package. Version 0.8.12 and earlier cannot install it in-app and open the release page instead.
 
 ## Project layout
 

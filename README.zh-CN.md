@@ -288,7 +288,7 @@ artifacts/FolderSplitter/FolderSplitter.exe
 artifacts/folder-splitter-<tag>-win-x64.zip
 ```
 
-`<tag>` 为项目版本前加 `v`，例如 `v0.8.13`。发布版本还包含字节完全相同的 `folder-splitter-win-x64.zip`，供 0.8.12 及更早版本进行应用内更新。
+`<tag>` 为项目版本前加 `v`，例如 `v0.8.13`。每个发布版本只附带这个带版本号的包；0.8.12 及更早版本无法在应用内自动安装，会改为打开发布页面。
 
 ## 项目结构
 

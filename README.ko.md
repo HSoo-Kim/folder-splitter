@@ -288,7 +288,7 @@ artifacts/FolderSplitter/FolderSplitter.exe
 artifacts/folder-splitter-<tag>-win-x64.zip
 ```
 
-`<tag>`는 프로젝트 버전 앞에 `v`를 붙인 값입니다(예: `v0.8.13`). 릴리즈에는 0.8.12 이하 버전의 앱 내 업데이트를 위해 바이트가 동일한 `folder-splitter-win-x64.zip`도 포함합니다.
+`<tag>`는 프로젝트 버전 앞에 `v`를 붙인 값입니다(예: `v0.8.13`). 릴리즈에는 이 버전별 파일만 첨부합니다. 0.8.12 이하 앱은 앱 안에서 자동 설치하지 못하고 릴리즈 페이지를 엽니다.
 
 ## 구성
 
