@@ -40,7 +40,11 @@ public sealed record SearchPlan(
     string? Clarification);
 
 public sealed record AiHit(string FullPath, bool IsDirectory, long? Bytes, DateTime? ModifiedUtc);
-public sealed record AiSearchResult(SearchPlan Plan, IReadOnlyList<AiHit> Hits, int Examined, bool Truncated, string? Note);
+public sealed record AiSearchResult(SearchPlan Plan, IReadOnlyList<AiHit> Hits, int Examined, bool Truncated, string? Note)
+{
+    // Preserves each filename refinement and its scope for safe bounded requery.
+    internal IReadOnlyList<(SearchPlan Plan, IReadOnlyList<string> Roots)>? RefinementHistory { get; init; }
+}
 public sealed record ChatTurn(ChatRole Role, string Text, AiSearchResult? Result = null,
     string? ProviderLabel = null, string? Error = null, TimeSpan? Elapsed = null,
     DocumentSearchResult? DocumentResult = null, AiContextUsage? ContextUsage = null);
@@ -50,7 +54,10 @@ public sealed record AiContextUsage(long InputTokens, long? ContextWindow, strin
 }
 public sealed record AiModelDescriptor(AiProviderKind Provider, string Id, string DisplayName,
     IReadOnlyList<string> ReasoningEfforts, bool Available = false, string? UnavailableReason = null,
-    long? ContextWindow = null);
+    long? ContextWindow = null)
+{
+    public string? Endpoint { get; init; }
+}
 public sealed record ProviderProbe(bool Ok, string Detail, IReadOnlyList<string> Models, TimeSpan Elapsed)
 {
     public IReadOnlyList<AiModelDescriptor> ModelDescriptors { get; init; } = [];

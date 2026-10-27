@@ -31,6 +31,8 @@ public sealed partial class MainForm
         aiSearchPane.ResetRequested = () => aiSearchSession?.Reset();
         aiSearchPane.Probe = AiSearchSession.ProbeAsync;
         aiSearchPane.ListModels = AiSearchSession.ListModelsAsync;
+        aiSearchPane.DocumentTargetChanged += path =>
+            aiSearchSession?.SetDocumentTargets(path is null ? [] : [path]);
         if (aiSearchSession is not null)
             aiSearchSession.DocumentProgress += (_, progress) =>
             {

@@ -60,20 +60,30 @@ this branch does not publish a stable release or change the stable update feed.
   does not guarantee that the signed-in account can use it. Reasoning choices
   depend on the selected model.
 - Choose **Find by name** or **Search contents**, enter a request, and refine it in
-  later messages. Switching modes starts a separate conversation.
-- Results can be shown in the active pane, opened normally, opened in a new tab or
-  pane, or previewed. Document answers include source paths, locators and supporting
-  quotations. Select/copy transcript text separately from file-result cards.
-- **New chat** clears the conversation; the send control can stop a pending request.
+  later messages. Switching modes keeps the visible conversation, draft, and sent-message
+  recall. Each mode keeps its own bounded search context: messages, paths, and excerpts
+  from document search are not passed to filename search, or vice versa. Repeat
+  relevant details when changing modes; older visible messages may fall outside the
+  recent context used for a new request.
+- File results appear as separate cards with the filename above its folder; hover a
+  file to see its full path. Results can be shown in the active pane, opened normally,
+  opened in a new tab or pane, or previewed. Choose **Search contents** on a file
+  result to select it for a document question; the selection is shown above the
+  input and can be cleared. Selecting a file does not read or send it. A question
+  must be submitted first. Previous document sources can be used for follow-up
+  questions in that mode. Document answers include source paths, locators and
+  supporting quotations. Transcript text can be selected/copied separately.
+- **New chat** clears the conversation and both modes' context while keeping an unsent
+  draft; the send control can stop a pending request.
   The panel can be resized, detached into a window, and docked again.
 
 ### Providers and prerequisites
 
 | Provider | Requirements and transport |
 |---|---|
-| Local model | An already-running OpenAI-compatible loopback server with `/models` and `/chat/completions`. Default: `http://127.0.0.1:11434/v1`. Select an installed model; the app does not download or start models. Non-loopback endpoints, embedded credentials and redirects are rejected. |
-| Claude subscription | An installed, signed-in Claude CLI. The app locates the executable or accepts its explicit path. Requests use an isolated temporary working/configuration directory, copying the existing subscription credential rather than user plugins, history or project instructions. Tools, MCP, hooks and session persistence are disabled for these requests. |
-| ChatGPT subscription | An existing Codex ChatGPT login (`CODEX_HOME/auth.json`, otherwise the user's `.codex/auth.json`). Model discovery and requests use HTTPS to the ChatGPT Codex backend directly, not an agent CLI run. API-key logins are rejected; expired credentials must be refreshed in Codex. |
+| Local model | An already-running OpenAI-compatible loopback server with `/models` and `/chat/completions`. The model list checks the configured endpoint plus Ollama (`http://127.0.0.1:11434/v1`) and LM Studio (`http://127.0.0.1:1234/v1`). Each model remains tied to its server. The app does not download or start models. Non-loopback endpoints, embedded credentials and redirects are rejected. |
+| Claude subscription | An installed Claude CLI. When the app detects a signed-out account, **Login** opens the CLI's interactive login window; it never logs in automatically. The app locates the executable or accepts its explicit path. Requests use an isolated temporary working/configuration directory, copying the existing subscription credential rather than user plugins, history or project instructions. Tools, MCP, hooks and session persistence are disabled for these requests. |
+| ChatGPT subscription | A Codex ChatGPT login (`CODEX_HOME/auth.json`, otherwise the user's `.codex/auth.json`). When login is required, **Login** opens the installed Codex CLI's interactive login window. Model discovery and requests use HTTPS to the ChatGPT Codex backend directly, not an agent CLI run. API-key logins are rejected. |
 
 Subscription access, account limits, CLI switches and backend compatibility may
 change. This beta is not an official integration or a promise that any particular
@@ -87,12 +97,17 @@ into a validated plan. Absolute paths in that planning context are redacted; the
 app does not send file-result paths or read document bodies for this mode. The
 existing filename index supplies real candidates, and the app applies name,
 extension, item-kind, folder-scope, date and size filters locally. It examines at
-most 2,000 candidates and returns at most 200 results; narrow a limited search.
-The filename index must be ready.
+most 2,000 candidates and returns at most 200 results. Refining a truncated search
+requeries within the earlier scope and filters instead of restricting the follow-up
+to the first 200 results; narrow a still-limited search. The filename index must be ready.
 
 **Search contents** investigates on demand: the app searches names, lists candidate
-folders and reads selected candidate documents. It is not a permanent full-text
-index and cannot prove that the whole disk contains no matching information.
+folders and can scan document contents within the current visible folders, folder
+paths explicitly supplied in the conversation and their observed subfolders. A
+folder outside those roots is not scanned; open it in a pane or provide its full
+path to authorize it. The app reads relevant portions of selected candidate
+documents. It is not a permanent full-text index and cannot prove that the whole
+disk contains no matching information.
 Candidate paths, file metadata, bounded document excerpts, supporting quotations
 and conversation context can be sent to the selected provider. **With a
 subscription provider, that information leaves the computer.** Do not use this
@@ -100,19 +115,41 @@ mode for sensitive files unless that provider's handling is acceptable to you.
 Using a loopback endpoint does not control the local server's own logging or
 network behavior.
 
-Each contents request has a three-minute limit, at most 16 model actions, eight
-folder listings, eight document reads, 256 candidates and 48,000 excerpt
-characters. Each listing returns at most 128 immediate entries. Each file is
-limited to 20 MB, 12 excerpts and 12,000 characters by default. Unsupported,
-failed, truncated or limited reads are reported as incomplete coverage, not as
-an exhaustive no-match. The model proposes read-only actions over observed IDs;
-the app validates actions and exact citation quotations. It does not execute
-model-generated shell commands or edit source documents.
+Each contents request has a three-minute limit, at most 16 model planning calls,
+32 actions, four content scans, eight folder listings, eight document reads,
+256 candidates and 48,000 excerpt characters. The model may batch up to eight
+independent actions per planning call; local actions are performed in order.
+Each scan is limited to 200 supported files, 4,000 directory entries, 64 matches,
+eight levels and 60 seconds. Drive roots, network folders and reparse-point
+traversal are excluded from content scans. Each listing returns at most 128
+immediate entries; each file is limited to 20 MiB, 12 excerpts and 12,000
+characters by default. Unsupported, failed, truncated or limited reads are
+reported as incomplete coverage, not as an exhaustive no-match.
 
-Text formats are TXT, Markdown, CSV and LOG. The bundled parser handles PDF,
-HWP/HWPX/HML, DOCX, PPTX and XLS/XLSX. OCR is disabled: image-only/scanned documents
-may have no readable text. Locators distinguish real pages/slides/sheets from
-approximate sections or unpaginated text. See the
+The model proposes read-only actions over observed IDs; the app validates actions.
+Each citation must come from the document text the app read. Differences in line
+breaks, spacing (including words split by text extraction), table and list markup,
+bullet symbols, quotation marks, dashes or letter case are tolerated and the
+original passage is shown, but changed words or numbers are not. A passage is
+matched to the excerpt it actually appears in, even if the model named another
+source. A citation that cannot be found is rejected and the model may correct it
+twice; after that the answer is withheld and the excerpts the app read are shown
+instead of an error. The
+app then asks the model to check answer claims against the quoted evidence. That
+verification includes whether the user explicitly selected a quoted document, but
+not its path. Obvious conflicting dates and quantities are also checked locally.
+If parts of an answer are unsupported, the model may rewrite it once. If the answer
+still cannot be verified, it is withheld and the exact read excerpts remain visible
+for inspection. These checks reduce unsupported answers but cannot guarantee their
+correctness. The app does not execute model-generated shell commands or edit source
+documents.
+
+Text formats are TXT, Markdown, CSV and LOG. Relevant text can be found beyond
+the beginning of a text file; PDF scans cover up to 128 pages. Other formats can
+have more limited coverage. The bundled parser handles PDF, HWP/HWPX/HML, DOCX,
+PPTX and XLS/XLSX. OCR is disabled: image-only/scanned documents may have no
+readable text. Locators distinguish real pages/slides/sheets from approximate
+sections or unpaginated text. See the
 [parser packaging and redistribution notes](tools/DocumentParser/README.md).
 
 ### Persistence and context display

@@ -18,7 +18,13 @@ internal static partial class Program
     private static async Task<int> Main(string[] args)
     {
         if (args is ["--document-parser", var parserDirectory])
-            return await BundledDocumentReader(parserDirectory);
+        {
+            int result = await BundledDocumentReader(parserDirectory);
+            if (result != 0) return result;
+            await ContentDiscoveryChecks.BundledAsync(parserDirectory);
+            Console.WriteLine("BUNDLED_LATE_DOCUMENT_PASS");
+            return 0;
+        }
         if (args is ["--subscription-smoke"])
             return await SubscriptionSmoke();
         if (args.Length >= 2 && args[0] == "debug" && args[1] == "models")
@@ -51,6 +57,7 @@ internal static partial class Program
             ("real files, OR groups and metadata", FileFiltering),
             ("scope boundaries and literal AND queries", ScopedSearch),
             ("refinement only narrows real previous hits", Refinement),
+            ("truncated refinements recover omitted hits without widening scope", TruncatedRefinement),
             ("clarification and index readiness", Readiness),
             ("bounded results and stale index entries", ResultLimits),
             ("real independent search index integration", RealIndex),
@@ -63,12 +70,26 @@ internal static partial class Program
             ("document action schema rejects fabricated authority", DocumentActions),
             ("document citations require actual exact evidence", DocumentCitations),
             ("document folder-path continuation accepts spaces", DocumentContinuation),
+            ("quotations tolerate formatting but never changed words", CitationFormatting),
+            ("rejected citations get a bounded exact-quote retry", CitationRetry),
+            ("unsupported answer parts get one repair attempt before the evidence fallback", VerificationRetry),
+            ("quotations survive extraction artifacts but not changed numbers", CitationExtractedText),
+            ("mislabeled citation sources are matched to the excerpt actually quoted", CitationSourceMislabeled),
             ("filename mode reads zero bodies and mode contexts stay separate", DocumentModeIsolation),
             ("document cancellation reset settings and generation isolation", DocumentCancellation),
+            ("mode switches cancel only pending turns and reject stale completions", ModeSwitchCancellation),
+            ("visible transcript remains complete with bounded mode contexts", ModeContextBounds),
             ("document candidate listing action and read limits", DocumentBounds),
             ("document parser failures and empty evidence remain honest", DocumentFailures),
             ("document boundary rejects redirected and stale files", DocumentPathBoundary),
+            ("batched scoped content discovery", DocumentBatchesAndDiscovery),
+            ("content scans stay within authorized folders and their descendants", DocumentContentScope),
+            ("contradictory document answers are not published", DocumentContradiction),
+            ("document follow-ups and explicit targets", DocumentFollowupTargets),
             ("document parser adapter", DocumentReaderAdapter),
+            ("bounded local content discovery and relevant excerpts", ContentDiscoveryChecks.RunAsync),
+            ("claims verified against quoted evidence", DocumentVerificationChecks),
+            ("local model discovery and explicit login", ProviderAccessChecks),
             ("settings persistence contains settings only", SettingsRoundtrip),
             ("filename prompt persistence normalization and bounds", FilenamePromptSettings),
             ("reasoning settings validation and capability boundaries", ReasoningSettings),
@@ -393,6 +414,39 @@ internal static partial class Program
         Check(result.Hits.Select(hit => hit.FullPath).SequenceEqual([second]));
         Check(backend.Queries.Count == 1);
         await Throws<InvalidOperationException>(() => search.RunAsync(Plan with { Refine = true }, null, [], default));
+    }
+
+    private static async Task TruncatedRefinement()
+    {
+        string root = Folder("truncated-refinement");
+        string other = Folder("truncated-refinement-other");
+        var files = new List<string>();
+        for (int i = 0; i < 205; i++)
+            files.Add(FileAt(root, $"report-{i:D3}.txt"));
+        for (int i = 0; i < 205; i++)
+            files.Add(FileAt(root, $"report-{i:D3}.pdf"));
+        string target = FileAt(root, "report-eligible.pdf", 30);
+        files.Add(target);
+        files.Add(FileAt(root, "eligible.pdf", 30));
+        files.Add(FileAt(other, "report-eligible.pdf", 30));
+        using var backend = new Backend(files);
+        var search = new ConversationalSearch(backend);
+        var initialPlan = Plan with { Kind = ItemKind.File, Scope = SearchScope.ActiveFolder };
+        var initial = await search.RunAsync(initialPlan, null, [root], default);
+        Check(initial.Truncated && initial.Hits.Count == 200 && !initial.Hits.Any(hit => hit.FullPath == target));
+        var pdfs = await search.RunAsync(initialPlan with
+        {
+            Refine = true, Scope = SearchScope.Everywhere, Extensions = ["pdf"]
+        }, initial, [other], default);
+        Check(pdfs.Truncated && pdfs.Hits.Count == 200 && !pdfs.Hits.Any(hit => hit.FullPath == target));
+        var narrowed = await search.RunAsync(initialPlan with
+        {
+            Refine = true, Scope = SearchScope.Everywhere, AllTerms = ["eligible"], MinBytes = 20
+        }, pdfs, [other], default);
+        Check(narrowed.Hits.Select(hit => hit.FullPath).SequenceEqual([target]) && !narrowed.Truncated);
+        Check(backend.Queries[^1].Contains("\"report\"", StringComparison.Ordinal)
+            && backend.Queries[^1].Contains("\"eligible\"", StringComparison.Ordinal)
+            && backend.Queries[^1].Contains("\".pdf\"", StringComparison.Ordinal));
     }
 
     private static async Task Readiness()

@@ -73,8 +73,8 @@ public sealed class CodexSubscriptionTransport : IModelTransport, IDisposable
             await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token).ConfigureAwait(false);
             using var reader = new StreamReader(stream, Encoding.UTF8);
             var text = new StringBuilder();
-            int received = 0;
-            bool completed = false;
+            int received = 0, activeOutput = -1;
+            bool completed = false, activeIsFinal = false;
             AiContextUsage? contextUsage = null;
             while (await reader.ReadLineAsync(deadline.Token).ConfigureAwait(false) is { } line)
             {
@@ -92,14 +92,54 @@ public sealed class CodexSubscriptionTransport : IModelTransport, IDisposable
                     throw new InvalidDataException("ChatGPT returned a tool call to a model-only request.");
                 switch (type)
                 {
+                    case "response.output_item.added":
+                    case "response.output_item.done":
+                        if (value.TryGetProperty("output_index", out var itemIndex) && itemIndex.TryGetInt32(out var index))
+                        {
+                            if (index < 0) throw new InvalidDataException("ChatGPT returned an invalid output index.");
+                            if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("type", out var messageType)
+                                && messageType.GetString() == "message" && item.TryGetProperty("phase", out var phase)
+                                && phase.GetString() == "final_answer" && (!activeIsFinal || index > activeOutput))
+                            {
+                                if (activeOutput != index) text.Clear();
+                                activeOutput = index;
+                                activeIsFinal = true;
+                            }
+                            if (type == "response.output_item.done" && index == activeOutput
+                                && ReadMessageText(item) is { } finishedText)
+                            {
+                                text.Clear();
+                                text.Append(finishedText);
+                            }
+                        }
+                        break;
                     case "response.output_text.delta":
+                        if (value.TryGetProperty("output_index", out var textIndex) && textIndex.TryGetInt32(out var outputIndex))
+                        {
+                            if (outputIndex < 0) throw new InvalidDataException("ChatGPT returned an invalid output index.");
+                            if (activeOutput < 0 || (!activeIsFinal && outputIndex > activeOutput))
+                            {
+                                text.Clear();
+                                activeOutput = outputIndex;
+                            }
+                            if (outputIndex != activeOutput) break;
+                        }
+                        else if (activeOutput >= 0)
+                            throw new InvalidDataException("ChatGPT returned an unidentifiable output message.");
                         text.Append(value.GetProperty("delta").GetString());
                         if (text.Length > 131072) throw new InvalidDataException("ChatGPT text exceeds the size limit.");
                         break;
                     case "response.completed":
                         completed = true;
                         if (value.TryGetProperty("response", out var result))
+                        {
                             contextUsage = ContextUsageReader.Read(result, AiProviderKind.CodexCli, settings.Model);
+                            if (result.TryGetProperty("output", out var output) && ReadFinalOutput(output) is { } finalText)
+                            {
+                                text.Clear();
+                                text.Append(finalText);
+                            }
+                        }
                         break;
                     case "error":
                     case "response.failed":
@@ -107,16 +147,56 @@ public sealed class CodexSubscriptionTransport : IModelTransport, IDisposable
                         throw new InvalidOperationException("ChatGPT did not complete the response. Check model access and subscription limits.");
                 }
             }
-            if (!completed || string.IsNullOrWhiteSpace(text.ToString()))
+            var responseText = text.ToString();
+            if (!completed || string.IsNullOrWhiteSpace(responseText))
                 throw new InvalidDataException("ChatGPT returned an incomplete or empty response.");
             usage.Complete(generation, contextUsage, token);
-            return text.ToString();
+            return responseText;
         }
         catch (OperationCanceledException error) when (!token.IsCancellationRequested)
         {
             throw new TimeoutException("ChatGPT did not respond within 75 seconds.", error);
         }
         catch (JsonException error) { throw new InvalidDataException("ChatGPT returned malformed response data.", error); }
+    }
+
+    private static string? ReadFinalOutput(JsonElement output)
+    {
+        if (output.ValueKind != JsonValueKind.Array) return null;
+        JsonElement selected = default;
+        bool finalSelected = false;
+        foreach (var item in output.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("type", out var type)) continue;
+            string? kind = type.GetString();
+            if (kind?.Contains("call", StringComparison.Ordinal) == true)
+                throw new InvalidDataException("ChatGPT returned a tool call to a model-only request.");
+            if (kind != "message" || item.TryGetProperty("role", out var role) && role.GetString() != "assistant") continue;
+            bool isFinal = item.TryGetProperty("phase", out var phase) && phase.GetString() == "final_answer";
+            if (finalSelected && !isFinal) continue;
+            selected = item;
+            finalSelected = isFinal;
+        }
+        return ReadMessageText(selected);
+    }
+
+    private static string? ReadMessageText(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("type", out var type)
+            || type.GetString() != "message" || !item.TryGetProperty("content", out var parts)
+            || parts.ValueKind != JsonValueKind.Array) return null;
+        var text = new StringBuilder();
+        bool found = false;
+        foreach (var part in parts.EnumerateArray())
+        {
+            if (part.ValueKind != JsonValueKind.Object || !part.TryGetProperty("type", out var partType)
+                || partType.GetString() != "output_text" || !part.TryGetProperty("text", out var value)
+                || value.ValueKind != JsonValueKind.String) continue;
+            found = true;
+            text.Append(value.GetString());
+            if (text.Length > 131072) throw new InvalidDataException("ChatGPT text exceeds the size limit.");
+        }
+        return found ? text.ToString() : null;
     }
 
     public async Task<ProviderProbe> ProbeAsync(CancellationToken token)

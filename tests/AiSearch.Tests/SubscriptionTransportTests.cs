@@ -54,6 +54,51 @@ internal static partial class Program
             """{"type":"object","properties":{"command":{"type":"object"}},"required":["command"],"additionalProperties":false}""",
             default)).Contains("\"command\"", StringComparison.Ordinal));
 
+        const string streamedMessages =
+            "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"phase\":\"commentary\"}}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"{\\\"command\\\":{\\\"action\\\":\\\"ask\\\",\\\"question\\\":\\\"draft\\\"}}\"}\n\n"
+            + "data: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"type\":\"message\",\"phase\":\"final_answer\"}}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"output_index\":1,\"delta\":\"{\\\"command\\\":{\\\"action\\\":\\\"read\\\",\"}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"output_index\":1,\"delta\":\"\\\"targetId\\\":\\\"f1\\\"}}\"}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"output_index\":2,\"delta\":\"later commentary\"}\n\n"
+            + "data: {\"type\":\"response.completed\"}\n\n";
+        using (var multiClient = new HttpClient(new Handler((_, _) => Task.FromResult(Response(streamedMessages)))))
+        using (var multi = new CodexSubscriptionTransport(settings, multiClient, authPath))
+        {
+            string final = await multi.CompleteJsonAsync("system", "user", "{}", default);
+            using var parsed = JsonDocument.Parse(final);
+            Check(parsed.RootElement.GetProperty("command").GetProperty("action").GetString() == "read"
+                && parsed.RootElement.GetProperty("command").GetProperty("targetId").GetString() == "f1");
+        }
+        const string noPhases =
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"draft\"}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"output_index\":1,\"delta\":\"final\"}\n\n"
+            + "data: {\"type\":\"response.completed\"}\n\n";
+        using (var multiClient = new HttpClient(new Handler((_, _) => Task.FromResult(Response(noPhases)))))
+        using (var multi = new CodexSubscriptionTransport(settings, multiClient, authPath))
+            Check(await multi.CompleteAsync("system", "user", default) == "final");
+
+        static string Frame(object value) => "data: " + JsonSerializer.Serialize(value) + "\n\n";
+        const string finalAction = """{"command":{"action":"read","targetId":"f1"}}""";
+        var completedMessage = new
+        {
+            type = "message", role = "assistant", phase = "final_answer",
+            content = new[] { new { type = "output_text", text = finalAction } }
+        };
+        string repeatedDeltas =
+            Frame(new { type = "response.output_item.added", output_index = 1, item = new { type = "message", phase = "final_answer" } })
+            + Frame(new { type = "response.output_text.delta", output_index = 1, delta = finalAction })
+            + Frame(new { type = "response.output_text.delta", output_index = 1, delta = finalAction })
+            + Frame(new { type = "response.output_item.done", output_index = 1, item = completedMessage })
+            + Frame(new { type = "response.completed", response = new { output = new[] { completedMessage } } });
+        using (var multiClient = new HttpClient(new Handler((_, _) => Task.FromResult(Response(repeatedDeltas)))))
+        using (var multi = new CodexSubscriptionTransport(settings, multiClient, authPath))
+        {
+            string final = await multi.CompleteJsonAsync("system", "user", "{}", default);
+            using var parsed = JsonDocument.Parse(final);
+            Check(parsed.RootElement.GetProperty("command").GetProperty("targetId").GetString() == "f1");
+        }
+
         foreach (string invalid in new[]
         {
             "data: {broken}\n",

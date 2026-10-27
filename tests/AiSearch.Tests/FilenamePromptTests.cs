@@ -98,7 +98,7 @@ internal static partial class Program
         Check(!transport.Contexts[0].Contains("BODY_MUST_NOT_BE_READ", StringComparison.Ordinal));
 
         session.Settings = session.Settings with { Mode = AiSearchMode.ReadDocuments };
-        Check(session.Turns.Count == 0);
+        Check(session.Turns.Count == 2);
         Check((await session.SubmitAsync("Read facts", [root]))?.DocumentResult?.Sources.Single().FullPath == file);
         foreach (var raw in transport.Contexts.Skip(1))
         {
@@ -122,8 +122,8 @@ internal static partial class Program
         using (var context = JsonDocument.Parse(transport.Contexts[4]))
         {
             Check(context.RootElement.GetProperty("personalInstructions").GetString() == "UPDATED_PREFERENCE");
-            Check(context.RootElement.GetProperty("previousPlan").ValueKind == JsonValueKind.Null);
-            Check(context.RootElement.GetProperty("userTurns").GetArrayLength() == 1);
+            Check(context.RootElement.GetProperty("previousPlan").ValueKind == JsonValueKind.Object);
+            Check(context.RootElement.GetProperty("userTurns").GetArrayLength() == 2);
         }
         Check(reader.Paths.SequenceEqual([file]));
         Check(!transport.Contexts[4].Contains("BODY_MUST_NOT_BE_READ", StringComparison.Ordinal));

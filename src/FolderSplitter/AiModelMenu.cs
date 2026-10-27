@@ -10,6 +10,8 @@ internal sealed class AiModelMenu : ContextMenuStrip
     internal event Action<string>? EffortSelected;
     internal event EventHandler? SettingsRequested;
     internal event EventHandler? RefreshRequested;
+    internal event Action<AiProviderKind>? LoginRequested;
+    internal string? SelectedEndpoint { get; private set; }
 
     internal AiModelMenu(UiText text)
     {
@@ -21,7 +23,7 @@ internal sealed class AiModelMenu : ContextMenuStrip
     }
 
     internal void Populate(AiSearchSettings settings, IReadOnlyList<AiModelDescriptor> choices,
-        IReadOnlyList<string> efforts, bool loading)
+        IReadOnlyList<string> efforts, bool loading, IReadOnlyDictionary<AiProviderKind, string?>? logins = null)
     {
         foreach (ToolStripItem item in Items.Cast<ToolStripItem>().ToArray()) item.Dispose();
         Items.Clear();
@@ -40,18 +42,40 @@ internal sealed class AiModelMenu : ContextMenuStrip
                 ForeColor = Theme.Muted, Padding = new Padding(pad, pad, pad, pad / 2),
                 AccessibleName = label
             });
+            if (logins is not null && logins.TryGetValue(provider.Key, out var loginProblem))
+            {
+                var login = new ToolStripMenuItem($"{text.T("Login")} · {label}"
+                    + (loginProblem is null ? "" : $" · {text.T("CLI not found; open settings")}"))
+                {
+                    Enabled = !loading && loginProblem is null,
+                    AccessibleName = $"{text.T("Login")} {label}",
+                    AccessibleDescription = loginProblem ?? text.T("Open the provider's interactive login window."),
+                    ToolTipText = loginProblem ?? text.T("Open the provider's interactive login window."),
+                    Padding = new Padding(0, pad, 0, pad)
+                };
+                login.Click += (_, _) => { Close(); LoginRequested?.Invoke(provider.Key); };
+                Items.Add(login);
+            }
             foreach (var choice in provider)
             {
                 var item = new ToolStripMenuItem(choice.DisplayName)
                 {
-                    Checked = choice.Provider == settings.Provider && choice.Id == settings.Model,
+                    Checked = choice.Provider == settings.Provider && choice.Id == settings.Model
+                        && (choice.Provider != AiProviderKind.LocalEndpoint
+                            || string.Equals(choice.Endpoint, settings.Endpoint, StringComparison.OrdinalIgnoreCase)),
                     Enabled = choice.Available,
                     Padding = new Padding(0, pad, 0, pad),
-                    ToolTipText = choice.Available ? choice.Id : choice.UnavailableReason ?? choice.Id,
-                    AccessibleName = $"Model {choice.Provider}:{choice.Id}",
+                    ToolTipText = choice.Available ? choice.Endpoint ?? choice.Id : choice.UnavailableReason ?? choice.Id,
+                    AccessibleName = $"Model {choice.Provider}:{choice.Id} {choice.Endpoint}",
                     Tag = choice
                 };
-                item.Click += (_, _) => { Close(); ModelSelected?.Invoke(choice.Provider, choice.Id); };
+                item.Click += (_, _) =>
+                {
+                    Close();
+                    SelectedEndpoint = choice.Endpoint;
+                    try { ModelSelected?.Invoke(choice.Provider, choice.Id); }
+                    finally { SelectedEndpoint = null; }
+                };
                 Items.Add(item);
             }
         }

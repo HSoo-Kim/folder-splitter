@@ -1,9 +1,10 @@
 using System.ComponentModel;
+using System.Globalization;
 using QuadExplorer.AiSearch;
 
 namespace QuadExplorer;
 
-internal enum AiHitAction { ShowInPane, Open, NewTab, NewPane, Preview }
+internal enum AiHitAction { ShowInPane, Open, NewTab, NewPane, Preview, SearchContents }
 
 internal sealed partial class AiSearchPane : Panel
 {
@@ -31,10 +32,13 @@ internal sealed partial class AiSearchPane : Panel
         AccessibleName = "Last request context usage"
     };
     private readonly System.Windows.Forms.Timer progressTimer = new() { Interval = 100 };
-    private readonly Button send, newChat, configure, detach, example;
+    private readonly Button send, newChat, configure, detach, example, selectedDocument;
     private readonly ContextMenuStrip conversationMenu = new();
     private readonly ToolTip tips = new();
     private readonly List<(Control Control, bool Right)> transcriptRows = [];
+    private string? selectedDocumentPath;
+    private Button? copyConversationButton;
+    private int renderedTurns;
     private Font? iconFont;
     private Point? dragStart;
     private int generation;
@@ -73,6 +77,11 @@ internal sealed partial class AiSearchPane : Panel
             composer.SelectionStart = composer.TextLength;
             FocusComposer();
         }, quiet: true);
+        selectedDocument = Theme.Button("", "Clear selected file", () => SetDocumentTarget(null), quiet: true);
+        selectedDocument.Dock = DockStyle.None;
+        selectedDocument.AutoEllipsis = true;
+        selectedDocument.TextAlign = ContentAlignment.MiddleLeft;
+        selectedDocument.Visible = false;
         foreach (var button in new[] { newChat, configure, detach, send, example, modelButton }) button.Dock = DockStyle.None;
         example.TextAlign = ContentAlignment.MiddleLeft;
         header.Controls.AddRange([title, newChat, configure, detach]);
@@ -104,7 +113,7 @@ internal sealed partial class AiSearchPane : Panel
         modePicker.TabIndex = 1;
         modelButton.TabIndex = 2;
         send.TabIndex = 3;
-        footer.Controls.AddRange([field, hint, contextMeter]);
+        footer.Controls.AddRange([field, selectedDocument, hint, contextMeter]);
         layout.Controls.AddRange([header, help, transcript, footer]);
         Controls.Add(layout);
         composer.SendRequested = () => { if (!Busy) _ = SendAsync(); };
@@ -158,6 +167,7 @@ internal sealed partial class AiSearchPane : Panel
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Func<AiSearchSettings, CancellationToken, Task<ProviderProbe>>? ListModels { get; set; }
     internal event Action<AiHit, AiHitAction>? OpenRequested;
+    internal event Action<string?>? DocumentTargetChanged;
     internal event Action<Point>? DragRequested;
     internal event EventHandler? DetachRequested;
     internal event Action<AiSearchSettings>? SettingsChanged;
@@ -208,7 +218,9 @@ internal sealed partial class AiSearchPane : Panel
         ArrangeChrome();
     }
 
-    internal void RefreshLanguage()
+    internal void RefreshLanguage() => RefreshLanguage(rebuildTranscript: true);
+
+    private void RefreshLanguage(bool rebuildTranscript)
     {
         title.Text = text.T("AI search · Beta");
         instruction.Text = text.T("Describe it naturally");
@@ -226,9 +238,10 @@ internal sealed partial class AiSearchPane : Panel
         modePicker.Items.AddRange([text.T("Find by name"), text.T("Search contents")]);
         modePicker.SelectedIndex = settings.Mode == AiSearchMode.ReadDocuments ? 1 : 0;
         RefreshModelButton();
+        RefreshDocumentTarget();
         hint.Text = text.T(hintKey);
         UpdateContextMeter();
-        RebuildTranscript();
+        if (rebuildTranscript) RebuildTranscript();
         UpdateSendButton();
         ArrangeChrome();
     }
@@ -253,16 +266,18 @@ internal sealed partial class AiSearchPane : Panel
         field.BackColor = Theme.Canvas;
         foreach (var row in transcriptRows)
         {
-            if (row.Control is TranscriptMessage message)
-            {
-                message.BackColor = Theme.Surface;
-                message.Body.BackColor = message.IsUser ? Theme.Selected : Theme.Surface;
-                message.Body.ForeColor = (message.Body.Tag as string) switch { "error" => Theme.ErrorText, "muted" => Theme.Muted, _ => Theme.Text };
-            }
+            if (row.Control is TranscriptMessage message) ApplyMessageColors(message);
             if (row.Control is FileResultGroup group) group.ApplyColors();
         }
         field.Invalidate();
         sheet.Invalidate(true);
+    }
+
+    private static void ApplyMessageColors(TranscriptMessage message)
+    {
+        message.BackColor = Theme.Surface;
+        message.Body.BackColor = message.IsUser ? Theme.Selected : Theme.Surface;
+        message.Body.ForeColor = (message.Body.Tag as string) switch { "error" => Theme.ErrorText, "muted" => Theme.Muted, _ => Theme.Text };
     }
 
     protected override void OnFontChanged(EventArgs e)
@@ -336,9 +351,12 @@ internal sealed partial class AiSearchPane : Panel
             string provider = text.T("Provider") + ": " + (settings.Provider == AiProviderKind.LocalEndpoint
                 ? text.T("Local endpoint") : settings.Provider == AiProviderKind.ClaudeCli ? "Claude CLI" : "Codex CLI");
             tips.SetToolTip(modelButton, text.T("Model") + " · " + provider + " · " + settings.Model);
-            tips.SetToolTip(modePicker, text.T(documents
-                ? "Selected AI receives relevant body excerpts. No permanent body index." : "AI: name/folder/ext → real index"));
-            tips.SetToolTip(composer, text.T("Up / Down recalls sent messages at the first / last line. New chat or changing mode clears recall, not your draft."));
+            string modeDescription = text.T(documents
+                ? "Selected AI receives relevant body excerpts. No permanent body index." : "AI: name/folder/ext → real index")
+                + Environment.NewLine + text.T("Chat kept · context separated by mode.");
+            tips.SetToolTip(modePicker, modeDescription);
+            modePicker.AccessibleDescription = modeDescription;
+            tips.SetToolTip(composer, text.T("Up / Down recalls sent messages at the first / last line. New chat clears recall, not your draft."));
             example.Visible = !compact;
             if (!compact)
             {
@@ -351,15 +369,27 @@ internal sealed partial class AiSearchPane : Panel
                 : compact ? "Find proposal PDF files" : "Describe a file, or refine your last search…");
             help.SetBounds(0, header.Bottom, width, y);
             bool showHint = !compact || Busy || hintKey != "AI chat is kept only while this window is open.";
-            hint.Visible = showHint;
             int hintHeight = showHint ? (compact ? Math.Min(Measure(hint), Font.Height) : Measure(hint)) + Space(1) : 0;
+            int targetHeight = selectedDocumentPath is not null ? buttonSize + Space(1) : 0;
             int meterHeight = contextMeter.Visible ? Font.Height + Space(1) : 0;
             int composerHeight = Font.Height * (compact ? 2 : 3) + inset * 2 + ComposerToolbar(contentWidth).Height + gap;
-            int footerHeight = composerHeight + hintHeight + meterHeight + gap * 2;
+            int footerHeight = composerHeight + targetHeight + hintHeight + meterHeight + gap * 2;
+            // Preserve room to read the conversation at large text sizes; the selected-file chip
+            // already conveys this nonessential hint, while progress and error hints remain visible.
+            if (showHint && selectedDocumentPath is not null && !Busy
+                && hintKey == "Selected file is ready. Enter a question; nothing has been sent."
+                && layout.ClientSize.Height - help.Bottom - footerHeight < Font.Height * 2)
+            {
+                showHint = false;
+                footerHeight -= hintHeight;
+                hintHeight = 0;
+            }
+            hint.Visible = showHint;
             footer.SetBounds(0, Math.Max(help.Bottom, layout.ClientSize.Height - footerHeight), width, footerHeight);
             field.SetBounds(inset, gap, contentWidth, composerHeight);
-            hint.SetBounds(inset, field.Bottom + Space(1), contentWidth,
-                showHint ? Math.Max(hint.PreferredHeight, hintHeight - Space(1)) : 0);
+            selectedDocument.SetBounds(inset, field.Bottom + Space(1), contentWidth, Math.Max(0, targetHeight - Space(1)));
+            int hintTop = selectedDocumentPath is not null ? selectedDocument.Bottom + Space(1) : field.Bottom + Space(1);
+            hint.SetBounds(inset, hintTop, contentWidth, showHint ? Math.Max(hint.PreferredHeight, hintHeight - Space(1)) : 0);
             contextMeter.SetBounds(inset, hint.Bottom, contentWidth, meterHeight);
             transcript.SetBounds(0, help.Bottom, width, Math.Max(1, footer.Top - help.Bottom));
             ArrangeComposer();
@@ -449,10 +479,9 @@ internal sealed partial class AiSearchPane : Panel
         int request = ++generation;
         Busy = true;
         turns.Add(new ChatTurn(ChatRole.User, message));
-        TrimTurns();
         SetHint(settings.Mode == AiSearchMode.ReadDocuments
             ? "Finding relevant documents → reading excerpts…" : "Understanding your request → searching the file index…");
-        RebuildTranscript();
+        AppendNewTurns();
         UpdateSendButton();
         StateChanged?.Invoke(this, EventArgs.Empty);
         try
@@ -460,7 +489,6 @@ internal sealed partial class AiSearchPane : Panel
             ChatTurn? reply = await submit(message);
             if (IsDisposed || request != generation) return;
             if (reply is not null) turns.Add(reply);
-            TrimTurns();
             hintKey = reply?.Error is not null ? "Search failed. Check provider, endpoint and model in settings."
                 : reply?.Result is { Hits.Count: 0, Plan.Clarification: null } ? "No matching indexed files. Try fewer terms or another folder."
                 : "AI chat is kept only while this window is open.";
@@ -474,7 +502,6 @@ internal sealed partial class AiSearchPane : Panel
         {
             if (IsDisposed || request != generation) return;
             turns.Add(new ChatTurn(ChatRole.Assistant, "", Error: error.Message));
-            TrimTurns();
             hintKey = "Search failed. Check provider, endpoint and model in settings.";
         }
         finally
@@ -485,7 +512,7 @@ internal sealed partial class AiSearchPane : Panel
                 hint.Text = text.T(hintKey);
                 UpdateContextMeter();
                 ArrangeChrome();
-                RebuildTranscript();
+                AppendNewTurns();
                 UpdateSendButton();
                 StateChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -508,6 +535,8 @@ internal sealed partial class AiSearchPane : Panel
         Cancel();
         generation++;
         turns.Clear();
+        selectedDocumentPath = null;
+        RefreshDocumentTarget();
         UpdateContextMeter();
         composer.ResetHistory();
         ResetRequested?.Invoke();
@@ -543,69 +572,92 @@ internal sealed partial class AiSearchPane : Panel
         contextMeter.AccessibleDescription = detail;
     }
 
-    private void TrimTurns()
-    {
-        if (turns.Count > 10) turns.RemoveRange(0, turns.Count - 10);
-    }
 
     private void RebuildTranscript()
     {
         sheet.SuspendLayout();
         foreach (Control control in sheet.Controls.Cast<Control>().ToArray()) control.Dispose();
         transcriptRows.Clear();
+        copyConversationButton = null;
+        renderedTurns = 0;
         if (turns.Count == 0)
-        {
             AddText(text.T(settings.Mode == AiSearchMode.ReadDocuments
                 ? "Ask a question about your documents. Only relevant excerpts are read for this request."
                 : "Results come from your file index. Ask a follow-up to narrow them down."), false, muted: true);
-        }
-        foreach (ChatTurn turn in turns)
-        {
-            if (turn.Text.Length > 0 && (turn.Role == ChatRole.User
-                || turn.Result?.Plan.Clarification is not null || turn.Result is null && turn.Error is null))
-                AddText(turn.Text, turn.Role == ChatRole.User);
-            if (turn.Error is { Length: > 0 } error) AddText(text.T("Provider error: {0}", error), false, error: true);
-            if (turn.DocumentResult is { } documents)
-            {
-                var coverage = documents.Coverage;
-                AddText(text.T("Checked {0} folders · read {1} files · failed {2}",
-                    coverage.FoldersListed, coverage.FilesRead, coverage.FailedReads), false, muted: true);
-                if (documents.Sources.Count > 0)
-                    AddHits(documents.Sources.DistinctBy(source => source.FullPath, StringComparer.OrdinalIgnoreCase)
-                        .Select(source => new AiHit(source.FullPath, false, null, null)).ToArray(), indexed: false, documents.Sources);
-                if (coverage.Limited)
-                    AddText(text.T("Only part of the search scope was checked. Provide a candidate folder to continue."), false, muted: true);
-                foreach (var note in coverage.Notes)
-                    AddText(note == "Bounded investigation only; unread files and folders may contain additional evidence."
-                        ? text.T("Only the listed files and folders were checked.") : note, false, muted: true);
-                continue;
-            }
-            if (turn.Result is not { } result || result.Plan.Clarification is not null) continue;
-            var conditions = result.Plan.AllTerms.Concat(result.Plan.Extensions)
-                .Concat(result.Plan.AnyOf.Select(group => string.Join(" | ", group))).ToArray();
-            if (conditions.Length > 0)
-                AddText(text.T("Search conditions: {0}", string.Join(" · ", conditions)), false, muted: true);
-            if (result.Hits.Count == 0)
-                AddText(text.T("No matching indexed files. Try fewer terms or another folder."), false, muted: true);
-            else
-            {
-                AddHits(result.Hits);
-            }
-            if (result.Truncated) AddText(text.T("More results exist. Refine your search."), false, muted: true);
-            if (result.Note is { Length: > 0 } resultNote) AddText(resultNote, false, muted: true);
-        }
-        if (turns.Count > 0)
-        {
-            var copy = Theme.Button(text.T("Copy conversation"), "Copy conversation", CopyConversation, quiet: true);
-            copy.Dock = DockStyle.None;
-            copy.AccessibleName = text.T("Copy conversation");
-            sheet.Controls.Add(copy);
-            transcriptRows.Add((copy, false));
-        }
+        else
+            AppendNewTurns();
         sheet.ResumeLayout(false);
         ArrangeTranscript();
         ApplyColors();
+        ScrollTranscriptToEnd();
+    }
+
+    private void AppendNewTurns()
+    {
+        if (renderedTurns == turns.Count) return;
+        sheet.SuspendLayout();
+        if (renderedTurns == 0)
+        {
+            foreach (Control control in sheet.Controls.Cast<Control>().ToArray()) control.Dispose();
+            transcriptRows.Clear();
+        }
+        else
+            transcriptRows.RemoveAt(transcriptRows.Count - 1);
+        for (int i = renderedTurns; i < turns.Count; i++) AddTurn(turns[i]);
+        renderedTurns = turns.Count;
+        if (copyConversationButton is null)
+        {
+            copyConversationButton = Theme.Button(text.T("Copy conversation"), "Copy conversation", CopyConversation, quiet: true);
+            copyConversationButton.Dock = DockStyle.None;
+            copyConversationButton.AccessibleName = text.T("Copy conversation");
+            sheet.Controls.Add(copyConversationButton);
+        }
+        transcriptRows.Add((copyConversationButton, false));
+        sheet.ResumeLayout(false);
+        ArrangeTranscript();
+        ScrollTranscriptToEnd();
+    }
+
+    private void ScrollTranscriptToEnd() =>
         transcript.AutoScrollPosition = new Point(0, Math.Max(0, sheet.Height - transcript.ClientSize.Height));
+
+    private void AddTurn(ChatTurn turn)
+    {
+        bool unverified = turn.DocumentResult?.Question == DocumentSearch.UnverifiedEvidenceMessage;
+        if (!unverified && turn.Text.Length > 0 && (turn.Role == ChatRole.User
+            || turn.Result?.Plan.Clarification is not null || turn.Result is null && turn.Error is null))
+            AddText(turn.DocumentResult?.Question is { } question
+                && question.StartsWith(DocumentSearch.OutsideContentScopeMessage, StringComparison.Ordinal)
+                ? text.T(DocumentSearch.OutsideContentScopeMessage) + question[DocumentSearch.OutsideContentScopeMessage.Length..]
+                : turn.Text, turn.Role == ChatRole.User);
+        if (turn.Error is { Length: > 0 } error) AddText(text.T("Provider error: {0}", error), false, error: true);
+        if (turn.DocumentResult is { } documents)
+        {
+            var coverage = documents.Coverage;
+            AddText(text.T("Checked {0} folders · read {1} files · failed {2}",
+                coverage.FoldersListed, coverage.FilesRead, coverage.FailedReads), false, muted: true);
+            if (documents.Sources.Count > 0)
+                AddHits(documents.Sources.DistinctBy(source => source.FullPath, StringComparer.OrdinalIgnoreCase)
+                    .Select(source => new AiHit(source.FullPath, false, null, null)).ToArray(), indexed: false, documents.Sources,
+                    unverified: unverified);
+            if (coverage.Limited)
+                AddText(text.T("Only part of the search scope was checked. Provide a candidate folder to continue."), false, muted: true);
+            foreach (var note in coverage.Notes)
+                AddText(note == "Bounded investigation only; unread files and folders may contain additional evidence."
+                    ? text.T("Only the listed files and folders were checked.") : note, false, muted: true);
+            return;
+        }
+        if (turn.Result is not { } result || result.Plan.Clarification is not null) return;
+        var conditions = result.Plan.AllTerms.Concat(result.Plan.Extensions)
+            .Concat(result.Plan.AnyOf.Select(group => string.Join(" | ", group))).ToArray();
+        if (conditions.Length > 0)
+            AddText(text.T("Search conditions: {0}", string.Join(" · ", conditions)), false, muted: true);
+        if (result.Hits.Count == 0)
+            AddText(text.T("No matching indexed files. Try fewer terms or another folder."), false, muted: true);
+        else
+            AddHits(result.Hits);
+        if (result.Truncated) AddText(text.T("More results exist. Refine your search."), false, muted: true);
+        if (result.Note is { Length: > 0 } resultNote) AddText(resultNote, false, muted: true);
     }
 
     private void AddText(string value, bool right, bool error = false, bool muted = false)
@@ -617,6 +669,7 @@ internal sealed partial class AiSearchPane : Panel
         AddTextMenu(message.Body);
         sheet.Controls.Add(message);
         transcriptRows.Add((message, right));
+        ApplyMessageColors(message);
     }
 
     private void AddTextMenu(TranscriptTextBox body)
@@ -648,17 +701,43 @@ internal sealed partial class AiSearchPane : Panel
         if (parts.Count > 0) CopyText(string.Join(Environment.NewLine + Environment.NewLine, parts));
     }
 
-    private void AddHits(IReadOnlyList<AiHit> hits, bool indexed = true, IReadOnlyList<DocumentSourceReference>? sources = null)
+    private void AddHits(IReadOnlyList<AiHit> hits, bool indexed = true, IReadOnlyList<DocumentSourceReference>? sources = null,
+        bool unverified = false)
     {
-        var list = new ListView
+        var list = new ResultListView
         {
             View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false,
-            BorderStyle = BorderStyle.None, Scrollable = false, ShowItemToolTips = true,
+            HeaderStyle = ColumnHeaderStyle.None, BorderStyle = BorderStyle.None, Scrollable = false, ShowItemToolTips = true,
             AccessibleName = text.T(indexed ? "Indexed file results" : "Document sources"), UseCompatibleStateImageBehavior = false, OwnerDraw = true
         };
         list.Columns.Add(text.T("Name"));
         list.Columns.Add(text.T("Folder"));
         list.Columns.Add(text.T("Type"));
+        var rowImages = new ImageList { ColorDepth = ColorDepth.Depth32Bit };
+        var abbreviatedNames = new Dictionary<int, (int Width, string Text)>();
+        Font nameFont = new(list.Font, FontStyle.Bold);
+        void ResizeRows()
+        {
+            int height = Math.Clamp(nameFont.Height + list.Font.Height + Space(3), 1, 256);
+            if (rowImages.ImageSize != new Size(1, height))
+            {
+                list.SmallImageList = null;
+                rowImages.ImageSize = new Size(1, height);
+                list.SmallImageList = rowImages;
+            }
+            if (list.Parent?.Parent is not null) ArrangeTranscript();
+        }
+        list.FontChanged += (_, _) =>
+        {
+            abbreviatedNames.Clear();
+            Font previous = nameFont;
+            nameFont = new Font(list.Font, FontStyle.Bold);
+            if (list.Parent is FileResultGroup group) group.Heading.Font = nameFont;
+            previous.Dispose();
+            ResizeRows();
+        };
+        list.DpiChangedAfterParent += (_, _) => { abbreviatedNames.Clear(); ResizeRows(); };
+        ResizeRows();
         int hoveredIndex = -1;
         void SetHover(int index)
         {
@@ -671,30 +750,37 @@ internal sealed partial class AiSearchPane : Panel
         }
         list.MouseMove += (_, e) => SetHover(list.GetItemAt(e.X, e.Y)?.Index ?? -1);
         list.MouseLeave += (_, _) => SetHover(-1);
-        list.DrawColumnHeader += (_, e) =>
-        {
-            using var back = new SolidBrush(Theme.Canvas);
-            e.Graphics.FillRectangle(back, e.Bounds);
-            TextRenderer.DrawText(e.Graphics, e.Header?.Text ?? "", list.Font, e.Bounds, Theme.Muted,
-                TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        };
         list.DrawSubItem += (_, e) =>
         {
-            using var back = new SolidBrush(e.Item?.Selected == true ? Theme.Selected
-                : e.Item?.Index == hoveredIndex ? Theme.Hover : Theme.Canvas);
+            if (e.ColumnIndex != 0 || e.Item is null) return;
+            using var back = new SolidBrush(e.Item.Selected ? Theme.Selected
+                : e.Item.Index == hoveredIndex ? Theme.Hover : Theme.Surface);
             e.Graphics.FillRectangle(back, e.Bounds);
-            Rectangle bounds = e.Bounds;
-            if (e.ColumnIndex == 0)
+            int inset = Space(2), iconWidth = Math.Max(list.Font.Height, Space(4));
+            var icon = new Rectangle(e.Bounds.Left + inset, e.Bounds.Top, iconWidth, e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, e.Item.Tag is AiHit { IsDirectory: true } ? "\uE8B7" : "\uE8A5",
+                iconFont, icon, Theme.Muted, TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            int x = icon.Right + inset;
+            int available = Math.Max(1, e.Bounds.Right - x - inset);
+            int textHeight = nameFont.Height + list.Font.Height;
+            int top = e.Bounds.Top + Math.Max(0, (e.Bounds.Height - textHeight) / 2);
+            if (!abbreviatedNames.TryGetValue(e.Item.Index, out var abbreviated) || abbreviated.Width != available)
             {
-                int cueWidth = Font.Height + Space(1);
-                TextRenderer.DrawText(e.Graphics, e.Item?.Tag is AiHit { IsDirectory: true } ? "\uE8B7" : "\uE8A5",
-                    iconFont, new Rectangle(bounds.X, bounds.Y, cueWidth, bounds.Height), Theme.Muted,
-                    TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-                bounds.X += cueWidth;
-                bounds.Width = Math.Max(1, bounds.Width - cueWidth);
+                abbreviated = (available, AbbreviateFileName(e.Graphics, e.Item.Text, nameFont, available));
+                abbreviatedNames[e.Item.Index] = abbreviated;
             }
-            TextRenderer.DrawText(e.Graphics, e.SubItem?.Text ?? "", list.Font, bounds, Theme.Text,
-                TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(e.Graphics, abbreviated.Text, nameFont, new Rectangle(x, top, available, nameFont.Height), Theme.Text,
+                TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(e.Graphics, e.Item.SubItems[1].Text, list.Font,
+                new Rectangle(x, top + nameFont.Height, available, list.Font.Height), Theme.Muted,
+                TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.PathEllipsis | TextFormatFlags.NoPrefix);
+            if (e.Item.Index < list.Items.Count - 1)
+            {
+                using var separator = new Pen(Theme.Border);
+                e.Graphics.DrawLine(separator, x, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+            }
+            if (e.Item.Focused && list.Focused)
+                ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(e.Bounds, -1, -1), Theme.Text, Theme.Selected);
         };
         foreach (AiHit hit in hits)
         {
@@ -706,7 +792,21 @@ internal sealed partial class AiSearchPane : Panel
         }
         void Open(AiHitAction action)
         {
-            if (list.SelectedItems.Count == 1 && list.SelectedItems[0].Tag is AiHit hit) OpenRequested?.Invoke(hit, action);
+            if (list.SelectedItems.Count != 1 || list.SelectedItems[0].Tag is not AiHit hit) return;
+            if (action == AiHitAction.SearchContents)
+            {
+                if (hit.IsDirectory) return;
+                if (!DocumentSearch.IsEligibleFile(hit.FullPath)) { SetHint("Selected file is no longer available."); return; }
+                if (settings.Mode != AiSearchMode.ReadDocuments)
+                {
+                    modePicker.SelectedIndex = 1;
+                    SaveMode();
+                }
+                SetDocumentTarget(hit.FullPath);
+                SetHint("Selected file is ready. Enter a question; nothing has been sent.");
+                FocusComposer();
+            }
+            else OpenRequested?.Invoke(hit, action);
         }
         list.DoubleClick += (_, _) => Open(AiHitAction.ShowInPane);
         list.KeyDown += (_, e) =>
@@ -721,7 +821,7 @@ internal sealed partial class AiSearchPane : Panel
         {
             ("Open", AiHitAction.Open), ("Open in current pane", AiHitAction.ShowInPane),
             ("Open in new tab", AiHitAction.NewTab), ("Open in new pane", AiHitAction.NewPane),
-            ("Preview", AiHitAction.Preview)
+            ("Preview", AiHitAction.Preview), ("Search contents of this file", AiHitAction.SearchContents)
         })
         {
             string caption = action switch
@@ -733,28 +833,40 @@ internal sealed partial class AiSearchPane : Panel
             };
             var button = Theme.Button(text.T(caption), key, () => Open(action), quiet: true);
             button.Dock = DockStyle.None;
+            button.Tag = action;
             button.Margin = new Padding(0, 0, Space(2), Space(1));
             button.Enabled = false;
             tips.SetToolTip(button, text.T(key));
             actions.Controls.Add(button);
-            menu.Items.Add(text.T(key), null, (_, _) => Open(action));
+            var menuItem = menu.Items.Add(text.T(key), null, (_, _) => Open(action));
+            menuItem.Tag = action;
         }
         list.SelectedIndexChanged += (_, _) =>
         {
-            foreach (Control button in actions.Controls) button.Enabled = list.SelectedItems.Count == 1;
+            bool selectedFile = list.SelectedItems.Count == 1 && list.SelectedItems[0].Tag is AiHit { IsDirectory: false };
+            foreach (Control button in actions.Controls)
+                button.Enabled = list.SelectedItems.Count == 1 && (button.Tag is not AiHitAction.SearchContents || selectedFile);
+            if (list.SelectedItems.Count != 1) return;
+            Rectangle row = list.RectangleToScreen(list.SelectedItems[0].Bounds);
+            Rectangle viewport = transcript.RectangleToScreen(transcript.ClientRectangle);
+            int delta = row.Top < viewport.Top ? row.Top - viewport.Top : row.Bottom > viewport.Bottom ? row.Bottom - viewport.Bottom : 0;
+            if (delta != 0) transcript.AutoScrollPosition = new Point(0, Math.Max(0, -transcript.AutoScrollPosition.Y + delta));
         };
         menu.Opening += (_, _) =>
         {
-            foreach (ToolStripItem item in menu.Items) item.Enabled = list.SelectedItems.Count == 1;
+            bool selectedFile = list.SelectedItems.Count == 1 && list.SelectedItems[0].Tag is AiHit { IsDirectory: false };
+            foreach (ToolStripItem item in menu.Items)
+                item.Enabled = list.SelectedItems.Count == 1 && (item.Tag is not AiHitAction.SearchContents || selectedFile);
         };
         list.ContextMenuStrip = menu;
-        list.Disposed += (_, _) => menu.Dispose();
+        list.Disposed += (_, _) => { menu.Dispose(); rowImages.Dispose(); nameFont.Dispose(); };
         var group = new FileResultGroup(list, actions)
         {
             AccessibleName = text.T(indexed ? "Indexed file results" : "Document sources")
         };
-        group.Heading.Text = text.T(indexed ? "{0} files found" : "Sources · {0} files", hits.Count);
-        group.Hint.Text = text.T("Click to select · double-click to open");
+        group.Heading.Font = nameFont;
+        group.Heading.Text = text.T(indexed ? "{0} files found" : unverified ? "Unverified answer · {0} files" : "Sources · {0} files", hits.Count);
+        group.Hint.Text = text.T(unverified ? "Check the excerpts below." : "Click to select · double-click to open");
         list.AccessibleDescription = text.T("Click a file to select it. Double-click to open it here.");
         if (sources is not null)
         {
@@ -772,6 +884,28 @@ internal sealed partial class AiSearchPane : Panel
         }
         sheet.Controls.Add(group);
         transcriptRows.Add((group, false));
+        group.ApplyColors();
+    }
+
+    private static string AbbreviateFileName(IDeviceContext context, string name, Font font, int width)
+    {
+        const TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+        int Measure(string value) => TextRenderer.MeasureText(context, value, font, new Size(int.MaxValue, int.MaxValue), flags).Width;
+        if (Measure(name) <= width) return name;
+        int[] elements = StringInfo.ParseCombiningCharacters(name);
+        string best = "…";
+        int low = 0, high = elements.Length - 1;
+        while (low <= high)
+        {
+            int count = low + (high - low) / 2;
+            int left = (count + 1) / 2, right = count / 2;
+            int leftEnd = left == elements.Length ? name.Length : elements[left];
+            int rightStart = right == 0 ? name.Length : elements[elements.Length - right];
+            string candidate = string.Concat(name.AsSpan(0, leftEnd), "…", name.AsSpan(rightStart));
+            if (Measure(candidate) <= width) { best = candidate; low = count + 1; }
+            else high = count - 1;
+        }
+        return best;
     }
 
     private void ArrangeTranscript()
@@ -811,17 +945,25 @@ internal sealed partial class AiSearchPane : Panel
 
     private void ShowSettings()
     {
-        using var dialog = new AiSearchSettingsDialog(text, settings) { Font = Font, Probe = Probe };
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
-        Cancel();
-        modelListGeneration++;
-        modelListCancellation?.Cancel();
-        modelListCancellation = null;
-        listingModels = false;
-        discoveredModels.Clear();
-        settings = dialog.Settings;
-        SettingsChanged?.Invoke(settings);
-        RefreshLanguage();
+        using var dialog = new AiSearchSettingsDialog(text, settings)
+        {
+            Font = Font, Probe = ListModels ?? Probe, AuthenticationStatus = AuthenticationStatus,
+            LoginProvider = LoginProvider, ResolveLogin = ResolveLogin
+        };
+        if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
+        {
+            Cancel();
+            modelListGeneration++;
+            modelListCancellation?.Cancel();
+            modelListCancellation = null;
+            listingModels = false;
+            discoveredModels.Clear();
+            providerLogins.Clear();
+            settings = dialog.Settings;
+            SettingsChanged?.Invoke(settings);
+            RefreshLanguage();
+        }
+        if (dialog.LoginCompleted && !IsDisposed) PendingModelList = RefreshModelsAsync(includeSubscriptions: true);
     }
 
 
@@ -835,14 +977,31 @@ internal sealed partial class AiSearchPane : Panel
         modelListCancellation?.Cancel();
         modelListCancellation = null;
         listingModels = false;
-        turns.Clear();
-        composer.ResetHistory();
-        ResetRequested?.Invoke();
         settings = settings with { Mode = mode };
         SettingsChanged?.Invoke(settings);
-        hintKey = "AI chat is kept only while this window is open.";
-        RefreshLanguage();
+        hintKey = "Chat kept · context separated by mode.";
+        RefreshLanguage(rebuildTranscript: turns.Count == 0);
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SetDocumentTarget(string? path)
+    {
+        Cancel();
+        selectedDocumentPath = path;
+        DocumentTargetChanged?.Invoke(path);
+        RefreshDocumentTarget();
+        if (path is null) SetHint("AI chat is kept only while this window is open.");
+        else ArrangeChrome();
+    }
+
+    private void RefreshDocumentTarget()
+    {
+        selectedDocument.Visible = selectedDocumentPath is not null;
+        selectedDocument.AccessibleName = text.T("Clear selected file");
+        selectedDocument.AccessibleDescription = selectedDocumentPath;
+        if (selectedDocumentPath is null) return;
+        selectedDocument.Text = $"{text.T("Clear selected file")} · {Path.GetFileName(selectedDocumentPath)}";
+        tips.SetToolTip(selectedDocument, selectedDocumentPath);
     }
 
     protected override void Dispose(bool disposing)
@@ -859,6 +1018,24 @@ internal sealed partial class AiSearchPane : Panel
             iconFont?.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    private sealed class ResultListView : ListView
+    {
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x20A)
+            {
+                Control? owner = Parent;
+                while (owner is not null && owner is not ScrollableControl { AutoScroll: true }) owner = owner.Parent;
+                if (owner is ScrollableControl { AutoScroll: true })
+                {
+                    NativeSendMessage(owner.Handle, m.Msg, m.WParam, m.LParam);
+                    return;
+                }
+            }
+            base.WndProc(ref m);
+        }
     }
 
     private sealed class TranscriptTextBox : RichTextBox
@@ -957,7 +1134,8 @@ internal sealed partial class AiSearchPane : Panel
         internal void ApplyColors()
         {
             BackColor = Theme.Surface;
-            Heading.BackColor = Hint.BackColor = List.BackColor = Actions.BackColor = Theme.Canvas;
+            Heading.BackColor = Hint.BackColor = Actions.BackColor = Theme.Canvas;
+            List.BackColor = Theme.Surface;
             Heading.ForeColor = Theme.Text;
             Hint.ForeColor = Theme.Muted;
             foreach (var body in Evidence)
@@ -975,15 +1153,13 @@ internal sealed partial class AiSearchPane : Panel
             Heading.SetBounds(inset, inset, inner, Heading.GetPreferredSize(new Size(inner, 0)).Height);
             Hint.SetBounds(inset, Heading.Bottom + gap / 2, inner, Hint.GetPreferredSize(new Size(inner, 0)).Height);
             int y = Hint.Bottom + gap;
-            foreach (var body in Evidence)
-            {
-                body.SetBounds(inset, y, inner, body.MeasureHeight(inner));
-                y = body.Bottom + gap;
-            }
-            List.SetBounds(inset, y, inner, (Font.Height + gap) * List.Items.Count + Font.Height + gap * 2);
-            List.Columns[0].Width = inner / 2;
-            List.Columns[1].Width = inner * 3 / 10;
-            List.Columns[2].Width = Math.Max(1, inner - List.Columns[0].Width - List.Columns[1].Width);
+            List.Columns[0].Width = inner;
+            List.Columns[1].Width = 0;
+            List.Columns[2].Width = 0;
+            _ = List.Handle;
+            Rectangle first = List.Items.Count > 0 ? List.Items[0].Bounds : Rectangle.Empty;
+            int rowHeight = Math.Max(first.Height, Font.Height * 2);
+            List.SetBounds(inset, y, inner, Math.Max(1, first.Top + rowHeight * List.Items.Count + 1));
             Actions.SetBounds(inset, List.Bottom + gap, inner, 0);
             foreach (Control button in Actions.Controls)
             {
@@ -992,7 +1168,14 @@ internal sealed partial class AiSearchPane : Panel
             }
             Actions.PerformLayout();
             Actions.Height = Actions.Controls.Cast<Control>().Select(button => button.Bottom + button.Margin.Bottom).DefaultIfEmpty(0).Max();
-            return Actions.Bottom + inset;
+            y = Actions.Bottom;
+            foreach (var body in Evidence)
+            {
+                y += gap;
+                body.SetBounds(inset, y, inner, body.MeasureHeight(inner));
+                y = body.Bottom;
+            }
+            return y + inset;
         }
 
         protected override void OnPaint(PaintEventArgs e)

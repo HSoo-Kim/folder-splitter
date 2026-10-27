@@ -63,16 +63,15 @@ internal static partial class Program
                         CaptureAiControl(host, Path.Combine(output, $"ai-{mode}-{language}-{points}-minimum.png"));
                     CheckAiPaneGeometry(pane, name + "/360x420");
                     host.ClientSize = AtDpi(520, 640);
-                    int modelLookups = 0;
                     AiSearchSettings? changed = null;
                     pane.SettingsChanged += value => changed = value;
                     var modelList = new TaskCompletionSource<ProviderProbe>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    pane.ListModels = (_, _) => { modelLookups++; return modelList.Task; };
+                    pane.ListModels = (_, _) => modelList.Task;
                     Task loadingModels = pane.RefreshModelsAsync();
                     pane.SelectModel(AiProviderKind.LocalEndpoint, "gpt-oss:20b");
                     modelList.SetResult(new ProviderProbe(true, "", ["gpt-oss:20b", "local-model"], TimeSpan.Zero));
                     await loadingModels.WaitAsync(TimeSpan.FromSeconds(5));
-                    Check(modelLookups == 1 && pane.CurrentSettings.Model == "gpt-oss:20b"
+                    Check(pane.CurrentSettings.Model == "gpt-oss:20b"
                         && pane.DiscoveredModels.Any(model => model.Id == "local-model"),
                         name + " model discovery lists provider models without replacing the user's selection");
                     Check(changed?.Model == "gpt-oss:20b" && pane.ReasoningChoices.Count > 1,
@@ -151,9 +150,21 @@ internal static partial class Program
                         name + " unknown context capacity shows measured input without a fabricated percentage");
                     if (output is { Length: > 0 })
                         CaptureAiControl(host, Path.Combine(output, $"ai-{mode}-{language}-{points}-clarification.png"));
-                    var hit = new AiHit(Path.Combine(root, "proposal.pdf"), false, 42, null);
+                    string firstFolder = Path.Combine(root, "result-folder-alpha");
+                    string secondFolder = Path.Combine(root, "result-folder-beta");
+                    Directory.CreateDirectory(firstFolder);
+                    Directory.CreateDirectory(secondFolder);
+                    const string longName = "proposal-with-a-very-long-and-similar-filename-for-testing-selection-and-accessibility.pdf";
+                    string[] paths =
+                    [
+                        Path.Combine(firstFolder, longName),
+                        Path.Combine(secondFolder, longName),
+                        Path.Combine(secondFolder, "proposal-with-a-very-long-and-similar-filename-for-testing-selection-and-accessibility-revised.pdf")
+                    ];
+                    foreach (string path in paths) File.WriteAllText(path, "actual result file");
+                    AiHit[] hits = paths.Select(path => new AiHit(path, false, 42, null)).ToArray();
                     pane.Submit = message => Task.FromResult<ChatTurn?>(new ChatTurn(ChatRole.Assistant,
-                        "A model-mentioned nonexistent.pdf is not a result.", new AiSearchResult(plan, [hit], 1, false, null),
+                        "A model-mentioned nonexistent.pdf is not a result.", new AiSearchResult(plan, hits, hits.Length, false, null),
                         ContextUsage: new AiContextUsage(231_200, 272_000, "local-model")
                         { Provider = AiProviderKind.LocalEndpoint }));
                     pane.Composer.Text = "proposal";
@@ -162,8 +173,17 @@ internal static partial class Program
                         && pane.ContextMeter.AccessibleDescription?.Length > 0,
                         name + " near-limit context shows a visible non-destructive warning");
                     ListView list = Descendants(pane).OfType<ListView>().Single();
-                    Check(list.Items.Count == 1 && Equals(list.Items[0].Tag, hit) && list.Columns.Count == 3 && !list.Scrollable,
-                        name + " renders only real result hits with name folder type and no nested scroll");
+                    Check(list.Items.Count == hits.Length && !list.Scrollable && list.ShowItemToolTips,
+                        name + " renders only real result hits in a native list without nested scrolling");
+                    foreach (AiHit expectedHit in hits)
+                    {
+                        ListViewItem item = list.Items.Cast<ListViewItem>().Single(value => Equals(value.Tag, expectedHit));
+                        Check(File.Exists(expectedHit.FullPath) && item.Text == Path.GetFileName(expectedHit.FullPath)
+                            && item.SubItems.Cast<ListViewItem.ListViewSubItem>().Any(part => part.Text == Path.GetDirectoryName(expectedHit.FullPath))
+                            && item.SubItems.Cast<ListViewItem.ListViewSubItem>().Any(part => part.Text == Path.GetExtension(expectedHit.FullPath))
+                            && item.ToolTipText == expectedHit.FullPath,
+                            name + " each real result retains its exact filename, folder, hit and full-path tooltip");
+                    }
                     Rectangle fileRow = list.Items[0].Bounds;
                     typeof(Control).GetMethod("OnMouseMove", BindingFlags.Instance | BindingFlags.NonPublic)!
                         .Invoke(list, [new MouseEventArgs(MouseButtons.None, 0, fileRow.Left + 2, fileRow.Top + 2, 0)]);
@@ -175,32 +195,24 @@ internal static partial class Program
                         .Invoke(list, [EventArgs.Empty]);
                     Check(list.Cursor == Cursors.Default,
                         name + " pointer affordance clears outside a file row");
-                    var opened = new TaskCompletionSource<(AiHit Hit, AiHitAction Action)>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    pane.OpenRequested += (item, action) => opened.TrySetResult((item, action));
                     list.Items[0].Selected = true;
-                    typeof(Control).GetMethod("OnKeyDown", BindingFlags.Instance | BindingFlags.NonPublic)!
-                        .Invoke(list, [new KeyEventArgs(Keys.Control | Keys.Enter)]);
-                    var open = await opened.Task.WaitAsync(TimeSpan.FromSeconds(5));
-                    Check(open.Hit == hit && open.Action == AiHitAction.NewTab, name + " Ctrl+Enter opens actual hit in a new tab");
-                    foreach (var (key, action) in new[]
+                    foreach (string key in new[] { "Open", "Open in current pane", "Open in new tab", "Open in new pane", "Preview" })
+                        Check(Descendants(pane).OfType<Button>().Single(value => value.AccessibleName == key).Enabled,
+                            name + " selected result enables " + key);
+                    foreach (AiHit expectedHit in hits)
                     {
-                        ("Open", AiHitAction.Open), ("Open in current pane", AiHitAction.ShowInPane),
-                        ("Open in new tab", AiHitAction.NewTab), ("Open in new pane", AiHitAction.NewPane),
-                        ("Preview", AiHitAction.Preview)
-                    })
-                    {
-                        AiHitAction? invoked = null;
-                        void Observe(AiHit item, AiHitAction value) { if (item == hit) invoked = value; }
-                        pane.OpenRequested += Observe;
-                        try
-                        {
-                            var button = Descendants(pane).OfType<Button>().Single(value => value.AccessibleName == key);
-                            Check(button.Enabled, name + " selected result enables " + key);
-                            button.PerformClick();
-                            Check(invoked == action, name + " result action dispatches " + key);
-                        }
-                        finally { pane.OpenRequested -= Observe; }
+                        ListViewItem selected = list.Items.Cast<ListViewItem>().Single(item => Equals(item.Tag, expectedHit));
+                        foreach (ListViewItem item in list.Items) item.Selected = false;
+                        selected.Selected = true;
+                        Check(list.SelectedItems.Count == 1 && Equals(list.SelectedItems[0].Tag, expectedHit)
+                            && list.SelectedItems[0].ToolTipText == expectedHit.FullPath,
+                            name + " selection preserves the exact file and full path for similar long names");
                     }
+                    string? resultCopy = null;
+                    pane.CopyText = value => resultCopy = value;
+                    Descendants(pane).OfType<Button>().Single(button => button.AccessibleName == text.T("Copy conversation")).PerformClick();
+                    Check(resultCopy is not null && paths.All(path => resultCopy.Contains(path, StringComparison.Ordinal)),
+                        name + " conversation copy retains every full result path, including duplicate filenames");
                     Check(Descendants(pane).OfType<FlowLayoutPanel>().SelectMany(actions => actions.Controls.Cast<Control>()
                         .Select(button => button.Left >= 0 && button.Right <= actions.Width && button.Bottom <= actions.Height)).All(fits => fits),
                         name + " all five result actions wrap inside the conversation width");
@@ -215,19 +227,46 @@ internal static partial class Program
                     if (output is { Length: > 0 })
                         CaptureAiControl(host, Path.Combine(output, $"ai-{mode}-{language}-{points}-results.png"));
 
+                    var manyHits = new List<AiHit>();
+                    for (int i = 0; i < 24; i++)
+                    {
+                        string path = Path.Combine(firstFolder, $"wheel-result-{i:D2}.pdf");
+                        File.WriteAllText(path, "actual result file");
+                        manyHits.Add(new AiHit(path, false, 42, null));
+                    }
+                    pane.Submit = _ => Task.FromResult<ChatTurn?>(new(ChatRole.Assistant, "",
+                        new AiSearchResult(plan, manyHits, manyHits.Count, false, null)));
+                    pane.Composer.Text = "many results";
+                    await pane.SendAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                    ListView longList = Descendants(pane.Transcript).OfType<ListView>()
+                        .Single(value => value.Items.Count == manyHits.Count);
+                    int listTop = pane.Transcript.PointToClient(longList.PointToScreen(Point.Empty)).Y
+                        - pane.Transcript.AutoScrollPosition.Y;
+                    pane.Transcript.AutoScrollPosition = new Point(0, Math.Max(0, listTop));
+                    int beforeWheel = pane.Transcript.AutoScrollPosition.Y;
+                    Point wheelPoint = longList.PointToScreen(new Point(Math.Min(10, longList.ClientSize.Width - 1), 10));
+                    if (SystemInformation.MouseWheelScrollLines != 0)
+                    {
+                        AiPaneSendMessage(longList.Handle, 0x20A, (nint)(-120 << 16),
+                            (nint)((wheelPoint.X & 0xFFFF) | ((wheelPoint.Y & 0xFFFF) << 16)));
+                        Check(!longList.Scrollable && pane.Transcript.AutoScrollPosition.Y < beforeWheel,
+                            name + " wheel over overflowing file results scrolls the outer conversation, not a nested list");
+                    }
+
                     pane.Submit = message => Task.FromResult<ChatTurn?>(new ChatTurn(ChatRole.Assistant, "", Error: "endpoint offline / model missing"));
                     pane.Composer.Text = "error";
                     await pane.SendAsync().WaitAsync(TimeSpan.FromSeconds(5));
                     Check(!pane.Busy && pane.Turns[^1].Error is not null, name + " provider errors settle without fabricated hits");
-                    pane.Submit = message => Task.FromResult<ChatTurn?>(new ChatTurn(ChatRole.Assistant, "",
-                        new AiSearchResult(plan, [], 0, false, null)));
+                    pane.Submit = message => Task.FromResult<ChatTurn?>(new ChatTurn(ChatRole.Assistant, "refinement answer"));
                     for (int i = 0; i < 6; i++)
                     {
                         pane.Composer.Text = "refine " + i;
                         await pane.SendAsync().WaitAsync(TimeSpan.FromSeconds(5));
                     }
-                    Check(pane.Turns.Count == 10 && Descendants(pane).OfType<ListView>().Count() == 0,
-                        name + " bounds history at ten turns and handles no-results without fake rows");
+                    Check(Enumerable.Range(0, 6).All(i => Descendants(pane.Transcript).OfType<RichTextBox>()
+                        .Any(body => body.Text == "refine " + i))
+                        && Descendants(pane.Transcript).OfType<ListView>().Any(value => value.Items.Count == hits.Length),
+                        name + " more than ten completed turns remain visible alongside earlier file results");
                     pane.Composer.Text = "keyboard";
                     int keyboardCalls = 0;
                     pane.Submit = message => { keyboardCalls++; return Task.FromResult<ChatTurn?>(new(ChatRole.Assistant, "done")); };
@@ -237,13 +276,17 @@ internal static partial class Program
                     await pane.PendingSubmission.WaitAsync(TimeSpan.FromSeconds(5));
                     Check(keyboardCalls == 1, name + " Enter submits through composer without global input");
                     await CheckAiMessageHistory(pane, name, mode == "light" && language == "ko" && points == 9.5f);
-                    pane.Composer.Text = "new chat preserves this draft";
-                    pane.Composer.SelectionStart = 4;
-                    InvokeAiComposerKey(pane.Composer, Keys.Up);
-                    pane.NewChatButton.PerformClick();
-                    Check(pane.Turns.Count == 0 && resets == 1 && pane.Composer.Text == "new chat preserves this draft"
-                        && pane.Composer.SelectionStart == 4 && !InvokeAiComposerKey(pane.Composer, Keys.Up),
-                        name + " new chat clears conversation and recall, restoring the unsent draft and cursor");
+                    string? switchedCopy = null;
+                    void CheckCopied(params string[] expected)
+                    {
+                        pane.CopyText = value => switchedCopy = value;
+                        switchedCopy = null;
+                        Descendants(pane).OfType<Button>().Single(button => button.AccessibleName == text.T("Copy conversation")).PerformClick();
+                        Check(switchedCopy is not null && expected.All(value => switchedCopy.Contains(value, StringComparison.Ordinal))
+                            && !switchedCopy.Contains("stale previous mode", StringComparison.Ordinal),
+                            name + " copy conversation preserves completed messages and full result paths, without cancelled replies");
+                    }
+                    CheckCopied("ambiguous request", question, "proposal", paths[0], paths[1], "refine 0", "refine 5");
                     var modeReply = new TaskCompletionSource<ChatTurn?>(TaskCreationOptions.RunContinuationsAsynchronously);
                     pane.Submit = _ => { calls++; return modeReply.Task; };
                     pane.Composer.Text = "pending before mode switch";
@@ -254,14 +297,22 @@ internal static partial class Program
                     typeof(ComboBox).GetMethod("OnSelectionChangeCommitted", BindingFlags.Instance | BindingFlags.NonPublic)!
                         .Invoke(pane.ModePicker, [EventArgs.Empty]);
                     Check(changed?.Mode == AiSearchMode.ReadDocuments && pane.CurrentSettings.Mode == AiSearchMode.ReadDocuments
-                        && pane.ModePicker.SelectedIndex == 1 && !pane.Busy && cancellations == 3 && resets == 2
-                        && pane.Turns.Count == 0 && pane.Composer.Text == "draft survives mode switch" && calls == callsBeforeMode,
-                        name + " explicit document mode persists and cancels old work without sending or losing draft");
+                        && pane.ModePicker.SelectedIndex == 1 && !pane.Busy && cancellations == 3
+                        && pane.Composer.Text == "draft survives mode switch" && calls == callsBeforeMode,
+                        name + " document mode cancels old work without sending or losing the draft");
                     modeReply.SetResult(new ChatTurn(ChatRole.Assistant, "stale previous mode"));
                     await modePending.WaitAsync(TimeSpan.FromSeconds(5));
-                    Check(pane.Turns.Count == 0, name + " stale previous-mode response cannot enter new conversation");
-                    Check(!InvokeAiComposerKey(pane.Composer, Keys.Up) && pane.Composer.Text == "draft survives mode switch",
-                        name + " mode switch clears sent recall without losing the current draft");
+                    Check(!Descendants(pane.Transcript).OfType<RichTextBox>().Any(body => body.Text.Contains("stale previous mode", StringComparison.Ordinal))
+                        && Enumerable.Range(0, 6).All(i => Descendants(pane.Transcript).OfType<RichTextBox>()
+                            .Any(body => body.Text == "refine " + i))
+                        && Descendants(pane.Transcript).OfType<ListView>().Any(value => value.Items.Count == hits.Length),
+                        name + " switching retains more than ten completed turns and results but rejects the late reply");
+                    CheckCopied("ambiguous request", question, "proposal", paths[0], paths[1], "refine 0", "refine 5");
+                    pane.Composer.SelectionStart = 0;
+                    Check(InvokeAiComposerKey(pane.Composer, Keys.Up) && pane.Composer.Text == "pending before mode switch",
+                        name + " sent-message recall survives the switch to document mode");
+                    Check(InvokeAiComposerKey(pane.Composer, Keys.Down) && pane.Composer.Text == "draft survives mode switch",
+                        name + " recall restores the unsent draft after switching modes");
                     await CheckAiSelectableTranscript(pane, host, text, root, name);
                     foreach (int width in new[] { 320, 420, 520, 960 })
                     {
@@ -288,15 +339,69 @@ internal static partial class Program
                         return modeCatalog.Task;
                     };
                     Task previousModeCatalog = pane.RefreshModelsAsync();
+                    pane.Composer.Text = "return draft survives mode switch";
+                    pane.Composer.SelectionStart = 0;
                     pane.ModePicker.SelectedIndex = 0;
                     typeof(ComboBox).GetMethod("OnSelectionChangeCommitted", BindingFlags.Instance | BindingFlags.NonPublic)!
                         .Invoke(pane.ModePicker, [EventArgs.Empty]);
                     await modeCatalogCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     modeCatalog.SetResult(new ProviderProbe(true, "", ["previous-mode-model"], TimeSpan.Zero));
                     await previousModeCatalog.WaitAsync(TimeSpan.FromSeconds(5));
-                    Check(changed?.Mode == AiSearchMode.FileNames && resets == 3 && calls == callsBeforeMode
+                    Check(changed?.Mode == AiSearchMode.FileNames && pane.CurrentSettings.Mode == AiSearchMode.FileNames
+                        && calls == callsBeforeMode && pane.Composer.Text == "return draft survives mode switch"
                         && !pane.DiscoveredModels.Any(model => model.Id == "previous-mode-model"),
-                        name + " return to filename mode cancels stale catalog and never reads or sends automatically");
+                        name + " return to filename mode cancels stale catalog without sending or losing draft");
+                    string documentFile = Path.Combine(root, "chat-source.txt");
+                    string secondDocumentFile = Path.Combine(root, "second-source-folder", "chat-source.txt");
+                    Check(Enumerable.Range(0, 6).All(i => Descendants(pane.Transcript).OfType<RichTextBox>()
+                            .Any(body => body.Text == "refine " + i))
+                        && Descendants(pane.Transcript).OfType<RichTextBox>()
+                            .Any(body => body.Text.Contains("The delivery date is October 30.", StringComparison.Ordinal))
+                        && Descendants(pane.Transcript).OfType<ListView>()
+                            .Any(value => value.Items.Cast<ListViewItem>().Any(item => item.Tag is AiHit source && source.FullPath == documentFile)),
+                        name + " returning to filename mode visibly retains earlier turns, document answer and source");
+                    CheckCopied("ambiguous request", question, "proposal", paths[0], paths[1], "refine 0", "refine 5",
+                        "Summarize this proposal.", "staged delivery", documentFile, secondDocumentFile,
+                        "The delivery date is October 30.", "A separate source confirms the delivery date.");
+                    Check(InvokeAiComposerKey(pane.Composer, Keys.Up)
+                        && pane.Composer.Text == "Summarize this proposal.\r\n\r\nKeep the delivery date.",
+                        name + " document-mode recall survives return to filename mode");
+                    pane.Composer.SelectionStart = pane.Composer.TextLength;
+                    Check(InvokeAiComposerKey(pane.Composer, Keys.Down) && pane.Composer.Text == "return draft survives mode switch",
+                        name + " return-mode recall restores the unsent draft");
+                    foreach (ListViewItem item in list.Items) item.Selected = false;
+                    list.Items[1].Selected = true;
+                    var contentAction = Descendants(list.Parent!).OfType<Button>()
+                        .Single(button => button.AccessibleName == "Search contents of this file");
+                    int turnsBeforeTarget = pane.Turns.Count;
+                    contentAction.PerformClick();
+                    var targetChip = Descendants(pane).OfType<Button>()
+                        .Single(button => button.AccessibleName == text.T("Clear selected file"));
+                    Check(pane.CurrentSettings.Mode == AiSearchMode.ReadDocuments
+                        && pane.Composer.Text == "return draft survives mode switch" && pane.Turns.Count == turnsBeforeTarget
+                        && targetChip.Visible && targetChip.AccessibleDescription == paths[1],
+                        name + " selecting a result stages the exact file for content search without sending or losing the draft");
+                    CheckAiPaneGeometry(pane, name + "/selected-document");
+                    if (output is { Length: > 0 } && language == "ko" && points == 9.5f)
+                        CaptureAiControl(host, Path.Combine(output, $"ai-{mode}-selected-document.png"));
+                    targetChip.PerformClick();
+                    Check(!targetChip.Visible && pane.Turns.Count == turnsBeforeTarget,
+                        name + " selected file can be cleared without sending");
+                    contentAction.PerformClick();
+                    Check(targetChip.Visible, name + " a file can be selected again");
+                    pane.Composer.Text = "new chat preserves this draft";
+                    pane.Composer.SelectionStart = 4;
+                    InvokeAiComposerKey(pane.Composer, Keys.Up);
+                    int resetsBeforeNewChat = resets;
+                    pane.NewChatButton.PerformClick();
+                    Check(resets == resetsBeforeNewChat + 1 && pane.Composer.Text == "new chat preserves this draft"
+                        && pane.Composer.SelectionStart == 4 && !InvokeAiComposerKey(pane.Composer, Keys.Up)
+                        && !Descendants(pane.Transcript).OfType<RichTextBox>().Any(body =>
+                            body.Text == "refine 0" || body.Text.Contains("staged delivery", StringComparison.Ordinal))
+                        && !Descendants(pane.Transcript).OfType<ListView>().Any()
+                        && !targetChip.Visible
+                        && !Descendants(pane).OfType<Button>().Any(button => button.AccessibleName == text.T("Copy conversation")),
+                        name + " New chat explicitly clears visible conversation, results and recall while preserving the draft");
                     text.SetLanguage(language == "en" ? "ko" : "en");
                     pane.RefreshLanguage();
                     Check(pane.SendButton.Text == text.T("Send"), name + " live language refresh localizes controls");
@@ -379,15 +484,23 @@ internal static partial class Program
     {
         string file = Path.Combine(root, "chat-source.txt");
         const string quote = "The delivery date is October 30.";
+        string secondFolder = Path.Combine(root, "second-source-folder");
+        Directory.CreateDirectory(secondFolder);
+        string secondFile = Path.Combine(secondFolder, "chat-source.txt");
+        const string secondQuote = "A separate source confirms the delivery date.";
         File.WriteAllText(file, quote);
+        File.WriteAllText(secondFile, secondQuote);
         const string answer = "• The proposal describes a staged delivery.\n• The delivery date is October 30. Keep this second point in the copied answer.";
         const string question = "Summarize this proposal.\r\n\r\nKeep the delivery date.";
-        var documents = new DocumentSearchResult(answer, [new("S1", file, "line 1", quote)], new(1, 1, 1, 1, 0, false, []));
+        var documents = new DocumentSearchResult(answer,
+            [new("S1", file, "line 1", quote), new("S2", secondFile, "line 2", secondQuote)],
+            new(1, 2, 2, 2, 0, false, []));
         pane.Submit = _ => Task.FromResult<ChatTurn?>(new(ChatRole.Assistant, answer, DocumentResult: documents));
         pane.Composer.Text = question;
         await pane.SendAsync().WaitAsync(TimeSpan.FromSeconds(5));
         var bodies = Descendants(pane).OfType<RichTextBox>().ToArray();
-        RichTextBox user = bodies.Single(body => body.AccessibleName == text.T("You"));
+        RichTextBox user = bodies.Single(body => body.AccessibleName == text.T("You")
+            && body.Text == question.Replace("\r\n", "\n", StringComparison.Ordinal));
         RichTextBox assistant = bodies.Single(body => body.Text == answer);
         Check(user.Text == question.Replace("\r\n", "\n", StringComparison.Ordinal) && assistant.ReadOnly
             && user.ReadOnly && assistant.ShortcutsEnabled && user.ShortcutsEnabled
@@ -409,12 +522,39 @@ internal static partial class Program
                 name + " native selection spans the entire user or assistant message");
             body.Select(0, 0);
         }
+        ListView sources = Descendants(pane.Transcript).OfType<ListView>().Single(list =>
+            list.Items.Cast<ListViewItem>().Any(item => item.Tag is AiHit hit && hit.FullPath == file));
+        foreach (string sourcePath in new[] { file, secondFile })
+        {
+            ListViewItem item = sources.Items.Cast<ListViewItem>().Single(value => value.Tag is AiHit hit && hit.FullPath == sourcePath);
+            foreach (ListViewItem other in sources.Items) other.Selected = false;
+            item.Selected = true;
+            Check(item.Text == Path.GetFileName(sourcePath) && item.ToolTipText == sourcePath
+                && sources.SelectedItems.Count == 1 && Equals(sources.SelectedItems[0].Tag, item.Tag),
+                name + " source selection distinguishes identical filenames by full path");
+        }
+        foreach (string sourceQuote in new[] { quote, secondQuote })
+        {
+            RichTextBox citation = bodies.Single(body => body.AccessibleName == text.T("Document sources")
+                && body.Text.Contains(sourceQuote, StringComparison.Ordinal));
+            using var receipt = new AiCopyReceipt(citation);
+            Check(citation.ReadOnly && citation.ShortcutsEnabled, name + " source evidence remains selectable readonly text");
+            citation.Select(citation.Text.IndexOf(sourceQuote, StringComparison.Ordinal), sourceQuote.Length);
+            Check(citation.SelectedText == sourceQuote && InvokeAiComposerKey(citation, Keys.Control | Keys.C)
+                && receipt.Copies == 1 && receipt.Value == sourceQuote,
+                name + " source citation selection copies the exact quoted evidence");
+            citation.ContextMenuStrip!.Items[0].PerformClick();
+            Check(receipt.Copies == 2 && receipt.Value == sourceQuote,
+                name + " source citation context menu copies the same selected evidence");
+            citation.Select(0, 0);
+        }
         string? copied = null;
         pane.CopyText = value => copied = value;
         Descendants(pane).OfType<Button>().Single(button => button.AccessibleName == text.T("Copy conversation")).PerformClick();
         Check(copied is not null && copied.Contains(user.Text, StringComparison.Ordinal)
             && copied.Contains(answer, StringComparison.Ordinal) && copied.Contains(file, StringComparison.Ordinal)
-            && copied.Contains(quote, StringComparison.Ordinal),
+            && copied.Contains(secondFile, StringComparison.Ordinal) && copied.Contains(quote, StringComparison.Ordinal)
+            && copied.Contains(secondQuote, StringComparison.Ordinal),
             name + " full-conversation copy includes both roles, actual file paths and quoted evidence");
         CheckAiResultGeometry(pane, name + "/sources");
         host.PerformLayout();
@@ -422,23 +562,34 @@ internal static partial class Program
 
     private static void CheckAiResultGeometry(AiSearchPane pane, string name)
     {
-        var sheet = pane.Transcript.Controls[0];
-        foreach (var list in Descendants(pane).OfType<ListView>())
+        var transcriptControls = Descendants(pane.Transcript).ToArray();
+        foreach (var list in transcriptControls.OfType<ListView>())
         {
             Control group = list.Parent!;
-            var labels = group.Controls.OfType<Label>().ToArray();
-            var heading = labels[0];
-            var hint = labels[1];
-            var actions = group.Controls.OfType<FlowLayoutPanel>().Single();
-            Check(labels.Length == 2 && group.Parent == sheet && group.AccessibleName == list.AccessibleName
-                && group.BackColor == Theme.Surface && list.BackColor == Theme.Canvas
-                && heading.Text.Length > 0 && heading.Bottom <= hint.Top && hint.Text.Length > 0
-                && hint.Bottom <= list.Top && list.Bottom <= actions.Top
-                && list.Left > 0 && list.Right < group.Width && actions.Bottom < group.Height,
-                name + " selectable file rows and usage hint occupy a distinct inset result group");
-            Check(actions.Controls.Count == 5 && actions.Controls.Cast<Control>().All(button =>
-                button.Left >= 0 && button.Right <= actions.Width && button.Bottom <= actions.Height),
-                name + " result group's five actionable buttons fit its width");
+            Check(transcriptControls.Contains(group) && !list.Scrollable && list.ShowItemToolTips
+                && list.AccessibleName?.Length > 0 && list.Left >= 0 && list.Top >= 0
+                && list.Right <= group.ClientSize.Width && list.Bottom <= group.ClientSize.Height,
+                name + " accessible native result list fits inside the conversation without its own scroll");
+            foreach (ListViewItem item in list.Items)
+            {
+                Rectangle row = item.Bounds;
+                Check(row.Top >= 0 && row.Bottom <= list.ClientSize.Height && row.Height >= list.Font.Height * 2
+                    && row.Width > 0 && item.Tag is AiHit && item.ToolTipText.Length > 0,
+                    name + " each file row fits and has space for filename and folder while retaining its full path");
+            }
+            foreach (Button button in Descendants(group).OfType<Button>())
+                Check(button.Left >= 0 && button.Top >= 0 && button.Right <= button.Parent!.ClientSize.Width
+                    && button.Bottom <= button.Parent.ClientSize.Height,
+                    name + " result actions fit their container");
+            foreach (Label label in Descendants(group).OfType<Label>().Where(label => label.Visible && label.Text.Length > 0))
+                Check(label.Left >= 0 && label.Top >= 0 && label.Right <= label.Parent!.ClientSize.Width
+                    && label.Bottom <= label.Parent.ClientSize.Height
+                    && label.GetPreferredSize(new Size(label.ClientSize.Width, 0)).Height <= label.ClientSize.Height,
+                    name + " visible result labels fit without vertical clipping");
+            Rectangle listScreen = list.RectangleToScreen(list.ClientRectangle);
+            Check(!transcriptControls.OfType<RichTextBox>()
+                .Any(body => listScreen.IntersectsWith(body.RectangleToScreen(body.ClientRectangle))),
+                name + " file results remain separate from selectable prose and citations");
         }
         foreach (var body in Descendants(pane).OfType<RichTextBox>())
         {

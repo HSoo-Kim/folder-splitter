@@ -10,6 +10,12 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if ((args is ["login"] or ["auth", "login"])
+            && Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOGIN_RECEIPT") is { Length: > 0 } receipt)
+        {
+            File.WriteAllText(receipt, string.Join(" ", args));
+            return 0;
+        }
         if (args is ["--ai-open-receipt", var pipe, var openedFile])
             return WriteAiOpenReceipt(pipe, openedFile);
         string? expectedDesktop = Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_DESKTOP");
@@ -30,9 +36,16 @@ internal static partial class Program
         // GDI+ cannot draw through a window DC on a desktop that is not the input desktop.
         // WinForms main ignores this in SplitContainer.RepaintSplitterRect (dotnet/winforms
         // SplitContainer.cs); apply the same catch until the shipped 10.0 runtime has it.
-        new HarmonyLib.Harmony("FolderSplitter.UiTests").Patch(
+        var privateDesktopHarmony = new HarmonyLib.Harmony("FolderSplitter.UiTests");
+        privateDesktopHarmony.Patch(
             HarmonyLib.AccessTools.Method(typeof(SplitContainer), "RepaintSplitterRect"),
             finalizer: new HarmonyLib.HarmonyMethod(typeof(Program), nameof(IgnoreSplitterRepaintFailure)));
+        // A non-input desktop likewise has no usable window DC for the combo-box frame.
+        // Keep DrawToBitmap's normal path and the shipped application unchanged.
+        if (!demoCapture && !scrollbarDemo && !aiSearchDemo)
+            privateDesktopHarmony.Patch(
+                HarmonyLib.AccessTools.Method(typeof(Theme).GetNestedType("ComboFrame", System.Reflection.BindingFlags.NonPublic), "WndProc"),
+                finalizer: new HarmonyLib.HarmonyMethod(typeof(Program), nameof(IgnorePrivateComboRepaint)));
         if (args is ["--demo-capture", var demoOutput, var demoRoot])
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -94,10 +107,24 @@ internal static partial class Program
                 Console.WriteLine($"PASS {checks} real-model AI GUI checks");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--ai-provider-access"])
+            {
+                RunProviderAccessScenario();
+                Console.WriteLine($"PASS {checks} AI provider access checks");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--ai-unverified-evidence"])
+            {
+                RunUnverifiedEvidenceScenario(root);
+                Console.WriteLine($"PASS {checks} unverified-evidence checks");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--ai-search"])
             {
                 RunAiSearchPaneScenario(root);
+                RunUnverifiedEvidenceScenario(root);
                 RunAiSearchIntegrationScenario(root);
+                RunProviderAccessScenario();
                 Console.WriteLine($"PASS {checks} AI search native checks");
                 return failures == 0 ? 0 : 1;
             }
@@ -281,6 +308,7 @@ internal static partial class Program
             RunSearchScenario(root);
             RunAiSearchPaneScenario(root);
             RunAiSearchIntegrationScenario(root);
+            RunProviderAccessScenario();
             RunAppearanceScenario(root);
             RunTrayScenario(root);
             RunUpdateScenario(root);
@@ -605,6 +633,9 @@ internal static partial class Program
 
     private static Exception? IgnoreSplitterRepaintFailure(Exception? __exception) =>
         __exception is ExternalException ? null : __exception;
+
+    private static Exception? IgnorePrivateComboRepaint(Exception? __exception, ref Message m) =>
+        __exception is ExternalException && m.Msg is (0x000F or 0x0007 or 0x0008 or 0x02A3) ? null : __exception;
 
     private static void RunAppearanceScenario(string root)
     {

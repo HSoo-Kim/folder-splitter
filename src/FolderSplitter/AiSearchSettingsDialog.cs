@@ -20,7 +20,7 @@ internal sealed class AiSearchSettingsDialog : Form
     private Font? readableFilesFont;
     private readonly Label info = new() { AutoSize = true, Dock = DockStyle.Fill, UseMnemonic = false };
     private readonly Label status = new() { AutoSize = true, Dock = DockStyle.Fill, UseMnemonic = false };
-    private readonly Button test, save;
+    private readonly Button test, save, login;
     private readonly TableLayoutPanel fields;
     private CancellationTokenSource? probeCancellation;
     private int generation;
@@ -96,6 +96,11 @@ internal sealed class AiSearchSettingsDialog : Form
         test.Dock = DockStyle.Fill;
         test.AutoSize = true;
         fields.Controls.Add(test);
+        login = Theme.Button(text.T("Login"), "Login to AI provider", () => { PendingLogin = LoginAsync(); });
+        login.Dock = DockStyle.Fill;
+        login.AutoSize = true;
+        login.Visible = false;
+        fields.Controls.Add(login);
         status.Margin = new Padding(0, 8, 0, 0);
         status.AccessibleName = text.T("Provider connection status");
         fields.Controls.Add(status);
@@ -157,6 +162,12 @@ internal sealed class AiSearchSettingsDialog : Form
 
     internal AiSearchSettings Settings { get; private set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<AiSearchSettings, ProviderProbe, CancellationToken, Task<ProviderAuthentication>> AuthenticationStatus { get; set; } = ProviderAccess.GetStatusAsync;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<AiSearchSettings, CancellationToken, Task> LoginProvider { get; set; } = ProviderAccess.LoginAsync;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<AiSearchSettings, string> ResolveLogin { get; set; } = ProviderAccess.ResolveLoginExecutable;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Func<AiSearchSettings, CancellationToken, Task<ProviderProbe>>? Probe { get; set; }
     internal ComboBox ProviderBox => provider;
     internal TextBox EndpointBox => endpoint;
@@ -165,6 +176,9 @@ internal sealed class AiSearchSettingsDialog : Form
     internal TextBox FilenamePromptBox => filenamePrompt;
     internal Label ReadableFilesInfo => readableFiles;
     internal Button TestButton => test;
+    internal Button LoginButton => login;
+    internal Task PendingLogin { get; private set; } = Task.CompletedTask;
+    internal bool LoginCompleted { get; private set; }
     internal Button SaveButton => save;
     internal string StatusText => status.Text;
     internal Task PendingProbe { get; private set; } = Task.CompletedTask;
@@ -190,7 +204,7 @@ internal sealed class AiSearchSettingsDialog : Form
         bool local = provider.SelectedIndex == (int)AiProviderKind.LocalEndpoint;
         endpoint.Visible = endpointLabel.Visible = local;
         model.Visible = modelLabel.Visible = local;
-        cliPath.Visible = cliLabel.Visible = provider.SelectedIndex == (int)AiProviderKind.ClaudeCli;
+        cliPath.Visible = cliLabel.Visible = !local && provider.SelectedIndex >= 0;
         if (provider.SelectedIndex < 0)
         {
             info.Text = text.T("Configured provider is unsupported. Choose Local endpoint or Claude CLI.");
@@ -263,6 +277,8 @@ internal sealed class AiSearchSettingsDialog : Form
         generation++;
         probeCancellation?.Cancel();
         status.Text = "";
+        login.Visible = false;
+        login.Enabled = false;
         test.Enabled = true;
     }
 
@@ -276,14 +292,29 @@ internal sealed class AiSearchSettingsDialog : Form
             return;
         }
         probeCancellation?.Dispose();
-        probeCancellation = new CancellationTokenSource();
+        var cancellation = new CancellationTokenSource();
+        probeCancellation = cancellation;
         int request = ++generation;
         test.Enabled = false;
         status.Text = text.T("Connecting and listing models…");
         status.ForeColor = Theme.Muted;
         try
         {
-            ProviderProbe result = await probe(settings, probeCancellation.Token);
+            ProviderProbe result = await probe(settings, cancellation.Token);
+            var authentication = await AuthenticationStatus(settings, result, cancellation.Token);
+            if (IsDisposed || request != generation) return;
+            login.Visible = authentication == ProviderAuthentication.Unauthenticated;
+            login.Enabled = login.Visible;
+            string? loginProblem = null;
+            if (login.Visible)
+            {
+                try { ResolveLogin(settings); }
+                catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
+                {
+                    login.Enabled = false;
+                    loginProblem = error.Message;
+                }
+            }
             if (IsDisposed || request != generation) return;
             string selected = model.Text;
             updatingModels = true;
@@ -291,7 +322,8 @@ internal sealed class AiSearchSettingsDialog : Form
             model.Items.AddRange(result.Models.Cast<object>().ToArray());
             model.Text = selected;
             updatingModels = false;
-            status.Text = text.T(result.Ok ? "Connected: {0}" : "Connection failed: {0}", result.Detail);
+            status.Text = text.T(result.Ok ? "Connected: {0}" : "Connection failed: {0}", result.Detail)
+                + (loginProblem is null ? "" : Environment.NewLine + loginProblem);
             status.ForeColor = result.Ok ? Theme.Text : Theme.ErrorText;
         }
         catch (OperationCanceledException) { }
@@ -300,6 +332,39 @@ internal sealed class AiSearchSettingsDialog : Form
             if (IsDisposed || request != generation) return;
             status.Text = text.T("Connection failed: {0}", error.Message);
             status.ForeColor = Theme.ErrorText;
+        }
+        finally
+        {
+            if (!IsDisposed && request == generation) test.Enabled = true;
+        }
+    }
+
+    private async Task LoginAsync()
+    {
+        if (!login.Visible || !login.Enabled || !TryRead(out var current)) return;
+        probeCancellation?.Cancel();
+        probeCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        probeCancellation = cancellation;
+        int request = ++generation;
+        login.Enabled = false;
+        test.Enabled = false;
+        status.Text = text.T("Complete login in the provider window.");
+        try
+        {
+            await LoginProvider(current, cancellation.Token);
+            if (IsDisposed || request != generation || cancellation.IsCancellationRequested) return;
+            LoginCompleted = true;
+            PendingProbe = ProbeAsync();
+            await PendingProbe;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (IsDisposed || request != generation) return;
+            status.Text = text.T("Login failed: {0}", error.Message);
+            status.ForeColor = Theme.ErrorText;
+            login.Enabled = true;
         }
         finally
         {

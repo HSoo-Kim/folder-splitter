@@ -8,6 +8,9 @@ internal static partial class Program
         string folder = Directory.CreateDirectory(Path.Combine(root, "AI-host")).FullName;
         string file = Path.Combine(folder, "proposal-final.pdf");
         WritePdfFixture(file);
+        string alternate = Directory.CreateDirectory(Path.Combine(folder, "alternate")).FullName;
+        string otherFile = Path.Combine(alternate, "proposal-final.pdf");
+        WritePdfFixture(otherFile);
         string session = Path.Combine(folder, "session.json");
         SessionStore.Save(session, new SessionState
         {
@@ -44,8 +47,12 @@ internal static partial class Program
                 Check(form.PreviewVisible && form.AiSearchVisible, "preview and AI coexist when the workspace is wide");
                 var plan = new SearchPlan(["proposal"], [], [], [".pdf"], ItemKind.File,
                     SearchScope.Everywhere, null, null, null, null, false, null);
-                chat.Submit = _ => Task.FromResult<ChatTurn?>(new(ChatRole.Assistant, "one result",
-                    new AiSearchResult(plan, [new(file, false, new FileInfo(file).Length, File.GetLastWriteTimeUtc(file))], 1, false, null)));
+                chat.Submit = _ => Task.FromResult<ChatTurn?>(new(ChatRole.Assistant, "two results",
+                    new AiSearchResult(plan,
+                    [
+                        new(file, false, new FileInfo(file).Length, File.GetLastWriteTimeUtc(file)),
+                        new(otherFile, false, new FileInfo(otherFile).Length, File.GetLastWriteTimeUtc(otherFile))
+                    ], 2, false, null)));
                 chat.Composer.Text = "Find proposal PDF files";
                 await chat.SendAsync().WaitAsync(TimeSpan.FromSeconds(10));
                 Check(chat.Turns.Count == 2 && !chat.Busy, "hosted chat renders a completed real-file result");
@@ -64,22 +71,31 @@ internal static partial class Program
                 form.SetColorTheme("dark");
                 form.SetColorTheme("light");
                 Check(chat.HintText.Length > 0 && chat.Composer.Enabled, "theme changes preserve usable conversation");
-                var selected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                EventHandler selection = (_, _) =>
+                var list = Descendants(chat).OfType<ListView>().Single();
+                async Task OpenResult(string path)
                 {
-                    if (pane.ActiveView?.SelectionInfo().Item1 == file) selected.TrySetResult();
-                };
-                pane.SelectionChanged += selection;
-                try
-                {
-                    var list = Descendants(chat).OfType<ListView>().Single();
-                    list.Items[0].Selected = true;
-                    list.Focus();
-                    PostMessage(list.Handle, 0x100, (nint)Keys.Enter, 0);
-                    await selected.Task.WaitAsync(TimeSpan.FromSeconds(20));
-                    Check(pane.ActiveView?.SelectionInfo().Item1 == file, "AI hit selects the actual file in the native pane");
+                    var selected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void Selection(object? sender, EventArgs e)
+                    {
+                        if (pane.ActiveView?.SelectionInfo().Item1 == path) selected.TrySetResult();
+                    }
+                    pane.SelectionChanged += Selection;
+                    try
+                    {
+                        foreach (ListViewItem item in list.Items) item.Selected = false;
+                        list.Items.Cast<ListViewItem>().Single(item => item.Tag is AiHit hit && hit.FullPath == path).Selected = true;
+                        list.Focus();
+                        PostMessage(list.Handle, 0x100, (nint)Keys.Enter, 0);
+                        if (pane.ActiveView?.SelectionInfo().Item1 == path) selected.TrySetResult();
+                        await selected.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                    }
+                    finally { pane.SelectionChanged -= Selection; }
                 }
-                finally { pane.SelectionChanged -= selection; }
+                await OpenResult(file);
+                await OpenResult(otherFile);
+                Check(pane.CurrentPath == alternate && pane.ActiveView?.SelectionInfo().Item1 == otherFile,
+                    "selecting one of two identically named AI results opens the correct file in its actual folder");
+                await OpenResult(file);
                 Button Action(string name) => Descendants(chat).OfType<Button>().Single(button => button.AccessibleName == name);
                 int tabs = pane.TabCount;
                 await PaneChange(pane, () => Action("Open in new tab").PerformClick(),
