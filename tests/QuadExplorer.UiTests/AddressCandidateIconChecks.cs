@@ -56,12 +56,8 @@ internal static partial class Program
                     Check(actual is not null && expected is not null && SameAddressIcon(actual, expected),
                         "folder uses its actual Shell icon and native size");
                 var missing = new SearchHit(Path.Combine(folder, "missing.txt"), false);
-                using (var fallback = await Task.Run(() =>
-                {
-                    int com = AddressShellIcons.InitializeWorker();
-                    try { return AddressShellIcons.Load(missing); }
-                    finally { if (com >= 0) AddressShellIcons.UninitializeWorker(); }
-                }))
+                // The UI thread is a single-threaded apartment, like the popup's icon thread.
+                using (var fallback = AddressShellIcons.Load(missing))
                 using (var expected = AddressTestShellIcon(".txt", false, true))
                     Check(fallback is not null && expected is not null && SameAddressIcon(fallback, expected),
                         "missing file falls back to its Shell extension association");
@@ -100,8 +96,27 @@ internal static partial class Program
                     Check(candidates.SelectedHit == hits[0], "theme and sizing preserve selection behavior");
                 }
                 address.Font = originalFont;
+                // Internet shortcuts get their icon from an apartment-threaded Shell handler, as document security
+                // products do for every file. Read on the wrong kind of thread, such a handler fails and the
+                // result shows the blank "unknown type" icon instead of the one the file list shows.
+                string shortcut = Path.Combine(folder, "folder-icon.url");
+                File.WriteAllText(shortcut, "[InternetShortcut]\r\nURL=https://example.com/\r\nIconFile="
+                    + Path.Combine(Environment.SystemDirectory, "shell32.dll") + "\r\nIconIndex=3\r\n");
+                var shortcutHit = new SearchHit(shortcut, false);
+                candidates.Present(address, [shortcutHit]);
+                await WaitForAddressIcon(candidates, shortcutHit);
+                using (var actual = candidates.CopyIcon(shortcutHit))
+                using (var expected = AddressTestShellIcon(shortcut, false, false))
+                using (var otherThread = await Task.Run(() => AddressTestShellIcon(shortcut, false, false)))
+                {
+                    // The thread pool is a multithreaded apartment: the kind of thread that gave the blank icon.
+                    Check(expected is not null && otherThread is not null && !SameAddressIcon(expected, otherThread),
+                        "the shortcut fixture's icon depends on the kind of thread that reads it");
+                    Check(actual is not null && expected is not null && SameAddressIcon(actual, expected),
+                        "a result whose icon comes from an apartment-threaded Shell handler shows that icon, not the blank one");
+                }
                 candidates.Dispose();
-                using (var afterDispose = candidates.CopyIcon(hits[0]))
+                using (var afterDispose = candidates.CopyIcon(shortcutHit))
                     Check(afterDispose is null, "disposing the dropdown releases its icon cache");
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
@@ -135,7 +150,7 @@ internal static partial class Program
     {
         var info = new AddressTestShellInfo();
         nint result = AddressTestSHGetFileInfo(path, directory ? 0x10u : 0x80u, ref info,
-            (uint)Marshal.SizeOf<AddressTestShellInfo>(), 0x101u | (association ? 0x10u : 0u));
+            (uint)Marshal.SizeOf<AddressTestShellInfo>(), 0x101u | (association ? 0x10u : 0x20u)); // real paths with overlays, as the file list
         try
         {
             if (result == 0 || info.Icon == 0) return null;

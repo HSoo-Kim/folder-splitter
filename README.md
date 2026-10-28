@@ -68,7 +68,7 @@ You don't need the full path. Type **any fragment you remember** into the addres
 ![Typing 'shared/monthly' into the address bar shows folder and file candidates immediately](docs/images/folder-splitter-search-en-v0.8.4.png)
 
 - Choose a **folder** to go there; choose a **file** to open its folder with that file selected.
-- Results show the Windows Shell icons for their files and folders.
+- Results show the same icons as the file list, including marks that other programs add to them, such as a sync status or a document-security lock.
 - Use Up/Down and Enter, or click. Results near the current folder, open tabs, favorites and recently closed tabs come first, then those inside folders you open often (three times or more).
 - The list starts with the 50 best matches. If there are more, choose **Show more results** (press Down to the last row and Enter, or click it) to see up to 200, then up to 500. After that, type more of the name to narrow the search.
 - Local drives are indexed by the app itself, so no separate tool such as Everything is needed. File contents are never read.

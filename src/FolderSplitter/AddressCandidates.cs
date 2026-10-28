@@ -174,15 +174,20 @@ internal sealed class AddressCandidates : Form
             pendingIcons = current.Where(hit => !icons.ContainsKey(hit)).ToArray();
             if (iconsDisposed || iconWorkerRunning || pendingIcons.Length == 0) return;
             iconWorkerRunning = true;
-            _ = Task.Run(LoadIcons);
+            AddressShellIcons.StartThread(LoadIcons);
         }
     }
 
     private void LoadIcons()
     {
-        int com = AddressShellIcons.InitializeWorker();
         try { LoadIconsCore(); }
-        finally { if (com >= 0) AddressShellIcons.UninitializeWorker(); }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // Like the thread-pool task this thread replaced, an unexpected failure costs the icons, never the
+            // window; the next query starts a new icon thread.
+            System.Diagnostics.Debug.WriteLine(error);
+            lock (iconGate) iconWorkerRunning = false;
+        }
     }
 
     private void LoadIconsCore()
@@ -204,6 +209,7 @@ internal sealed class AddressCandidates : Form
             }
             foreach (SearchHit hit in work)
             {
+                AddressShellIcons.PumpMessages();
                 lock (iconGate)
                     if (iconsDisposed || generation != iconGeneration) break;
                 Bitmap? image;
