@@ -1154,7 +1154,9 @@ public sealed class MainForm : Form, IMessageFilter
     {
         var source = Active;
         if (source.ActiveView is not { } view) return;
-        if (OtherPane() is not { ActiveView: { } destinationView } target || !Directory.Exists(destinationView.LocationPath))
+        // The recent list is not a folder: files copied into the Recent folder would never show up there.
+        if (OtherPane() is not { ActiveView: { } destinationView } target || !Directory.Exists(destinationView.LocationPath)
+            || ShellViewHost.IsRecent(destinationView.LocationPath))
         {
             source.SetLocalizedStatus("Open a folder in another pane first.");
             return;
@@ -1477,7 +1479,8 @@ public sealed class MainForm : Form, IMessageFilter
     {
         var other = OtherPane();
         if (other is null || pane.ActiveView is null || other.ActiveView is null || pane.CurrentPath.Length == 0 || other.CurrentPath.Length == 0
-            || !Directory.Exists(pane.CurrentPath) || !Directory.Exists(other.CurrentPath))
+            || !Directory.Exists(pane.CurrentPath) || !Directory.Exists(other.CurrentPath)
+            || ShellViewHost.IsRecent(pane.CurrentPath) || ShellViewHost.IsRecent(other.CurrentPath))
         {
             pane.SetLocalizedStatus("Open another pane to compare.");
             return null;

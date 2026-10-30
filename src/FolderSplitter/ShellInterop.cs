@@ -8,7 +8,8 @@ internal static class ShellNative
     public static readonly Guid BrowserClass = new("71F96385-DDD6-48D3-A0C1-AE06E8B055FB");
     public const string ThisPc = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
     public const string RecycleBin = "::{645FF040-5081-101B-9F08-00AA002F954E}";
-    public static readonly string Recent = Environment.GetFolderPath(Environment.SpecialFolder.Recent,
+    // UI checks point this at a scratch folder so they never read or change the user's recent items.
+    public static string Recent { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.Recent,
         Environment.SpecialFolderOption.DoNotVerify);
     public const uint SvgioAllView = 0x2;
 
@@ -93,7 +94,7 @@ public interface IExplorerBrowser
     void GetOptions(out uint flags);
     void BrowseToIDList(nint pidl, uint flags);
     void BrowseToObject([MarshalAs(UnmanagedType.IUnknown)] object target, uint flags);
-    void FillFromObject(nint dataObject, uint flags);
+    [PreserveSig] int FillFromObject(nint dataObject, uint flags);
     void RemoveAll();
     void GetCurrentView(ref Guid interfaceId, [MarshalAs(UnmanagedType.Interface)] out object view);
 }
@@ -241,4 +242,25 @@ public interface IFolderFilter
 {
     [PreserveSig] int ShouldShow([MarshalAs(UnmanagedType.IUnknown)] object folder, nint folderIdList, nint itemIdList);
     [PreserveSig] int GetEnumFlags([MarshalAs(UnmanagedType.IUnknown)] object folder, nint folderIdList, ref nint window, ref uint flags);
+}
+
+// The folder ExplorerBrowser.FillFromObject creates: it lists items added from anywhere in the namespace.
+// https://learn.microsoft.com/windows/win32/api/shobjidl/nn-shobjidl-iresultsfolder
+[ComImport, Guid("96E5AE6D-6AE1-4b1c-900C-C6480EAA8828"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IResultsFolder
+{
+    [PreserveSig] int AddItem(nint item);
+    [PreserveSig] int AddIDList(nint pidl, nint added);
+    [PreserveSig] int RemoveItem(nint item);
+    [PreserveSig] int RemoveIDList(nint pidl);
+    [PreserveSig] int RemoveAll();
+}
+
+// IPersist, IPersistFolder, then GetCurFolder: the folder's absolute ID list.
+[ComImport, Guid("1AC3D9F0-175C-11d1-95BE-00609797EA4F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IPersistFolder2
+{
+    [PreserveSig] int GetClassID(out Guid classId);
+    [PreserveSig] int Initialize(nint pidl);
+    [PreserveSig] int GetCurFolder(out nint pidl);
 }

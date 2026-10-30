@@ -140,7 +140,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **Browse for a folder**: The folder icon beside the address bar opens a folder picker.
 
 ### Sidebar
-- **Quick access**: User folder, Desktop, Downloads, Documents, Recent items, This PC and Recycle Bin. Clicking opens in the active pane (blue line at the top). `Recent items` lists recently opened files and folders, newest first, as in File Explorer.
+- **Quick access**: User folder, Desktop, Downloads, Documents, Recent items, This PC and Recycle Bin. Clicking opens in the active pane (blue line at the top). `Recent items` lists recently opened files and folders, newest first, as in File Explorer. They are the files themselves, not shortcuts: dragging, copying and `Copy path` hand over the file, and deleting or renaming changes it. Files that no longer exist on a local drive are left out.
 - **Favorites**: Add with `Ctrl+D`, remove by right-click. File Explorer's pinned folders are imported on first launch; `Manage...` re-imports, removes all or restores. Explorer itself is not changed.
 - **Folder tree**: Follows the active pane. Click opens in the current pane, middle-click or Ctrl+click in a new tab, right-click in a new pane or File Explorer. `Ctrl+Shift+E` collapses it.
 - **Size**: Drag to set the sidebar width and the favorites/tree height; `Sidebar` hides it.

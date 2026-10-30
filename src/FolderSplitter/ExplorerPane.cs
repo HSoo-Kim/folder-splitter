@@ -1254,7 +1254,8 @@ public sealed partial class ExplorerPane : UserControl
     {
         int generation = ++folderSizeGeneration;
         string? path = ActiveView?.LocationPath;
-        string? result = path is null ? null : await Task.Run(() => FolderFilesSize(path, 50_000));
+        // The recent list shows shortcut targets, so the shortcuts' own sizes would be meaningless.
+        string? result = path is null || ShellViewHost.IsRecent(path) ? null : await Task.Run(() => FolderFilesSize(path, 50_000));
         if (generation != folderSizeGeneration || IsDisposed || path != ActiveView?.LocationPath) return;
         folderSize = result is null ? null : (path!, result);
         RenderItemCount();

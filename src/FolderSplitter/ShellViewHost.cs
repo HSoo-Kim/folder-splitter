@@ -40,10 +40,12 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public ShellViewHost(string location, UiText? text = null)
     {
-        enumerationDone = OnEnumerationDone;
+        // The recent list is complete when its targets are added, not when the empty results folder enumerates.
+        enumerationDone = () => { if (!showingRecent) OnEnumerationDone(); };
         selectionChanged = () => SelectionChanged?.Invoke(this, EventArgs.Empty);
         itemCountTimer.Tick += OnItemCountTick;
         selectionTimer.Tick += OnSelectionTick;
+        recentTimer.Tick += (_, _) => ReloadStaleRecent();
         this.text = text ?? new UiText();
         LocationPath = requestedLocation = location;
         DisplayName = TitleFor(location, this.text);
@@ -106,6 +108,7 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
         if (location == "~") location = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         requestedLocation = location;
         if (browser is null) { LocationPath = location; DisplayName = TitleFor(location, text); return; }
+        if (IsRecent(location)) { ShowRecentItems(); return; }
         nint pidl = 0;
         try
         {
@@ -115,6 +118,8 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
                 ReportError(() => text.T("Could not open:\n{0}\n\n{1}", location, text.T("Enter a folder path, not a file.")));
                 return;
             }
+            // Other spellings of the Recent folder, such as shell:recent, list the same targets.
+            if (IsRecent(ShellNative.Name(pidl, 0x80028000) ?? "")) { requestedLocation = ShellNative.Recent; ShowRecentItems(); return; }
             browser.BrowseToIDList(pidl, 0);
         }
         catch (Exception ex) when (ex is COMException or IOException or ArgumentException)
@@ -124,16 +129,188 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
         finally { if (pidl != 0) Marshal.FreeCoTaskMem(pidl); }
     }
 
+    // Recent items: a results folder filled with the targets of Windows' recent shortcuts (see RecentItems).
+    private bool showingRecent;
+    private int recentLoads;
+
+    // ExplorerBrowser creates a results folder only through FillFromObject, which a browser that has shown a
+    // folder refuses. A throwaway browser creates one once; its ID list then opens an empty results folder in
+    // any browser, which is also what Back and Forward return to.
+    private static nint resultsFolder;
+    private static string? resultsFolderName;
+
+    private static nint ResultsFolder(nint parent)
+    {
+        if (resultsFolder != 0) return resultsFolder;
+        var type = Type.GetTypeFromCLSID(ShellNative.BrowserClass, throwOnError: true)!;
+        var source = (IExplorerBrowser)Activator.CreateInstance(type)!;
+        try
+        {
+            var rect = new NativeRect(0, 0);
+            var settings = new FolderSettings { ViewMode = 4 };
+            source.Initialize(parent, ref rect, ref settings);
+            try
+            {
+                Marshal.ThrowExceptionForHR(source.FillFromObject(0, 0x200)); // EBF_NODROPTARGET
+                Guid viewId = typeof(IFolderView).GUID, persistId = typeof(IPersistFolder2).GUID;
+                source.GetCurrentView(ref viewId, out object current);
+                Marshal.ThrowExceptionForHR(((IFolderView)current).GetFolder(ref persistId, out nint pointer));
+                var folder = (IPersistFolder2)Marshal.GetObjectForIUnknown(pointer);
+                Marshal.Release(pointer);
+                Marshal.ThrowExceptionForHR(folder.GetCurFolder(out nint pidl));
+                resultsFolderName = ShellNative.Name(pidl, 0x80028000);
+                resultsFolder = pidl;
+                Marshal.ReleaseComObject(folder);
+                Marshal.ReleaseComObject(current);
+            }
+            finally { source.Destroy(); }
+        }
+        finally { Marshal.ReleaseComObject(source); }
+        return resultsFolder;
+    }
+
+    private bool cancelledForRecent;
+
+    private void ShowRecentItems()
+    {
+        cancelledForRecent = false;
+        try { browser!.BrowseToIDList(ResultsFolder(Handle), 0); }
+        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        {
+            ReportError(() => text.T("Could not open:\n{0}\n\n{1}", ShellNative.Recent, ex.Message));
+        }
+    }
+
+    private async void LoadRecentItems()
+    {
+        int load = ++recentLoads;
+        recentStale = false;
+        var shown = view;
+        enumerationReady = false;
+        SetItemCount(null);
+        string folder = ShellNative.Recent;
+        string[] filter = FilterText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var items = await Task.Run(() => RecentItems.Load(folder, filter));
+        bool Current() => load == recentLoads && showingRecent && view == shown && !IsDisposed;
+        try
+        {
+            if (!Current() || view is not IFolderView folderView) return;
+            Guid resultsId = typeof(IResultsFolder).GUID;
+            if (folderView.GetFolder(ref resultsId, out nint pointer) < 0) return;
+            var results = (IResultsFolder)Marshal.GetObjectForIUnknown(pointer);
+            Marshal.Release(pointer);
+            try
+            {
+                results.RemoveAll();
+                // The view lays out each added row at once (about 1.4 ms per row), so a long list is added a
+                // slice at a time, letting input and painting through in between; the newest rows show first.
+                for (int i = 0; i < items.Count; i++)
+                {
+                    results.AddIDList(items[i], 0);
+                    if (i % 32 != 31) continue;
+                    await Task.Delay(1);
+                    if (!Current()) return;
+                }
+            }
+            finally { Marshal.ReleaseComObject(results); }
+            OnEnumerationDone();
+        }
+        finally { foreach (nint item in items) ShellNative.ILFree(item); }
+    }
+
+    // The results folder keeps the order items were added in while it is sorted by search rank, which none of
+    // them has; like the old newest-first sort, each visit starts in that order whatever was clicked before.
+    private static readonly PropertyKey SearchRank = new() { FormatId = new("49691C90-7E17-101A-A91C-08002B2ECDA9"), PropertyId = 3 };
+
+    private void ListMostRecentFirst()
+    {
+        if (view is IFolderView2 folderView)
+            folderView.SetSortColumns([new SortColumn { Property = SearchRank, Direction = -1 }], 1);
+    }
+
+    // The results folder accepts drops by adding the dropped items to the list; the recent list takes none.
+    private void RevokeDropTargets()
+    {
+        if (view is null || view.GetWindow(out nint window) < 0) return;
+        RevokeDragDrop(window);
+        EnumChildWindows(window, (child, _) => { RevokeDragDrop(child); return true; }, 0);
+    }
+
+    [DllImport("ole32.dll")]
+    private static extern int RevokeDragDrop(nint window);
+
+    // Windows rewrites a shortcut in the Recent folder whenever something is opened. The list follows, but waits
+    // while its tab is hidden, something is selected or it is scrolled down, so it never moves under the user.
+    private FileSystemWatcher? recentWatcher;
+    private readonly System.Windows.Forms.Timer recentTimer = new() { Interval = 500 };
+    private bool recentStale;
+
+    private void WatchRecent(bool watch)
+    {
+        if (!watch || IsDisposed)
+        {
+            recentWatcher?.Dispose();
+            recentWatcher = null;
+            recentTimer.Stop();
+            recentStale = false;
+            return;
+        }
+        if (recentWatcher is not null) return;
+        try
+        {
+            var watcher = new FileSystemWatcher(ShellNative.Recent, "*.lnk")
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite, SynchronizingObject = this
+            };
+            watcher.Created += OnRecentChanged;
+            watcher.Changed += OnRecentChanged;
+            watcher.Deleted += OnRecentChanged;
+            watcher.Renamed += OnRecentChanged;
+            watcher.Error += (_, _) => OnRecentChanged(null, null);
+            watcher.EnableRaisingEvents = true;
+            recentWatcher = watcher;
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException) { }
+    }
+
+    private void OnRecentChanged(object? sender, FileSystemEventArgs? e)
+    {
+        recentStale = true;
+        recentTimer.Stop();
+        recentTimer.Start();
+    }
+
+    private void ReloadStaleRecent()
+    {
+        recentTimer.Stop();
+        if (!recentStale || !showingRecent) return;
+        if (Visible && SelectionCount == 0 && ScrolledToTop()) LoadRecentItems();
+        else recentTimer.Start();
+    }
+
+    private bool ScrolledToTop()
+    {
+        nint list = ListWindow();
+        return list == 0 || SendMessage(list, 0x1027, 0, 0) == 0; // LVM_GETTOPINDEX
+    }
+
     public void Travel(uint direction)
     {
         if (browser is null) return;
+        // The results folder's parent is the Desktop; Up goes where it went from the Recent folder.
+        if (direction == 0x2000 && showingRecent && Path.GetDirectoryName(ShellNative.Recent.TrimEnd('\\')) is { } parent)
+        {
+            Navigate(parent);
+            return;
+        }
         try { browser.BrowseToIDList(0, direction); }
         catch (COMException ex) { NavigationError?.Invoke(this, ex.Message); }
     }
 
     public void RefreshFolder()
     {
-        view?.Refresh();
+        if (showingRecent) LoadRecentItems();
+        else view?.Refresh();
         RefreshItemCount();
     }
 
@@ -180,6 +357,18 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
     internal void ApplyListFont()
     {
         if (Theme.ListFont is null && !customFont) return;
+        nint list = ListWindow();
+        if (list == 0) return;
+        var (face, points) = Theme.ListFont ?? (SystemFonts.IconTitleFont!.Name, SystemFonts.IconTitleFont.SizeInPoints);
+        nint font = ListFonts.Get(face, -(int)Math.Round(points * DeviceDpi / 72d));
+        SendMessage(list, 0x0030, font, 1); // WM_SETFONT, redraw
+        SendMessage(SendMessage(list, 0x101F, 0, 0), 0x0030, font, 1); // the column header (LVM_GETHEADER)
+        customFont = Theme.ListFont is not null;
+    }
+
+    // The details list window inside the folder view, or 0 in views that have none.
+    private nint ListWindow()
+    {
         nint list = 0;
         if (IsHandleCreated)
             EnumChildWindows(Handle, (window, _) =>
@@ -190,12 +379,7 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
                 list = window;
                 return false;
             }, 0);
-        if (list == 0) return;
-        var (face, points) = Theme.ListFont ?? (SystemFonts.IconTitleFont!.Name, SystemFonts.IconTitleFont.SizeInPoints);
-        nint font = ListFonts.Get(face, -(int)Math.Round(points * DeviceDpi / 72d));
-        SendMessage(list, 0x0030, font, 1); // WM_SETFONT, redraw
-        SendMessage(SendMessage(list, 0x101F, 0, 0), 0x0030, font, 1); // the column header (LVM_GETHEADER)
-        customFont = Theme.ListFont is not null;
+        return list;
     }
 
     private bool customFont;
@@ -325,6 +509,8 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
             selectionTimer.Stop();
             selectionTimer.Tick -= OnSelectionTick;
             selectionTimer.Dispose();
+            WatchRecent(false);
+            recentTimer.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -367,16 +553,26 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     internal void RefreshLanguage()
     {
-        if (!HasNavigated) DisplayName = TitleFor(LocationPath, text);
+        // The recent list's title is the app's own text; folder titles come from Windows.
+        if (!HasNavigated || showingRecent) DisplayName = TitleFor(LocationPath, text);
         if (errorMessage is not null)
             error.Text = errorMessage() + "\n\n" + text.T("Use the address bar to choose another folder, or retry with Go.");
     }
 
     public int OnNavigationPending(nint pidlFolder)
     {
+        // The shell can also head for the Recent folder itself, for example when it is opened inside the view.
+        // That navigation is cancelled, so it never enters the history, and the recent list opens instead.
+        if (ShellNative.Name(pidlFolder, 0x80028000) is { } target && IsRecent(target))
+        {
+            cancelledForRecent = true;
+            BeginInvoke(() => { if (!IsDisposed && browser is not null) ShowRecentItems(); });
+            return unchecked((int)0x80004004); // E_ABORT
+        }
         ClearFilterForNavigation();
         EndSettling();
         navigationReady = false;
+        showingRecent = false;
         itemCountTimer.Stop();
         SetItemCount(null);
         HasNavigated = false;
@@ -412,14 +608,23 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public int OnNavigationComplete(nint pidlFolder)
     {
-        LocationPath = ShellNative.Name(pidlFolder, 0x80028000) ?? requestedLocation; // Desktop absolute parsing.
-        DisplayName = ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath, text);
+        string? name = ShellNative.Name(pidlFolder, 0x80028000); // Desktop absolute parsing.
+        // Only the recent list opens the results folder; Back and Forward return to it the same way.
+        showingRecent = name is not null && name == resultsFolderName;
+        LocationPath = showingRecent ? ShellNative.Recent : name ?? requestedLocation;
+        DisplayName = showingRecent ? TitleFor(LocationPath, text) : ShellNative.Name(pidlFolder, 0) ?? TitleFor(LocationPath, text);
         requestedLocation = LocationPath;
         recentLocations.RemoveAll(path => string.Equals(path, LocationPath, StringComparison.OrdinalIgnoreCase));
         recentLocations.Insert(0, LocationPath);
         if (recentLocations.Count > 16) recentLocations.RemoveAt(16);
         navigationReady = true;
-        if (IsRecent(LocationPath)) SortNewestFirst();
+        if (showingRecent)
+        {
+            ListMostRecentFirst();
+            RevokeDropTargets();
+            LoadRecentItems();
+        }
+        WatchRecent(showingRecent);
         UpdateItemCountMonitoring();
         RefreshItemCount();
         error.Visible = false;
@@ -462,6 +667,8 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public int OnNavigationFailed(nint pidlFolder)
     {
+        // The Recent folder navigation cancelled in OnNavigationPending is not an error.
+        if (cancelledForRecent) return 0;
         navigationReady = false;
         itemCountTimer.Stop();
         SetItemCount(null);
@@ -561,15 +768,6 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
     internal static bool IsRecent(string path) => ShellNative.Recent.Length > 0
         && path.TrimEnd('\\', '/').Equals(ShellNative.Recent.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
 
-    private static readonly PropertyKey DateModified = new() { FormatId = new("B725F130-47EF-101A-A5F1-02608C9EEBAC"), PropertyId = 14 };
-
-    // Recent items are shortcuts whose modified time is when the item was last opened.
-    private void SortNewestFirst()
-    {
-        if (view is IFolderView2 folderView)
-            folderView.SetSortColumns([new SortColumn { Property = DateModified, Direction = -1 }], 1);
-    }
-
     internal void GroupBy(PropertyKey key)
     {
         if (view is IFolderView2 folderView) folderView.SetGroupBy(ref key, true);
@@ -667,8 +865,13 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
         text = text.Trim();
         if (text == FilterText || browser is not IFolderFilterSite site) return;
         FilterText = text;
-        site.SetFilter(text.Length == 0 ? null : new NameFilter(text.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
-        view?.Refresh();
+        // The results folder does not ask the folder filter about items added to it, so the list is rebuilt.
+        if (showingRecent) LoadRecentItems();
+        else
+        {
+            site.SetFilter(text.Length == 0 ? null : new NameFilter(text.Split(' ', StringSplitOptions.RemoveEmptyEntries)));
+            view?.Refresh();
+        }
         FilterChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -688,17 +891,6 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     internal PropertyKey? GroupKey =>
         view is IFolderView2 folderView && folderView.GetGroupBy(out var key, out _) >= 0 ? key : null;
-
-    internal bool SortedNewestFirst
-    {
-        get
-        {
-            if (view is not IFolderView2 folderView || folderView.GetSortColumnCount(out int count) < 0 || count < 1) return false;
-            var columns = new SortColumn[count];
-            return folderView.GetSortColumns(columns, count) >= 0 && columns[0].Property.FormatId == DateModified.FormatId
-                && columns[0].Property.PropertyId == DateModified.PropertyId && columns[0].Direction == -1;
-        }
-    }
 
     internal static string TitleFor(string path, UiText? text = null)
     {

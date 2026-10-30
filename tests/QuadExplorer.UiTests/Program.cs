@@ -77,6 +77,12 @@ internal static partial class Program
                 Console.WriteLine($"FREQUENT_FOLDERS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--recent-items"])
+            {
+                RunRecentItemsScenario(root);
+                Console.WriteLine($"RECENT_ITEMS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--breadcrumb-dpi", var breadcrumbOutput])
             {
                 RunBreadcrumbDpiScenario(root, breadcrumbOutput);
@@ -194,11 +200,6 @@ internal static partial class Program
                     var recentText = new UiText(form.Language).T("Recent items");
                     Check(Descendants(form).OfType<ListBox>().Single(l => l.AccessibleName == "Quick access").Items
                         .Cast<object>().Any(item => item.ToString() == recentText), "quick access lists recent items");
-                    string recent = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
-                    await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(recent));
-                    Check(ShellViewHost.IsRecent(panes[0].CurrentPath) && panes[0].ActiveView!.SortedNewestFirst,
-                        "recent items open sorted newest first");
-                    await Navigate(panes[0].ActiveView!, () => panes[0].Navigate(folders[0]));
 
                     var byType = new PropertyKey { FormatId = new("B725F130-47EF-101A-A5F1-02608C9EEBAC"), PropertyId = 4 };
                     bool GroupedByType(ShellViewHost host) => host.GroupKey is { } key && key.FormatId == byType.FormatId && key.PropertyId == byType.PropertyId;
@@ -289,6 +290,7 @@ internal static partial class Program
             RunAddressCandidateIconScenario(root);
             RunAddressMoreResultsScenario(root);
             RunFrequentFolderScenario(root);
+            RunRecentItemsScenario(root);
             RunPaneNavigationScenario(root);
             RunAppearanceScenario(root);
             RunTrayScenario(root);
