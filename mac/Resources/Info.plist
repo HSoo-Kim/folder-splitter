@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ko</string>
+	</array>
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+	<key>CFBundleExecutable</key>
+	<string>FolderSplitter</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.hsoo-kim.FolderSplitter</string>
+	<key>CFBundleName</key>
+	<string>Folder Splitter</string>
+	<key>CFBundleDisplayName</key>
+	<string>Folder Splitter</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__BUILD__</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 HSoo-Kim. MIT License.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+				<string>public.volume</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Any Item</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.item</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.hsoo-kim.FolderSplitter</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>foldersplitter</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Open in Folder Splitter</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>openInFolderSplitter</string>
+			<key>NSPortName</key>
+			<string>Folder Splitter</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.item</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Folder Splitter asks Finder to show Get Info windows when you choose Get Info.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Folder Splitter lists and searches the files on your Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Folder Splitter lists and searches the files in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Folder Splitter lists and searches the files in your Downloads folder.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Folder Splitter lists the files on removable drives you open.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>Folder Splitter lists the files on network drives you open.</string>
+	<key>NSFileProviderDomainUsageDescription</key>
+	<string>Folder Splitter lists the files in cloud storage folders you open.</string>
+</dict>
+</plist>

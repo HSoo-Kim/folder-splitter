@@ -1,0 +1,108 @@
+<div align="center">
+
+<img src="../src/FolderSplitter/Assets/app.png" width="96" alt="Folder Splitter 아이콘">
+
+# Folder Splitter for Mac
+
+**윈도우 하나에 폴더 최대 네 개, 영역마다 따로 있는 탭. 이름 일부만 입력해도 찾습니다.**
+
+[English](README.md) · **한국어**
+
+</div>
+
+[Folder Splitter](../README.ko.md)를 macOS용으로 새로 만든 네이티브 앱(Swift + AppKit)입니다. 매일 쓰는 Finder를 대신하도록 만들었고, Finder와 함께 실행되며 Finder를 수정하지 않습니다.
+
+## 주요 기능
+
+| 기능 | 설명 |
+|---|---|
+| **영역 4개, 영역마다 탭** | 영역 1~4개(⌥⌘1~⌥⌘4, 위아래·세로 3열 배치 포함). 영역마다 탭과 방문 기록이 따로 있습니다. 탭을 다른 영역으로 끌거나 영역 가장자리에 놓아 분할합니다. 영역 수를 줄여도 가려진 영역의 탭은 남아 있습니다. |
+| **주소 막대가 곧 검색** | 이름 일부(`report 2026`)나 경로 조각(`15min_rain/rn_15m`)을 입력하면 입력하는 대로 파일과 폴더가 나타나고, 열어 둔 위치에 가까운 항목이 먼저 나옵니다. 앱이 직접 파일 이름 색인을 만들고(파일 내용은 읽지 않음) FSEvents로 갱신합니다. 한글 이름은 macOS가 저장한 방식(NFC/NFD)과 관계없이 찾습니다. |
+| **Finder 수준의 파일 목록** | 폴더를 펼치는 목록 보기, 썸네일 아이콘 보기, 폴더별 보기·정렬 기억, 훑어보기(스페이스 바), 이름 변경, 태그, 다음으로 열기, 공유, 서비스, Finder와 같은 복사/이동 규칙의 드래그 앤 드롭, 스프링 로드 폴더. |
+| **실행 취소되는 파일 작업** | 진행률과 이름 충돌 선택(모두 유지, 대치 — 대치된 항목은 휴지통으로, 건너뛰기, 정지, 모두에 적용)이 있는 복사·이동. ⌘Z로 이동, 복사, 이름 변경, 새로운 폴더, 복제, 휴지통으로 이동을 되돌립니다. |
+| **영역 사이 작업** | 선택 항목을 다른 영역으로 복사·이동(⌃⌥C / ⌃⌥X), 이 폴더를 다른 영역에서 열기(⌃⌥O), 두 폴더 비교 후 다른 항목 선택. |
+| **미리보기와 정보 가져오기** | 세부 정보(크기, 재생 시간, 페이지)가 있는 미리보기, 고정, 별도 미리보기 윈도우, 폴더 크기·기본 앱·잠금 등을 보여 주는 정보 윈도우. |
+| **여러 항목 이름 변경** | 찾기/바꾸기(정규 표현식 가능)와 일련번호 `{n}` / `{n:3}`, 실시간 미리보기. 실행 취소 한 번으로 전체를 되돌립니다. |
+| **이어서 작업** | 윈도우, 영역, 탭, 방문 기록, 배치를 다음 실행 때 복원합니다. 이름 붙인 작업 구성을 저장합니다. 닫은 탭과 영역은 ⇧⌘T로 다시 엽니다. |
+| **macOS가 허용하는 범위에서 Finder 대체** | 기본 파일 뷰어로 지정하면 다른 앱의 'Finder에서 보기'와 폴더 열기가 Folder Splitter로 열립니다. 전역 단축키 ⌃⌥⌘F로 어디서든 앞으로 가져옵니다. 서비스 ▸ 'Folder Splitter에서 열기'. |
+
+라이트/다크 모드, 동작 줄이기, 투명도 줄이기, 대비 증가 설정을 따릅니다. 한국어와 영어를 지원합니다.
+
+## 요구 사항
+
+- macOS 15 Sequoia 이상, Apple 실리콘 또는 Intel
+- 빌드: Xcode Command Line Tools(Swift 6.1). Xcode는 필요하지 않습니다.
+
+## 설치
+
+```sh
+git clone <이 저장소> folder-splitter-mac
+cd folder-splitter-mac
+scripts/install.sh        # 릴리스 빌드 후 /Applications/Folder Splitter.app 에 설치하고 실행
+```
+
+다른 사람에게 줄 때는 `scripts/package.sh`로 `build/FolderSplitter-<버전>.zip`(Apple 실리콘·Intel 공용)을 만듭니다. 받은 사람은 압축을 풀고 **Folder Splitter**를 응용 프로그램 폴더로 옮깁니다. 애드혹 서명이고 Apple 공증을 받지 않아 첫 실행이 막힙니다. 경고가 뜬 뒤 시스템 설정 ▸ 개인정보 보호 및 보안에서 'Folder Splitter이(가) 차단되었습니다' 옆의 **그래도 열기**를 누르고 확인하면 됩니다.
+
+처음 실행하면 macOS가 데스크탑, 문서, 다운로드 폴더 접근을 물을 수 있습니다. 설정 ▸ 일반에서 **전체 디스크 접근 권한**을 주면 폴더마다 묻지 않고, 보호된 폴더도 검색할 수 있습니다.
+
+## Finder 대신 쓰기
+
+설정 ▸ 일반 ▸ **기본 파일 뷰어로 사용**을 켜면 두 가지가 Folder Splitter로 열립니다. 다른 앱의 'Finder에서 보기'(`NSFileViewer`)와 폴더 열기(터미널의 `open <폴더>`, 다른 앱에서 연 폴더; `public.folder` 기본 뷰어)입니다. 데스크탑과 Dock의 폴더는 계속 Finder가 열고, Finder도 계속 실행됩니다. 끄면 Finder로 돌아갑니다.
+
+자동화: `open "foldersplitter://open?path=/Users/me/Projects&in=tab"` (`in` = `current`, `tab`, `other`, `right`, `below`, `window`), `foldersplitter://reveal?path=…`
+
+## 키보드 단축키
+
+Finder 단축키는 Finder와 같습니다(⌘N, ⌘T, ⌘W, ⇧⌘N, ⌘D, ⌘I, ⌘⌫, ⌘[, ⌘], ⌘↑, ⌘↓, ⇧⌘G, ⇧⌘., ⌘1, ⌘2, 스페이스 바, Return …). 추가된 단축키:
+
+| 키 | 동작 |
+|---|---|
+| ⌥⌘1 – ⌥⌘4 | 영역 1~4개 |
+| ⌃1 – ⌃4 | 영역 1~4로 이동 |
+| ⌥⌘] / ⌥⌘[ 또는 F6 / ⇧F6 | 다음 / 이전 영역 |
+| ⌃⇥ / ⌃⇧⇥ | 다음 / 이전 탭 보기 |
+| ⇧⌘T | 마지막으로 닫은 탭 또는 영역 다시 열기 |
+| ⌘L | 이름으로 파일 검색(주소 막대) |
+| ⌘F | 이 폴더 필터 |
+| ⌃⌥C / ⌃⌥X | 선택 항목을 다른 영역으로 복사 / 이동 |
+| ⌃⌥O | 다른 영역에서 이 폴더 열기 |
+| ⌥⌘C | 경로 이름 복사 |
+| ⌥⌘V | 항목을 여기로 이동 |
+| ⇧⌘P | 미리보기 보기/가리기 |
+| ⌘+ / ⌘- | 텍스트 크게 / 작게 |
+| ⌃⌥⌘F | 어느 앱에서든 Folder Splitter를 앞으로(설정에서 변경) |
+| ⌘? | 모든 단축키 |
+
+## 데이터
+
+- 세션과 설정: `~/Library/Application Support/Folder Splitter/session.json` (직전 버전은 `session.json.bak`)
+- 검색 색인: `~/Library/Application Support/Folder Splitter/Search/paths.v1.index`
+- 색인하지 않는 곳(폴더 자체는 이름으로 찾을 수 있음): `/System`, `/Library`, `/private`, `/usr`, `/opt`, `/Volumes`, `~/Library`, `~/.Trash`, `.git`·`node_modules` 내용, 패키지(`.app` 등) 내용, 설정 ▸ 검색에서 제외한 폴더
+- 네트워크 연결을 하지 않습니다.
+
+## 개발
+
+```text
+Sources/Shared/   Foundation 전용 계약: 설정, 모델, 경로 해석, 포맷
+Sources/Core/     검색 엔진, 세션·배치 모델, 파일 작업 엔진(AppKit 없음)
+Sources/App/      AppKit: Main(윈도우, 영역, 메뉴, 세션, QA 하네스), Chrome(탭, 주소 막대,
+                  도킹 오버레이), FileList, Sidebar, Preview, FileOperations,
+                  Models(시트), Settings, System(단축키, 기본 뷰어)
+Tests/            Swift Testing 테스트
+scripts/          build, test, typecheck, qa, install, package
+```
+
+SwiftPM은 쓰지 않습니다. 일부 Command Line Tools 설치본은 `PackageDescription` 파일이 서로 맞지 않아서, 스크립트가 `swiftc`를 직접 호출합니다(`scripts/env.sh`는 `import AppKit`을 깨뜨리는 오래된 `module.modulemap`도 우회합니다).
+
+```sh
+scripts/build.sh [--debug]     # build/Folder Splitter.app (릴리스는 Apple 실리콘·Intel 공용)
+scripts/test.sh                # 단위 테스트(검색, 모델, 파일 작업, 미리보기 메타데이터)
+scripts/package.sh             # 다른 Mac에 줄 공용 앱 zip
+scripts/qa.sh [--lang en|ko] [--arch x86_64]   # 실제 앱을 키보드·마우스 이벤트, Apple Event, 윈도우 캡처로
+                               # 끝까지 검증. 별도 번들 ID로 실행해 설치된 앱에 영향을 주지 않음.
+                               # 결과와 스크린숏은 build/qa/<언어>/
+```
+
+## 라이선스
+
+[MIT](../LICENSE)

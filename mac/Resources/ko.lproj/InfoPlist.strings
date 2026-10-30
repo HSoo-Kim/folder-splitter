@@ -1,0 +1,9 @@
+"CFBundleDisplayName" = "Folder Splitter";
+"NSHumanReadableCopyright" = "© 2026 HSoo-Kim. MIT 라이선스.";
+"NSAppleEventsUsageDescription" = "‘정보 가져오기’를 선택하면 Finder에 정보 윈도우를 열도록 요청합니다.";
+"NSDesktopFolderUsageDescription" = "데스크탑 폴더의 파일을 나열하고 이름으로 검색합니다.";
+"NSDocumentsFolderUsageDescription" = "문서 폴더의 파일을 나열하고 이름으로 검색합니다.";
+"NSDownloadsFolderUsageDescription" = "다운로드 폴더의 파일을 나열하고 이름으로 검색합니다.";
+"NSRemovableVolumesUsageDescription" = "연결한 외장 볼륨의 파일을 나열합니다.";
+"NSNetworkVolumesUsageDescription" = "연결한 네트워크 볼륨의 파일을 나열합니다.";
+"NSFileProviderDomainUsageDescription" = "클라우드 저장소 폴더의 파일을 나열합니다.";
