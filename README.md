@@ -41,18 +41,6 @@ A Windows file manager built on the native Shell file list (`IExplorerBrowser`).
 
 [Full feature list](#features)
 
-### AI search beta (in preparation)
-
-> **Not included in v0.8.11 or the current stable release.** This previews a feature that's still being prepared and tested, and details may change before it ships.
-
-A chat panel for finding files by describing them in plain language:
-
-- **Natural-language filename search** over the app's local index.
-- **Optional document reading on demand.** When you ask, it reads the content of found documents and cites the source files in its answer.
-- **Selectable, copyable conversation**, with actions on found files: open, open in the current pane, new tab, new pane or preview.
-- **Model choice:** a local endpoint, or supported Claude or Codex subscription models.
-- **Optional personal instructions** to shape how it answers.
-
 ## Quick Start
 
 1. Download [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) (Windows 11, or Windows 10 version 2004 or later, x64).
