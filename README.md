@@ -8,6 +8,7 @@
 
 <p>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Download Folder Splitter for Windows" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/download/mac-v0.1.1/folder-splitter-mac.zip"><img src="https://img.shields.io/badge/Download-macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download Folder Splitter for Mac" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
@@ -46,6 +47,8 @@ A Windows file manager built on the native Shell file list (`IExplorerBrowser`).
 1. Download [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) (Windows 11, or Windows 10 version 2004 or later, x64).
 2. Extract it and run `FolderSplitter.exe`. There is nothing to install; the .NET runtime is bundled.
 3. Type a name fragment into a pane's address bar, or pick a folder from the sidebar.
+
+**Mac:** download [folder-splitter-mac.zip](https://github.com/HSoo-Kim/folder-splitter/releases/download/mac-v0.1.1/folder-splitter-mac.zip) (macOS 15 or later, Apple silicon or Intel), move **Folder Splitter** to Applications, and on first launch choose **Open Anyway** in System Settings ▸ Privacy & Security. Details: [release notes](https://github.com/HSoo-Kim/folder-splitter/releases/tag/mac-v0.1.1) · [mac/README.md](mac/README.md).
 
 Early versions aren't code-signed, so Windows may warn that it can't verify the publisher. Development and testing happen on Windows 11.
 

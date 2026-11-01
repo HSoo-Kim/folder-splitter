@@ -8,6 +8,7 @@
 
 <p>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="下载 Windows 版 Folder Splitter" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/download/mac-v0.1.1/folder-splitter-mac.zip"><img src="https://img.shields.io/badge/Download-macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="下载 Mac 版 Folder Splitter" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
@@ -46,6 +47,8 @@
 1. 下载 [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip)（Windows 11，或 Windows 10 2004 及更高版本，x64）。
 2. 解压后运行 `FolderSplitter.exe`。无需安装，已内置 .NET 运行时。
 3. 在区域的地址栏输入名称片段，或从侧边栏选择文件夹。
+
+**Mac：** 下载 [folder-splitter-mac.zip](https://github.com/HSoo-Kim/folder-splitter/releases/download/mac-v0.1.1/folder-splitter-mac.zip)（macOS 15 及更高版本，Apple 芯片或 Intel），解压后将 **Folder Splitter** 移到“应用程序”文件夹。首次打开时在“系统设置 ▸ 隐私与安全性”中点按 **仍要打开**。详情：[发布说明](https://github.com/HSoo-Kim/folder-splitter/releases/tag/mac-v0.1.1) · [mac/README.md](mac/README.md)
 
 早期版本没有代码签名，Windows 可能会提示无法验证发布者。开发与测试在 Windows 11 上进行。
 
