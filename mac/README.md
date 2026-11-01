@@ -79,9 +79,11 @@ The bottom line of the window shows the version on the left and the author on th
 
 Publishing a Mac release:
 
-1. Raise `mac/VERSION` (for example `1.0.1`) and commit.
+1. Raise `mac/VERSION` (for example `0.1.2`) and commit.
 2. Run `mac/scripts/package.sh` → `mac/build/folder-splitter-mac.zip`.
-3. On GitHub ▸ Releases ▸ Draft a new release, create the tag `mac-v1.0.1`, attach `folder-splitter-mac.zip`, and **uncheck "Set as the latest release"** — the Windows app reads only the latest release, so a Mac-only release must not take that spot. Publish.
+3. On GitHub ▸ Releases ▸ Draft a new release, create the tag `mac-v0.1.2`, attach `folder-splitter-mac.zip`, and **uncheck "Set as the latest release"** — the Windows app reads only the latest release, so a Mac-only release must not take that spot. Publish.
+4. Point the Mac download links in the four top-level READMEs at the new tag, then commit:
+   `sed -i '' -E 's#(download|tag)/mac-v[0-9.]+#\1/mac-v0.1.2#g' ../README*.md`
 
 A combined release (tag `vX.Y.Z` with both `folder-splitter-win-x64.zip` and `folder-splitter-mac.zip`) works too, as long as the Mac version is `X.Y.Z`.
 

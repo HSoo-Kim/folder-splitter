@@ -8,6 +8,7 @@
 
 <p>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip"><img src="https://img.shields.io/badge/Download-Windows%20x64-000000?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgxMS4zNzd2MTEuMzcySDB6bTEyLjYyMyAwSDI0djExLjM3MkgxMi42MjN6TTAgMTIuNjIzaDExLjM3N1YyNEgwem0xMi42MjMgMEgyNFYyNEgxMi42MjN6Ii8%2BPC9zdmc%2B" alt="Windows 版 Folder Splitter をダウンロード" /></a>
+  <a href="https://github.com/HSoo-Kim/folder-splitter/releases/download/mac-v0.1.1/folder-splitter-mac.zip"><img src="https://img.shields.io/badge/Download-macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Mac 版 Folder Splitter をダウンロード" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases/latest"><img src="https://img.shields.io/github/v/release/HSoo-Kim/folder-splitter?style=for-the-badge&label=Release&color=007ec6" alt="Latest release" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/releases"><img src="https://img.shields.io/github/downloads/HSoo-Kim/folder-splitter/total?style=for-the-badge&label=Downloads&color=1E90FF" alt="Total downloads" /></a>
   <a href="https://github.com/HSoo-Kim/folder-splitter/stargazers"><img src="https://img.shields.io/github/stars/HSoo-Kim/folder-splitter?style=for-the-badge&label=Stars&logo=github&logoColor=white&color=000000" alt="GitHub Stars" /></a>
@@ -58,6 +59,8 @@ Windows 標準のファイル一覧（Shell `IExplorerBrowser`）を使うファ
 1. [folder-splitter-win-x64.zip](https://github.com/HSoo-Kim/folder-splitter/releases/latest/download/folder-splitter-win-x64.zip) をダウンロードします（Windows 11、または Windows 10 バージョン 2004 以降、x64）。
 2. 展開して `FolderSplitter.exe` を実行します。インストールは不要で、.NET ランタイムも同梱しています。
 3. ペインのアドレスバーに名前の断片を入力するか、サイドバーからフォルダーを選びます。
+
+**Mac:** [folder-splitter-mac.zip](https://github.com/HSoo-Kim/folder-splitter/releases/download/mac-v0.1.1/folder-splitter-mac.zip) をダウンロードし（macOS 15 以降、Apple シリコン・Intel）、展開した **Folder Splitter** をアプリケーションフォルダーへ移動します。初回起動時はシステム設定 ▸ プライバシーとセキュリティで **このまま開く** を選びます。詳細: [リリースノート](https://github.com/HSoo-Kim/folder-splitter/releases/tag/mac-v0.1.1) · [mac/README.md](mac/README.md)
 
 現在の実行ファイルにはコード署名がなく、Windows が発行元を確認できない旨の警告を表示する場合があります。開発とテストは Windows 11 で行っています。
 

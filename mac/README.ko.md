@@ -79,9 +79,11 @@ Windows 앱처럼 윈도우 맨 아래 줄 왼쪽에 버전, 오른쪽에 만든
 
 Mac 릴리스 올리는 법:
 
-1. `mac/VERSION`을 올리고(예: `1.0.1`) 커밋합니다.
+1. `mac/VERSION`을 올리고(예: `0.1.2`) 커밋합니다.
 2. `mac/scripts/package.sh`를 실행합니다 → `mac/build/folder-splitter-mac.zip`
-3. GitHub ▸ Releases ▸ Draft a new release에서 태그 `mac-v1.0.1`을 만들고 `folder-splitter-mac.zip`을 첨부한 뒤, **"Set as the latest release" 체크를 끕니다.** Windows 앱은 최신(latest) 릴리스만 읽으므로 Mac 전용 릴리스가 그 자리를 차지하면 안 됩니다. Publish를 누릅니다.
+3. GitHub ▸ Releases ▸ Draft a new release에서 태그 `mac-v0.1.2`을 만들고 `folder-splitter-mac.zip`을 첨부한 뒤, **"Set as the latest release" 체크를 끕니다.** Windows 앱은 최신(latest) 릴리스만 읽으므로 Mac 전용 릴리스가 그 자리를 차지하면 안 됩니다. Publish를 누릅니다.
+4. 최상위 README 4개의 Mac 다운로드 링크를 새 태그로 바꾸고 커밋합니다:
+   `sed -i '' -E 's#(download|tag)/mac-v[0-9.]+#\1/mac-v0.1.2#g' ../README*.md`
 
 Windows와 함께 내는 릴리스(태그 `vX.Y.Z`에 `folder-splitter-win-x64.zip`과 `folder-splitter-mac.zip`을 모두 첨부)도 Mac 버전이 `X.Y.Z`이면 됩니다.
 
