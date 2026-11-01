@@ -9,6 +9,7 @@ enum AccessibilityID {
     static func fileList(_ number: Int) -> String { "fs.pane.\(number).list" }
     static func filter(_ number: Int) -> String { "fs.pane.\(number).filter" }
     static func status(_ number: Int) -> String { "fs.pane.\(number).status" }
+    static func closePane(_ number: Int) -> String { "fs.pane.\(number).closePane" }
     static let sidebar = "fs.sidebar"
     static let folderTree = "fs.sidebar.tree"
     static let preview = "fs.preview"

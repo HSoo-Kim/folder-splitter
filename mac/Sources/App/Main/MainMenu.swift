@@ -41,7 +41,8 @@ enum MainMenu {
 
     private static func appMenu() -> NSMenu {
         let menu = NSMenu(title: appName)
-        menu.addItem(item(tr("About \(appName)", "\(appName)에 관하여"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
+        menu.addItem(item(tr("About \(appName)", "\(appName)에 관하여"), #selector(AppCommands.showAbout(_:))))
+        menu.addItem(item(tr("Check for Updates…", "업데이트 확인…"), #selector(AppCommands.checkForUpdates(_:))))
         menu.addItem(.separator())
         menu.addItem(item(tr("Settings…", "설정…"), #selector(AppCommands.showSettings(_:)), ","))
         menu.addItem(.separator())
@@ -220,8 +221,35 @@ enum MainMenu {
 
     private static func helpMenu() -> NSMenu {
         let menu = NSMenu(title: tr("Help", "도움말"))
-        menu.addItem(item(tr("Keyboard Shortcuts", "키보드 단축키"), #selector(AppCommands.showShortcutHelp(_:)), "?"))
+        menu.addItem(shortcutHelpItem())
+        menu.delegate = HelpMenuGuard.shared
         return menu
+    }
+
+    static func shortcutHelpItem() -> NSMenuItem {
+        item(tr("Keyboard Shortcuts", "키보드 단축키"), #selector(AppCommands.showShortcutHelp(_:)), "?")
+    }
+}
+
+/// Keeps ⌘? working: the Help menu was occasionally seen without its item right after a
+/// SwiftUI window closed (cause not found). The delegate answers ⌘? itself and puts the item
+/// back whenever the menu is opened.
+@MainActor
+final class HelpMenuGuard: NSObject, NSMenuDelegate {
+    static let shared = HelpMenuGuard()
+    private let action = #selector(AppCommands.showShortcutHelp(_:))
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if !menu.items.contains(where: { $0.action == action }) { menu.addItem(MainMenu.shortcutHelpItem()) }
+    }
+
+    func menuHasKeyEquivalent(_ menu: NSMenu, for event: NSEvent, target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
+                              action: UnsafeMutablePointer<Selector?>) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        guard event.charactersIgnoringModifiers == "?", flags == [.command, .shift] || flags == .command else { return false }
+        target.pointee = NSApp.delegate
+        action.pointee = self.action
+        return true
     }
 }
 

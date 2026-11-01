@@ -41,7 +41,7 @@ cd folder-splitter-mac
 scripts/install.sh        # builds a release app, installs /Applications/Folder Splitter.app, launches it
 ```
 
-To hand the app to someone else, `scripts/package.sh` makes `build/FolderSplitter-<version>.zip` (universal). They unzip it and move **Folder Splitter** to Applications. The build is signed ad hoc and not notarized, so the first launch is blocked: after the warning, open System Settings ▸ Privacy & Security, click **Open Anyway** next to "Folder Splitter was blocked", and confirm.
+To hand the app to someone else, `scripts/package.sh` makes `build/folder-splitter-mac.zip` (universal). They unzip it and move **Folder Splitter** to Applications. The build is signed ad hoc and not notarized, so the first launch is blocked: after the warning, open System Settings ▸ Privacy & Security, click **Open Anyway** next to "Folder Splitter was blocked", and confirm.
 
 On first launch macOS may ask for access to Desktop, Documents and Downloads; granting **Full Disk Access** (Settings ▸ General) avoids the per-folder prompts and lets search cover protected folders.
 
@@ -73,12 +73,24 @@ Finder's shortcuts work as in Finder (⌘N, ⌘T, ⌘W, ⇧⌘N, ⌘D, ⌘I, ⌘
 | ⌃⌥⌘F | Bring Folder Splitter to the front from any app (configurable) |
 | ⌘? | All shortcuts |
 
+## Updates
+
+The bottom line of the window shows the version on the left and the author on the right, as in the Windows app. When a newer Mac release exists, it also shows "New version … available · Update" and a notice offers **Update** or **Later**. Update downloads `folder-splitter-mac.zip`, checks it against the SHA-256 GitHub reports for the asset, replaces the app and reopens it; if any check fails nothing changes. If the app can't be replaced where it is, the release page opens instead. App ▸ Check for Updates… checks right away.
+
+Publishing a Mac release:
+
+1. Raise `mac/VERSION` (for example `1.0.1`) and commit.
+2. Run `mac/scripts/package.sh` → `mac/build/folder-splitter-mac.zip`.
+3. On GitHub ▸ Releases ▸ Draft a new release, create the tag `mac-v1.0.1`, attach `folder-splitter-mac.zip`, and **uncheck "Set as the latest release"** — the Windows app reads only the latest release, so a Mac-only release must not take that spot. Publish.
+
+A combined release (tag `vX.Y.Z` with both `folder-splitter-win-x64.zip` and `folder-splitter-mac.zip`) works too, as long as the Mac version is `X.Y.Z`.
+
 ## Data
 
 - Session and settings: `~/Library/Application Support/Folder Splitter/session.json` (previous version kept as `session.json.bak`)
 - Search index: `~/Library/Application Support/Folder Splitter/Search/paths.v1.index`
 - Not indexed (the folders themselves are still found by name): `/System`, `/Library`, `/private`, `/usr`, `/opt`, `/Volumes`, `~/Library`, `~/.Trash`, `.git` and `node_modules` contents, package contents (`.app` …), plus folders you exclude in Settings ▸ Search.
-- The app makes no network connections.
+- Network: only the update check. At launch, every hour, and when the app comes back after 15 minutes or more, it reads release information from `api.github.com` (conditional requests, so unchanged answers don't use the shared rate limit). No user, machine or file information is sent. Turn it off in Settings ▸ General.
 
 ## Development
 
@@ -97,7 +109,7 @@ SwiftPM isn't used: some Command Line Tools installs ship mismatched `PackageDes
 ```sh
 scripts/build.sh [--debug]     # build/Folder Splitter.app (release builds are universal)
 scripts/test.sh                # unit tests (search, models, file operations, preview metadata)
-scripts/package.sh             # zip of the universal app for other Macs
+scripts/package.sh             # build/folder-splitter-mac.zip (universal) for other Macs and releases
 scripts/qa.sh [--lang en|ko] [--arch x86_64]   # end-to-end QA: drives the real app with keyboard and mouse
                                # events, Apple Events and window captures, as a separate
                                # bundle ID so an installed copy is never touched;

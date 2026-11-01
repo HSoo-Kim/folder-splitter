@@ -82,6 +82,8 @@ import AppKit
 @MainActor
 @objc protocol AppCommands {
     func showSettings(_ sender: Any?)             // ⌘,
+    func showAbout(_ sender: Any?)
+    func checkForUpdates(_ sender: Any?)
     func newWindow(_ sender: Any?)                // ⌘N
     func showShortcutHelp(_ sender: Any?)         // ⌘?
 }

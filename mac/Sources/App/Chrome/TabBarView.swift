@@ -19,14 +19,23 @@ protocol TabBarViewDelegate: AnyObject {
     func tabBar(_ bar: TabBarView, acceptFiles urls: [URL], onto id: UUID, operation: NSDragOperation) -> Bool
     func tabBar(_ bar: TabBarView, didTearOff id: UUID, at screenPoint: NSPoint)
     func tabBarDidRequestReopenClosedTab(_ bar: TabBarView)
+    /// The pane's own × (shown only while the window has more than one pane).
+    func tabBarDidRequestClosePane(_ bar: TabBarView)
 }
 
 @MainActor
 final class TabBarView: NSView, NSDraggingSource {
     weak var delegate: TabBarViewDelegate?
     var paneID = UUID()
-    var paneNumber = 1 { didSet { setAccessibilityIdentifier(AccessibilityID.tabBar(paneNumber)) } }
+    var paneNumber = 1 {
+        didSet {
+            setAccessibilityIdentifier(AccessibilityID.tabBar(paneNumber))
+            closePane.setAccessibilityIdentifier(AccessibilityID.closePane(paneNumber))
+        }
+    }
     var canReopenClosedTab = false { didSet { reopen.isEnabled = canReopenClosedTab } }
+    /// Shows the pane's close button at the trailing end of the bar.
+    var canClosePane = false { didSet { closePane.isHidden = !canClosePane; needsLayout = true } }
     var isActivePane = false { didSet { updateAppearance() } }
     private var items: [TabBarItem] = []
     private var selected: UUID?
@@ -34,6 +43,7 @@ final class TabBarView: NSView, NSDraggingSource {
     private let add = NSButton()
     private let overflow = NSButton()
     private let reopen = NSButton()
+    private let closePane = NSButton()
     private let accent = NSView()
     private var visibleIDs: [UUID] = []
     private var draggedID: UUID?
@@ -51,7 +61,8 @@ final class TabBarView: NSView, NSDraggingSource {
         for (button, symbol, label, action) in [
             (add, "plus", tr("New Tab", "새로운 탭"), #selector(newTab)),
             (overflow, "chevron.down", tr("Show All Tabs", "모든 탭 보기"), #selector(showAllTabs)),
-            (reopen, "arrow.uturn.backward", tr("Reopen Closed Tab", "닫은 탭 다시 열기"), #selector(reopenTab))
+            (reopen, "arrow.uturn.backward", tr("Reopen Closed Tab", "닫은 탭 다시 열기"), #selector(reopenTab)),
+            (closePane, "xmark.rectangle", tr("Close Pane", "영역 닫기"), #selector(closePaneClicked))
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
             button.title = ""; button.bezelStyle = .texturedRounded; button.isBordered = false
@@ -59,6 +70,8 @@ final class TabBarView: NSView, NSDraggingSource {
             button.setAccessibilityLabel(label); addSubview(button)
         }
         reopen.isEnabled = false
+        closePane.isHidden = true
+        closePane.setAccessibilityIdentifier(AccessibilityID.closePane(paneNumber))
         accent.wantsLayer = true; addSubview(accent)
         registerForDraggedTypes([.folderSplitterTab, .fileURL])
         setAccessibilityRole(.tabGroup); setAccessibilityLabel(tr("Tabs", "탭"))
@@ -99,7 +112,9 @@ final class TabBarView: NSView, NSDraggingSource {
     }
     override func layout() { super.layout(); positionTabs(animated: false) }
     private func positionTabs(animated: Bool) {
-        let available = max(0, bounds.width - 64)
+        // Trailing controls: + (and ▾), reopen, and the pane's × when there are several panes.
+        let paneClose: CGFloat = canClosePane ? 28 : 0
+        let available = max(0, bounds.width - 64 - paneClose)
         let count = items.count
         let overflowing = CGFloat(count) * Metrics.tabMinWidth > available
         let tabSpace = max(0, available - (overflowing ? 26 : 0))
@@ -126,10 +141,11 @@ final class TabBarView: NSView, NSDraggingSource {
         }
         for (id, cell) in cells where !visibleIDs.contains(id) { cell.isHidden = true }
         if insertionIndex == displayed.count { x += gap }
-        add.frame = NSRect(x: min(x+2, max(0, bounds.width-58)), y: 3, width: 26, height: 26)
+        add.frame = NSRect(x: min(x+2, max(0, bounds.width-58-paneClose)), y: 3, width: 26, height: 26)
         overflow.isHidden = !overflowing
         overflow.frame = NSRect(x: add.frame.maxX, y: 3, width: 26, height: 26)
-        reopen.frame = NSRect(x: min(overflowing ? overflow.frame.maxX : add.frame.maxX, max(0, bounds.width-28)), y: 3, width: 26, height: 26)
+        reopen.frame = NSRect(x: min(overflowing ? overflow.frame.maxX : add.frame.maxX, max(0, bounds.width-28-paneClose)), y: 3, width: 26, height: 26)
+        closePane.frame = NSRect(x: max(0, bounds.width-28), y: 3, width: 26, height: 26)
         accent.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 2)
     }
     private func updateAppearance() {
@@ -147,6 +163,7 @@ final class TabBarView: NSView, NSDraggingSource {
     }
     @objc private func newTab() { delegate?.tabBarDidRequestNewTab(self) }
     @objc private func reopenTab() { delegate?.tabBarDidRequestReopenClosedTab(self) }
+    @objc private func closePaneClicked() { delegate?.tabBarDidRequestClosePane(self) }
     @objc private func showAllTabs() {
         let menu = NSMenu()
         for item in items {
@@ -257,7 +274,7 @@ private final class ChromeTabCell: NSView {
     var selected = false { didSet { refresh() } }
     private let title = NSTextField(labelWithString: "")
     private let icon = NSImageView()
-    private let close = NSButton()
+    private let close = TabCloseButton()
     private var hovered = false { didSet { refresh() } }
     private var tracking: NSTrackingArea?
     override var isFlipped: Bool { true }
@@ -265,9 +282,8 @@ private final class ChromeTabCell: NSView {
         self.item = item; super.init(frame: .zero)
         wantsLayer = true; layer?.cornerRadius = Metrics.mediumRadius
         title.lineBreakMode = .byTruncatingTail; addSubview(title); addSubview(icon)
-        close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: tr("Close Tab", "탭 닫기"))
-        close.title = ""; close.isBordered = false; close.bezelStyle = .inline
-        close.target = self; close.action = #selector(closeTab); close.setAccessibilityLabel(tr("Close Tab", "탭 닫기")); addSubview(close)
+        close.target = self; close.action = #selector(closeTab)
+        close.setAccessibilityLabel(tr("Close Tab", "탭 닫기")); close.toolTip = tr("Close Tab  ⌘W", "탭 닫기  ⌘W"); addSubview(close)
         setAccessibilityElement(true); setAccessibilityRole(.radioButton)
         setAccessibilityCustomActions([NSAccessibilityCustomAction(name: tr("Close Tab", "탭 닫기"), target: self, selector: #selector(accessibilityClose))])
         refresh()
@@ -276,7 +292,7 @@ private final class ChromeTabCell: NSView {
     private func refresh() {
         title.stringValue = item.title; title.font = selected ? Typography.tabTitleSelected : Typography.tabTitle
         title.textColor = .labelColor; icon.image = item.icon ?? NSImage(systemSymbolName: item.isBlank ? "square.dashed" : "folder", accessibilityDescription: nil)
-        close.isHidden = !hovered; icon.isHidden = hovered
+        needsLayout = true
         toolTip = item.toolTip ?? item.title
         needsDisplay = true
         setAccessibilityLabel(item.title); setAccessibilityValue(selected ? 1 : 0)
@@ -287,9 +303,19 @@ private final class ChromeTabCell: NSView {
         (selected ? NSColor.controlColor : (hovered ? NSColor.quaternaryLabelColor : .clear)).setFill(); shape.fill()
         if selected && Motion.increaseContrast { Palette.separator.setStroke(); shape.stroke() }
     }
+    /// Like the Windows app: the current tab always shows its close button, other tabs too when
+    /// they are wide enough; narrow background tabs show it under the pointer. It sits at the
+    /// trailing edge so the folder icon stays visible.
+    private static let alwaysCloseWidth: CGFloat = 96
     override func layout() {
-        super.layout(); close.frame = NSRect(x: 5, y: 5, width: 16, height: 16); icon.frame = close.frame
-        title.frame = NSRect(x: 27, y: 5, width: max(0, bounds.width-33), height: 17)
+        super.layout()
+        let showsClose = selected || hovered || bounds.width >= Self.alwaysCloseWidth
+        close.isHidden = !showsClose
+        close.isProminent = selected
+        icon.frame = NSRect(x: 7, y: 5, width: 16, height: 16)
+        close.frame = NSRect(x: bounds.width - 22, y: 4, width: 18, height: 18)
+        let trailing: CGFloat = showsClose ? 26 : 8
+        title.frame = NSRect(x: 28, y: 5, width: max(0, bounds.width - 28 - trailing), height: 17)
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas(); if let tracking { removeTrackingArea(tracking) }
@@ -304,4 +330,48 @@ private final class ChromeTabCell: NSView {
     override func accessibilityPerformPress() -> Bool { bar?.select(item.id); return true }
     @objc private func closeTab() { bar?.close(item.id) }
     @objc private func accessibilityClose() -> Bool { bar?.close(item.id); return true }
+}
+
+/// The "×" of a tab: a small circular target that highlights under the pointer and on press.
+@MainActor
+private final class TabCloseButton: NSButton {
+    /// Full-strength glyph on the selected tab, secondary on the others.
+    var isProminent = false { didSet { if isProminent != oldValue { needsDisplay = true } } }
+    private var hovering = false { didSet { needsDisplay = true } }
+    private var tracking: NSTrackingArea?
+
+    init() {
+        super.init(frame: .zero)
+        title = ""
+        isBordered = false
+        setButtonType(.momentaryChange)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isHighlighted || hovering {
+            (isHighlighted ? NSColor.tertiaryLabelColor : NSColor.quaternaryLabelColor).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: Metrics.smallRadius, yRadius: Metrics.smallRadius).fill()
+        }
+        let configuration = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
+            .applying(.init(paletteColors: [isProminent || hovering ? .labelColor : .secondaryLabelColor]))
+        guard let glyph = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else { return }
+        let size = glyph.size
+        glyph.draw(in: NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
+                              width: size.width, height: size.height))
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override var isHidden: Bool { didSet { if isHidden { hovering = false } } }
 }

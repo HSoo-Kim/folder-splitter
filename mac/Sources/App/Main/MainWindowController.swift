@@ -13,6 +13,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
     private let workspace = NSViewController()
     private let layoutView = PaneLayoutView(frame: .zero)
     private let notice = NoticeView()
+    private let footer = WindowFooterView(frame: .zero)
+    private var workspaceContainer: NSView?
+    private var updateNotice: UpdateNoticeView?
     private var sidebarItem: NSSplitViewItem!
     private var previewItem: NSSplitViewItem!
 
@@ -97,17 +100,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
         let container = NSView()
         layoutView.translatesAutoresizingMaskIntoConstraints = false
         notice.translatesAutoresizingMaskIntoConstraints = false
+        footer.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(layoutView)
+        container.addSubview(footer)
         container.addSubview(notice)
         NSLayoutConstraint.activate([
             layoutView.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
             layoutView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             layoutView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            layoutView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            layoutView.bottomAnchor.constraint(equalTo: footer.topAnchor),
+            footer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            footer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            footer.heightAnchor.constraint(equalToConstant: WindowFooterView.height),
             notice.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            notice.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -Metrics.xl - Metrics.statusBarHeight),
+            notice.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -Metrics.xl - Metrics.statusBarHeight),
             notice.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -Metrics.xl * 2),
         ])
+        workspaceContainer = container
+        NotificationCenter.default.addObserver(self, selector: #selector(updateStateChanged), name: .updateStateDidChange, object: nil)
         workspace.view = container
 
         sidebar.navigator = self
@@ -226,7 +237,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
 
     private func applyLayout(animated: Bool) {
         let visible = layout.panes
-        for (index, id) in visible.enumerated() { panes[id]?.number = index + 1 }
+        for (index, id) in visible.enumerated() {
+            panes[id]?.number = index + 1
+            panes[id]?.canClose = visible.count > 1
+        }
         layoutView.apply(layout, animated: animated)
         if !visible.contains(activePaneID), let first = visible.first, let pane = panes[first] {
             activatePane(pane, force: true)
@@ -268,7 +282,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
         paneMRU.removeAll { $0 == id }
     }
 
-    func closeEmptyPane(_ pane: PaneController) {
+    /// Closes a pane. Its tabs go into the close history with it, so one ⇧⌘T brings the pane
+    /// back where it was, tabs included. Closing the last pane closes the window.
+    func close(_ pane: PaneController) {
         guard visiblePaneCount > 1, let after = layout.removing(pane.id) else {
             window?.performClose(nil)
             return
@@ -481,6 +497,45 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
 
     func showNotice(_ text: String) { notice.show(text) }
 
+    // MARK: Update notice
+
+    @objc private func updateStateChanged() { refreshUpdateNotice() }
+
+    /// Only the front main window shows the update card; it rises out of the footer and sinks back.
+    func refreshUpdateNotice() {
+        let updates = UpdateController.shared
+        let front = (NSApp.delegate as? AppDelegate)?.frontController === self
+        let wanted = updates.wantsNotice && front && (window?.isVisible ?? false)
+        guard let container = workspaceContainer else { return }
+        if wanted, let release = updates.available {
+            let card = updateNotice ?? {
+                let card = UpdateNoticeView(frame: .zero)
+                card.translatesAutoresizingMaskIntoConstraints = false
+                container.addSubview(card)
+                NSLayoutConstraint.activate([
+                    card.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Metrics.l),
+                    card.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -Metrics.l),
+                ])
+                updateNotice = card
+                card.alphaValue = 0
+                container.layoutSubtreeIfNeeded()
+                card.layer?.transform = CATransform3DMakeTranslation(0, -12, 0)
+                return card
+            }()
+            card.configure(release, current: updates.current, installable: updates.canInstallAvailable)
+            Motion.animate(response: Motion.standardResponse, {
+                card.animator().alphaValue = 1
+                card.layer?.transform = CATransform3DIdentity
+            })
+        } else if let card = updateNotice {
+            updateNotice = nil
+            Motion.animate(response: Motion.quickResponse, {
+                card.animator().alphaValue = 0
+                card.layer?.transform = CATransform3DMakeTranslation(0, -12, 0)
+            }, completion: { card.removeFromSuperview() })
+        }
+    }
+
     // MARK: Compare
 
     func compare(from pane: PaneController) {
@@ -552,7 +607,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
         case .edge(let edge):
             guard let created = split(target, edge: edge) else { return false }
             if acceptTab(payload, into: created, at: nil) { return true }
-            closeEmptyPane(created)
+            close(created)
             return false
         }
     }
@@ -593,10 +648,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
     }
 
     @objc func closePane(_ sender: Any?) {
-        let pane = activePane
         guard visiblePaneCount > 1 else { return }
-        for tab in pane.tabs.map(\.id) { pane.closeTab(id: tab) }
-        closeEmptyPane(pane)
+        close(activePane)
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
@@ -745,6 +798,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
         (NSApp.delegate as? AppDelegate)?.windowBecameKey(self)
         // Keyboard goes to the active pane's list unless something inside already has focus.
         if window?.firstResponder === window { activePane.focusList() }
+        // Every window re-evaluates, so the update card follows the front main window.
+        NotificationCenter.default.post(name: .updateStateDidChange, object: nil)
     }
 }
 

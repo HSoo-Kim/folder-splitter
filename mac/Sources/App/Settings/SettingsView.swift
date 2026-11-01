@@ -62,6 +62,21 @@ struct SettingsView: View {
                 Toggle(tr("Restore windows on launch", "실행 시 윈도우 복원"), isOn: model.binding(\.restoreSessionOnLaunch))
             }
             Section {
+                Toggle(tr("Check for updates automatically", "자동으로 업데이트 확인"), isOn: model.binding(\.checkForUpdates))
+                HStack {
+                    Text(tr("Version \(UpdateController.shared.current)", "버전 \(UpdateController.shared.current)"))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(tr("Check Now", "지금 확인")) {
+                        Task { await UpdateController.shared.check(userInitiated: true) }
+                    }
+                }
+            } footer: {
+                Text(tr("Folder Splitter reads only the latest release information from GitHub at launch, every hour and when you come back to it. Nothing about you or your files is sent. Updates install only when you click Update.",
+                        "Folder Splitter는 실행할 때, 1시간마다, 그리고 다시 앱으로 돌아올 때 GitHub에서 최신 릴리스 정보만 읽습니다. 사용자나 파일에 관한 정보는 보내지 않습니다. 업데이트는 ‘업데이트’를 클릭할 때만 설치됩니다."))
+                    .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Section {
                 Toggle(tr("Use as default file viewer", "기본 파일 뷰어로 사용"),
                        isOn: Binding(get: { model.defaultViewer }, set: { model.setDefaultViewer($0) }))
             } footer: {

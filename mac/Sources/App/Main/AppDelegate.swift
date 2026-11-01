@@ -9,6 +9,8 @@ struct LaunchOptions {
     var indexDisabled = false
     var qaOutput: URL?
     var language: AppLanguage?
+    /// QA: read releases from this feed (a file:// URL) instead of GitHub.
+    var updateFeed: URL?
     var folders: [URL] = []
 
     static func parse(_ arguments: [String]) -> LaunchOptions {
@@ -27,6 +29,7 @@ struct LaunchOptions {
             case "--no-index": options.indexDisabled = true
             case "--qa": options.qaOutput = value().map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
             case "--language": options.language = value().flatMap(AppLanguage.init(rawValue:))
+            case "--update-feed": options.updateFeed = value().flatMap { URL(string: $0) }
             default:
                 if argument.hasPrefix("-psn_") { break }
                 if argument.hasPrefix("-") { index += 1; break }   // -NSSomething YES
@@ -108,6 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
         for controller in windowControllers { controller.showWindow(nil) }
         if let warning = session.loadWarning { frontController?.showNotice(warning) }
 
+        // QA runs never reach the network; they check updates only against a feed they provide.
+        if options.qaOutput == nil || options.updateFeed != nil {
+            UpdateController.shared.start(feed: options.updateFeed)
+        }
         if options.qaOutput == nil {
             GlobalHotKey.shared.apply(settings.globalHotKey) { [weak self] in self?.toggleFromHotKey() }
         }
@@ -361,6 +368,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
     // MARK: AppCommands
 
     @objc func showSettings(_ sender: Any?) { SettingsWindowController.shared.show() }
+
+    /// The standard About panel, credited like the Windows app.
+    @objc func showAbout(_ sender: Any?) {
+        let credits = NSMutableAttributedString(string: "Made by HSoo-Kim\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+        credits.append(NSAttributedString(string: "github.com/HSoo-Kim", attributes: [
+            .font: NSFont.systemFont(ofSize: 11), .link: WindowFooterView.authorURL,
+        ]))
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        NSApp.activate()
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        Task { await UpdateController.shared.check(userInitiated: true) }
+    }
     @objc func showShortcutHelp(_ sender: Any?) { ShortcutHelpWindowController.shared.show() }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool { true }

@@ -89,6 +89,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     var defaultView = FolderViewSettings.default
     var globalHotKey: GlobalHotKeyChoice = .controlOptionCommandF
     var restoreSessionOnLaunch = true
+    /// Read GitHub release information at launch, hourly and when the app returns after a while.
+    var checkForUpdates = true
     var searchIndexEnabled = true
     /// Extra folders whose contents are not indexed (absolute paths).
     var searchExcludedFolders: [String] = []
@@ -120,6 +122,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         read(.defaultView) { s.defaultView = $0 }
         read(.globalHotKey) { s.globalHotKey = $0 }
         read(.restoreSessionOnLaunch) { s.restoreSessionOnLaunch = $0 }
+        read(.checkForUpdates) { s.checkForUpdates = $0 }
         read(.searchIndexEnabled) { s.searchIndexEnabled = $0 }
         read(.searchExcludedFolders) { s.searchExcludedFolders = $0 }
         read(.hasShownWelcome) { s.hasShownWelcome = $0 }

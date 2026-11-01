@@ -90,6 +90,7 @@ private final class QARunner {
         await stepQuickLookAndMenu()
         await stepLargeFolder()
         await stepDarkMode()
+        await stepUpdate()
         await stepSession()
         finish()
     }
@@ -230,6 +231,8 @@ private final class QARunner {
                 if enabled { NSApp.sendAction(action, to: receiver, from: item) }
                 return "\(item.title) → \(Swift.type(of: receiver)) enabled=\(enabled)"
             }
+            // Menus whose delegate answers key equivalents (Help) go through AppKit's own matching.
+            if NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return "AppKit menu" }
             return "no menu item"
         }
         // Field editors only see keys through an active input context; drive them directly.
@@ -589,10 +592,16 @@ private final class QARunner {
     private func stepLayouts() async {
         await key("4", code: kVK_ANSI_4, [.command, .option])
         let four = await waitFor(2) { self.front.visiblePaneCount == 4 }
+        func paneCloseShown(_ number: Int) -> Bool? {
+            guard let pane = pane(number) else { return nil }
+            return findView(id: AccessibilityID.closePane(number), in: pane.view).map { !$0.isHidden }
+        }
+        let shownAtFour = (1...4).allSatisfy { paneCloseShown($0) == true }
         await settle(0.6)
         await shot("08-four-panes")
         await key("1", code: kVK_ANSI_1, [.command, .option])
         let one = await waitFor(2) { self.front.visiblePaneCount == 1 }
+        let hiddenAtOne = paneCloseShown(1) == false
         await key("2", code: kVK_ANSI_2, [.command, .option])
         let kept = await waitFor(2) { self.front.visiblePaneCount == 2 && self.pane(2)?.currentFolder == self.url("Projects") }
         await key("3", code: kVK_ANSI_3, [.command, .option])
@@ -601,8 +610,9 @@ private final class QARunner {
         await shot("09-three-panes")
         await key("2", code: kVK_ANSI_2, [.command, .option])
         _ = await waitFor(2) { self.front.visiblePaneCount == 2 }
-        record("⌥⌘4/⌥⌘1/⌥⌘2/⌥⌘3 layouts; hidden panes keep their tabs", four && one && kept && three,
-               "four=\(four) one=\(one) hiddenKept=\(kept) three=\(three)")
+        record("⌥⌘4/⌥⌘1/⌥⌘2/⌥⌘3 layouts; hidden panes keep their tabs; pane × only with 2+ panes",
+               four && one && kept && three && shownAtFour && hiddenAtOne,
+               "four=\(four) one=\(one) hiddenKept=\(kept) three=\(three) paneX@4=\(shownAtFour) paneX@1=\(!hiddenAtOne)")
     }
 
     private func stepPreview() async {
@@ -702,6 +712,7 @@ private final class QARunner {
             list.select([url("Documents/notes.txt"), url("Documents/Budget 2026.csv")])
             list.focus()
         }
+        let twoSelected = await waitFor(3) { self.pane(1)?.currentList?.selectedURLs.count == 2 }
         perform(#selector(FileCommands.bulkRename(_:)))
         let sheet = await waitFor(3) { self.front.window?.attachedSheet != nil }
         if let sheetWindow = front.window?.attachedSheet { await shot("14-bulk-rename", window: sheetWindow); front.window?.endSheet(sheetWindow) }
@@ -724,7 +735,7 @@ private final class QARunner {
         await settle(0.8)
         if let sheetWindow = front.window?.attachedSheet { await shot("16-compare", window: sheetWindow); front.window?.endSheet(sheetWindow) }
         record("Settings ⌘,, shortcut help ⌘?, Rename Items…, Get Info ⌘I, Compare", settingsWindow && help && sheet && info && compare,
-               "settings=\(settingsWindow) help=\(help) bulkRename=\(sheet) info=\(info) compare=\(compare) [sheetBefore=\(sheetBefore) target=\(targetName) panes=\(folders)]")
+               "settings=\(settingsWindow) help=\(help) bulkRename=\(sheet) (twoSelected=\(twoSelected)) info=\(info) compare=\(compare) [sheetBefore=\(sheetBefore) target=\(targetName) panes=\(folders)]")
     }
 
     // MARK: Mouse, Quick Look, context menu, scale
@@ -781,13 +792,48 @@ private final class QARunner {
                 sidebarDetail = "\(target.lastPathComponent)→\(pane.currentFolder?.lastPathComponent ?? "nil")"
             }
         }
-        // Tab click: select the first tab of pane 1.
+        // Tab click: select the first tab of pane 1 (earlier steps may have moved its other tabs away).
+        if first.tabs.count < 2 {
+            first.addTab(folder: fixture)
+            _ = await waitFor(2) { first.tabs.count >= 2 }
+            await settle(0.4)
+        }
         var tabOK = false
         let tabs = views(named: "ChromeTabCell", in: first.view).sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
         if tabs.count > 1, let firstTab = first.tabs.first?.id {
             await click(tabs[0])
             tabOK = await waitFor(2) { first.selectedTabID == firstTab }
         }
+        // Clicking a tab's × closes that tab (and only it); ⇧⌘T brings it back.
+        var closeOK = false
+        let countBefore = first.tabs.count
+        let closingTab = first.selectedTabID
+        let cellsNow = views(named: "ChromeTabCell", in: first.view)
+        if let cell = cellsNow.first(where: { $0.accessibilityValue() as? Int == 1 }),
+           let closeButton = views(named: "TabCloseButton", in: cell).first(where: { !$0.isHidden }) {
+            await click(closeButton)
+            closeOK = await waitFor(2) { first.tabs.count == countBefore - 1 && !first.tabs.contains { $0.id == closingTab } }
+            await key("t", code: kVK_ANSI_T, [.command, .shift])
+            _ = await waitFor(2) { first.tabs.count == countBefore }
+        }
+        // A pane's × closes the pane; ⇧⌘T brings it back in place with its tabs.
+        var paneCloseOK = false
+        var paneCloseDetail = "no button"
+        let panesBefore = front.visiblePaneCount
+        if panesBefore > 1, let last = pane(panesBefore),
+           let button = findView(id: AccessibilityID.closePane(panesBefore), in: last.view), !button.isHidden {
+            let closedID = last.id
+            let closedTabs = last.tabs.map(\.id)
+            await click(button)
+            let closed = await waitFor(2) { self.front.visiblePaneCount == panesBefore - 1 && self.front.panes[closedID] == nil }
+            await key("t", code: kVK_ANSI_T, [.command, .shift])
+            let restored = await waitFor(2) {
+                self.front.visiblePaneCount == panesBefore && self.front.panes[closedID]?.tabs.map(\.id) == closedTabs
+            }
+            paneCloseOK = closed && restored
+            paneCloseDetail = "closed=\(closed) restored=\(restored) tabs=\(closedTabs.count)"
+        }
+        let visibleCloseButtons = cellsNow.filter { cell in views(named: "TabCloseButton", in: cell).contains { !$0.isHidden } }.count
         // Breadcrumb click: go to the fixture root from a subfolder.
         front.open(url("Projects/alpha/src"), disposition: .current, from: first)
         _ = await waitFor(3) { first.currentFolder == self.url("Projects/alpha/src") }
@@ -846,9 +892,9 @@ private final class QARunner {
             dividerOK = front.layout != before
         }
         await shot("18-after-mouse")
-        record("mouse: sidebar row, tab, breadcrumb, double-click folder, divider drag",
-               sidebarOK && tabOK && crumbOK && doubleOK && dividerOK,
-               "sidebar=\(sidebarOK) (\(sidebarDetail)) tab=\(tabOK) crumb=\(crumbOK) (\(crumbTips.joined(separator: "|"))) doubleClick=\(doubleOK) (\(doubleDetail), now \(first.currentFolder?.lastPathComponent ?? "nil")) divider=\(dividerOK)")
+        record("mouse: sidebar row, tab, tab ×, pane ×, breadcrumb, double-click folder, divider drag",
+               sidebarOK && tabOK && closeOK && paneCloseOK && crumbOK && doubleOK && dividerOK,
+               "sidebar=\(sidebarOK) (\(sidebarDetail)) tab=\(tabOK) paneClose=\(paneCloseOK) (\(paneCloseDetail)) close=\(closeOK) (visible × on \(visibleCloseButtons)/\(cellsNow.count) tabs) crumb=\(crumbOK) (\(crumbTips.joined(separator: "|"))) doubleClick=\(doubleOK) (\(doubleDetail), now \(first.currentFolder?.lastPathComponent ?? "nil")) divider=\(dividerOK)")
     }
 
     private func stepQuickLookAndMenu() async {
@@ -898,6 +944,38 @@ private final class QARunner {
         try? FileManager.default.removeItem(at: large)
     }
 
+    /// qa.sh serves a fake next-patch release of this very app from a file:// feed.
+    private func stepUpdate() async {
+        let updates = UpdateController.shared
+        let found = await waitFor(10) { (updates.available?.version).map { $0 > updates.current } ?? false }
+        let target = updates.available?.version.description ?? "none"
+        let window = front.window
+        let card = await waitFor(3) {
+            self.views(named: "UpdateNoticeView", in: window?.contentView).contains { $0.alphaValue > 0.5 && !$0.isHidden }
+        }
+        let footerText = views(named: "FooterLinkButton", in: window?.contentView).compactMap { ($0 as? NSButton)?.title }
+        let footerShows = footerText.contains { $0.contains(target) }
+        await shot("21-update-notice")
+        updates.relaunchAfterInstall = false
+        var clicked = false
+        if let notice = views(named: "UpdateNoticeView", in: window?.contentView).first,
+           let button = views(named: "NSButton", in: notice).first(where: { ($0 as? NSButton)?.title == tr("Update", "업데이트") }) {
+            await click(button)
+            clicked = true
+        }
+        let installed = await waitFor(30) { updates.phase == .installed }
+        let plist = NSDictionary(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist"))
+        let onDisk = plist?["CFBundleShortVersionString"] as? String
+        let parent = Bundle.main.bundleURL.deletingLastPathComponent()
+        let leftovers = ((try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? [])
+            .filter { $0.hasPrefix(".") && $0.localizedCaseInsensitiveContains("update") }
+        let cardGone = await waitFor(2) { !self.views(named: "UpdateNoticeView", in: window?.contentView).contains { $0.alphaValue > 0.5 } }
+        await shot("22-updated")
+        record("update: release found, notice + footer link, Update installs the verified package",
+               found && card && footerShows && clicked && installed && onDisk == target && leftovers.isEmpty && cardGone,
+               "found=\(found) (\(updates.current)→\(target)) card=\(card) footer=\(footerText) clicked=\(clicked) installed=\(installed) onDisk=\(onDisk ?? "nil") leftovers=\(leftovers) cardGone=\(cardGone)")
+    }
+
     private func stepDarkMode() async {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         await settle(0.6)
@@ -909,10 +987,13 @@ private final class QARunner {
     private func stepSession() async {
         SessionCoordinator.shared.saveNow()
         let result = SessionStore.load(from: SessionCoordinator.shared.url)
-        let window = result.state.windows.first
-        let ok = result.warning == nil && window?.layout.panes.count == front.visiblePaneCount
-            && window?.panes.flatMap(\.tabs).contains { $0.path == url("Projects").path } == true
+        let saved = result.state.windows.first
+        let live = front.snapshot
+        // Same visible layout, same panes, same tab folders in the same order.
+        let savedTabs = saved?.panes.map { $0.tabs.map(\.path) } ?? []
+        let liveTabs = live.panes.map { $0.tabs.map(\.path) }
+        let ok = result.warning == nil && saved?.layout == live.layout && savedTabs == liveTabs && !liveTabs.joined().isEmpty
         record("session saves layout and tabs", ok,
-               "windows=\(result.state.windows.count) visible=\(window?.layout.panes.count ?? -1) tabs=\(window?.panes.flatMap(\.tabs).count ?? -1)")
+               "windows=\(result.state.windows.count) visible=\(saved?.layout.panes.count ?? -1) tabs=\(savedTabs.joined().count) liveTabs=\(liveTabs.joined().count) layoutSame=\(saved?.layout == live.layout)")
     }
 }

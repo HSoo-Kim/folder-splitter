@@ -34,5 +34,6 @@ status=0
 run_suite Sources/Core/Search Tests/Search || status=1
 run_suite Sources/Core/Models Tests/Models || status=1
 run_suite Sources/Core/FileOps Tests/FileOps || status=1
+run_suite Sources/Core/Update Tests/Update || status=1
 run_suite Sources/App/Contracts Sources/App/Preview Tests/Preview || status=1
 exit $status

@@ -12,6 +12,8 @@ final class PaneController: NSViewController, PaneCommands, FileListHost, NSMenu
     private(set) var tabs: [TabState] = []
     private(set) var selectedTabID: UUID?
     var isActive = false { didSet { if isActive != oldValue { applyActive() } } }
+    /// Whether the tab bar shows this pane's × (the window has more than one pane).
+    var canClose = false { didSet { tabBar.canClosePane = canClose } }
 
     private let tabBar = TabBarView(frame: .zero)
     private let navigation = NavigationButtonsView(frame: .zero)
@@ -513,7 +515,7 @@ final class PaneController: NSViewController, PaneCommands, FileListHost, NSMenu
 
     @objc func closeTab(_ sender: Any?) {
         if let tabID = selectedTabID { closeTab(id: tabID) }
-        else { windowController?.closeEmptyPane(self) }
+        else { windowController?.close(self) }
     }
 
     @objc func goBack(_ sender: Any?) {
@@ -694,6 +696,10 @@ extension PaneController: TabBarViewDelegate {
 
     func tabBarDidRequestReopenClosedTab(_ bar: TabBarView) {
         windowController?.reopenClosedTab(in: self)
+    }
+
+    func tabBarDidRequestClosePane(_ bar: TabBarView) {
+        windowController?.close(self)
     }
 }
 

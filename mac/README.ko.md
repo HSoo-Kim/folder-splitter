@@ -41,7 +41,7 @@ cd folder-splitter-mac
 scripts/install.sh        # 릴리스 빌드 후 /Applications/Folder Splitter.app 에 설치하고 실행
 ```
 
-다른 사람에게 줄 때는 `scripts/package.sh`로 `build/FolderSplitter-<버전>.zip`(Apple 실리콘·Intel 공용)을 만듭니다. 받은 사람은 압축을 풀고 **Folder Splitter**를 응용 프로그램 폴더로 옮깁니다. 애드혹 서명이고 Apple 공증을 받지 않아 첫 실행이 막힙니다. 경고가 뜬 뒤 시스템 설정 ▸ 개인정보 보호 및 보안에서 'Folder Splitter이(가) 차단되었습니다' 옆의 **그래도 열기**를 누르고 확인하면 됩니다.
+다른 사람에게 줄 때는 `scripts/package.sh`로 `build/folder-splitter-mac.zip`(Apple 실리콘·Intel 공용)을 만듭니다. 받은 사람은 압축을 풀고 **Folder Splitter**를 응용 프로그램 폴더로 옮깁니다. 애드혹 서명이고 Apple 공증을 받지 않아 첫 실행이 막힙니다. 경고가 뜬 뒤 시스템 설정 ▸ 개인정보 보호 및 보안에서 'Folder Splitter이(가) 차단되었습니다' 옆의 **그래도 열기**를 누르고 확인하면 됩니다.
 
 처음 실행하면 macOS가 데스크탑, 문서, 다운로드 폴더 접근을 물을 수 있습니다. 설정 ▸ 일반에서 **전체 디스크 접근 권한**을 주면 폴더마다 묻지 않고, 보호된 폴더도 검색할 수 있습니다.
 
@@ -73,12 +73,24 @@ Finder 단축키는 Finder와 같습니다(⌘N, ⌘T, ⌘W, ⇧⌘N, ⌘D, ⌘I
 | ⌃⌥⌘F | 어느 앱에서든 Folder Splitter를 앞으로(설정에서 변경) |
 | ⌘? | 모든 단축키 |
 
+## 업데이트
+
+Windows 앱처럼 윈도우 맨 아래 줄 왼쪽에 버전, 오른쪽에 만든 사람이 보입니다. 새로운 Mac 릴리스가 있으면 '새로운 버전 … 사용 가능 · 업데이트'가 함께 보이고, 알림에서 **업데이트** 또는 **나중에**를 고를 수 있습니다. 업데이트를 누르면 `folder-splitter-mac.zip`을 받아 GitHub가 알려 주는 SHA-256과 대조한 뒤 앱을 바꾸고 다시 엽니다. 검사에 하나라도 실패하면 아무것도 바뀌지 않습니다. 지금 위치에서 앱을 바꿀 수 없으면 릴리스 페이지를 엽니다. 앱 메뉴 ▸ 업데이트 확인…으로 바로 확인할 수 있습니다.
+
+Mac 릴리스 올리는 법:
+
+1. `mac/VERSION`을 올리고(예: `1.0.1`) 커밋합니다.
+2. `mac/scripts/package.sh`를 실행합니다 → `mac/build/folder-splitter-mac.zip`
+3. GitHub ▸ Releases ▸ Draft a new release에서 태그 `mac-v1.0.1`을 만들고 `folder-splitter-mac.zip`을 첨부한 뒤, **"Set as the latest release" 체크를 끕니다.** Windows 앱은 최신(latest) 릴리스만 읽으므로 Mac 전용 릴리스가 그 자리를 차지하면 안 됩니다. Publish를 누릅니다.
+
+Windows와 함께 내는 릴리스(태그 `vX.Y.Z`에 `folder-splitter-win-x64.zip`과 `folder-splitter-mac.zip`을 모두 첨부)도 Mac 버전이 `X.Y.Z`이면 됩니다.
+
 ## 데이터
 
 - 세션과 설정: `~/Library/Application Support/Folder Splitter/session.json` (직전 버전은 `session.json.bak`)
 - 검색 색인: `~/Library/Application Support/Folder Splitter/Search/paths.v1.index`
 - 색인하지 않는 곳(폴더 자체는 이름으로 찾을 수 있음): `/System`, `/Library`, `/private`, `/usr`, `/opt`, `/Volumes`, `~/Library`, `~/.Trash`, `.git`·`node_modules` 내용, 패키지(`.app` 등) 내용, 설정 ▸ 검색에서 제외한 폴더
-- 네트워크 연결을 하지 않습니다.
+- 네트워크: 업데이트 확인만 합니다. 실행할 때, 1시간마다, 15분 이상 지나 앱으로 돌아올 때 `api.github.com`에서 릴리스 정보만 읽습니다(조건부 요청이라 바뀌지 않은 응답은 공용 요청 한도를 쓰지 않습니다). 사용자·기기·파일 정보는 보내지 않습니다. 설정 ▸ 일반에서 끌 수 있습니다.
 
 ## 개발
 
@@ -97,7 +109,7 @@ SwiftPM은 쓰지 않습니다. 일부 Command Line Tools 설치본은 `PackageD
 ```sh
 scripts/build.sh [--debug]     # build/Folder Splitter.app (릴리스는 Apple 실리콘·Intel 공용)
 scripts/test.sh                # 단위 테스트(검색, 모델, 파일 작업, 미리보기 메타데이터)
-scripts/package.sh             # 다른 Mac에 줄 공용 앱 zip
+scripts/package.sh             # build/folder-splitter-mac.zip (공용): 다른 Mac 배포·릴리스용
 scripts/qa.sh [--lang en|ko] [--arch x86_64]   # 실제 앱을 키보드·마우스 이벤트, Apple Event, 윈도우 캡처로
                                # 끝까지 검증. 별도 번들 ID로 실행해 설치된 앱에 영향을 주지 않음.
                                # 결과와 스크린숏은 build/qa/<언어>/

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Builds a release app, replaces /Applications/Folder Splitter.app and launches it.
+# Builds a release app (or reuses it with --no-build), replaces /Applications/Folder Splitter.app and launches it.
 source "$(dirname "$0")/env.sh"
 
-"$ROOT/scripts/build.sh"
+[[ "${1:-}" == "--no-build" ]] || "$ROOT/scripts/build.sh"   # --no-build: install the app QA just tested
 target="/Applications/Folder Splitter.app"
 
 # SIGTERM quits like ⌘Q (the app saves its session); no AppleScript automation prompt.
