@@ -197,11 +197,12 @@ final class FileOperationCenter: FileOperating {
         Task { _ = await present(alert) }
     }
     private func present(_ alert: NSAlert) async -> NSApplication.ModalResponse {
-        // While the app is in the background there is no main window; still attach to the front
-        // browser window: an app-modal alert would stall every main-actor task until answered.
-        let host = NSApp.mainWindow ?? NSApp.keyWindow
-            ?? NSApp.orderedWindows.first { $0 is MainWindow && $0.isVisible && !$0.isMiniaturized }
-        if let window = host, window !== progressPanel {
+        if OffscreenWindows.enabled { alert.window.styleMask.insert(.nonactivatingPanel) }
+        // Only a browser window can host these sheets: the key window may be a progress panel
+        // or an earlier alert, especially while the app is inactive.
+        let host = (NSApp.mainWindow as? MainWindow) ?? (NSApp.keyWindow as? MainWindow)
+            ?? (NSApp.delegate as? AppDelegate)?.frontController?.window
+        if let window = host {
             // Another operation may currently own a sheet. Wait for its dismissal rather
             // than replacing it or starting a nested modal loop.
             while window.attachedSheet != nil { try? await Task.sleep(for: .milliseconds(50)) }
