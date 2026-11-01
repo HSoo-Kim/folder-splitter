@@ -69,7 +69,7 @@ JSON
     qa_args=( -AppleLanguages "($lang)" --qa "$out" --language "$lang" --session "$out/session.json" --index-root "$out/fixture"
               --update-feed "file://$out/update/releases.json" )
     if [[ -n "$arch" ]]; then
-        arch "-$arch" "$app/Contents/MacOS/FolderSplitter" "${qa_args[@]}" >/dev/null 2>&1 &
+        arch "-$arch" "$app/Contents/MacOS/FolderSplitter" "${qa_args[@]}" >"$out/stdout.log" 2>"$out/stderr.log" &
     else
         open -n -W "$app" --args "${qa_args[@]}" &
     fi

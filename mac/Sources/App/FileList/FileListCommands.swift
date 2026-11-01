@@ -28,8 +28,15 @@ extension FileListViewController: FileCommands, NSMenuItemValidation, @preconcur
 
     @objc func renameSelection(_ sender: Any?) {
         guard !isTextEditing else { return }
-        if selectedURLs.count > 1 { bulkRename(sender) }
-        else if selectedURLs.count == 1 { beginInlineRename() }
+        if selectedURLs.count > 1 { bulkRename(sender); return }
+        guard selectedURLs.count == 1 else { return }
+        guard sender is NSMenuItem else { beginInlineRename(); return }
+        // A menu sends its action while it is still closing; editing started now would lose
+        // focus to the closing menu. Start once the run loop is back in its default mode.
+        let url = selectedURLs[0]
+        RunLoop.main.perform(inModes: [.default]) { [weak self] in
+            MainActor.assumeIsolated { self?.beginInlineRename(expectedURL: url) }
+        }
     }
 
     @objc func bulkRename(_ sender: Any?) {

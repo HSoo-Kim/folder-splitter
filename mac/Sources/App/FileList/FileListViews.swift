@@ -330,7 +330,8 @@ final class FileSelectionRow: NSTableRowView {
         field.stringValue = PathText.nfc(url.lastPathComponent)
         field.isEditable = true
         field.isSelectable = true
-        field.selectText(nil)
+        // One way in: making the field first responder starts editing. Calling selectText first
+        // would start a session that this call then ends (and ending disables the field).
         view.window?.makeFirstResponder(field)
         guard let editor = field.currentEditor() else {
             completeInlineRename(endingField: field, commit: false)

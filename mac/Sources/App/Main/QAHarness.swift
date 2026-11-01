@@ -88,6 +88,7 @@ private final class QARunner {
         await stepDialogs()
         await stepMouse()
         await stepQuickLookAndMenu()
+        await stepContextMenuRename()
         await stepLargeFolder()
         await stepDarkMode()
         await stepUpdate()
@@ -518,7 +519,11 @@ private final class QARunner {
         await key("n", code: kVK_ANSI_N, [.command, .shift])
         let name = korean ? "무제 폴더" : "untitled folder"
         let created = await waitFor(4) { FileManager.default.fileExists(atPath: self.url("Documents/\(name)").path) }
-        await settle(0.4)
+        // The name must be open for editing, with the new folder's name in the field.
+        let renaming = await waitFor(3) {
+            guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView ?? self.front.window?.firstResponder as? NSTextView else { return false }
+            return editor.isFieldEditor && PathText.nfc(editor.string) == name
+        }
         await shot("05-new-folder-rename")
         await escape()
         _ = await waitFor(2) { self.selectionNames().contains(name) }
@@ -527,8 +532,8 @@ private final class QARunner {
         let trashed = await waitFor(4) { !FileManager.default.fileExists(atPath: self.url("Documents/\(name)").path) }
         await key("z", code: kVK_ANSI_Z, .command)
         let restored = await waitFor(4) { FileManager.default.fileExists(atPath: self.url("Documents/\(name)").path) }
-        record("⇧⌘N new folder (rename starts), ⌘⌫ trash, ⌘Z puts it back", created && trashed && restored,
-               "created=\(created) trashed=\(trashed) restored=\(restored)")
+        record("⇧⌘N new folder (rename starts), ⌘⌫ trash, ⌘Z puts it back", created && renaming && trashed && restored,
+               "created=\(created) renaming=\(renaming) trashed=\(trashed) restored=\(restored)")
     }
 
     private func stepCloseReopenTab() async {
@@ -926,6 +931,59 @@ private final class QARunner {
                "quickLook=\(shown)/\(closed) menu=\(titles.joined(separator: " · "))")
     }
 
+    /// Right-click ▸ Rename, through a real context-menu tracking loop: the item is chosen while
+    /// the menu is open, and AppKit sends its action as the menu closes, like a click would.
+    private func stepContextMenuRename() async {
+        guard let first = pane(1) else { return }
+        front.activatePane(first)
+        front.open(url("Documents/notes.txt"), disposition: .current, from: first)
+        _ = await waitFor(3) { self.selectionNames() == ["notes.txt"] }
+        guard let outline = first.currentList.flatMap({ findView(id: AccessibilityID.fileList(1), in: $0.view) }) as? NSOutlineView,
+              outline.selectedRow >= 0, let window = outline.window else {
+            record("right-click ▸ Rename edits the name in place", false, "no list/selection")
+            return
+        }
+        let rect = outline.rect(ofRow: outline.selectedRow)
+        let point = outline.convert(NSPoint(x: rect.minX + 120, y: rect.midY), to: nil)
+        guard let event = NSEvent.mouseEvent(with: .rightMouseDown, location: point, modifierFlags: [],
+                                             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                             context: nil, eventNumber: 0, clickCount: 1, pressure: 1),
+              let menu = outline.menu(for: event),
+              let index = menu.items.firstIndex(where: { $0.action == #selector(FileCommands.renameSelection(_:)) }) else {
+            record("right-click ▸ Rename edits the name in place", false, "no Rename item")
+            return
+        }
+        let tracked = UncheckedBox(menu)
+        let pick = Timer(timeInterval: 0.4, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                tracked.value.performActionForItem(at: index)
+                tracked.value.cancelTracking()
+            }
+        }
+        RunLoop.main.add(pick, forMode: .eventTracking)
+        NSMenu.popUpContextMenu(menu, with: event, for: outline)
+        await settle(0.8)
+        let responder = window.firstResponder
+        let editing = (responder as? NSTextView)?.isFieldEditor == true
+        let editedText = (responder as? NSTextView)?.string ?? ""
+        await shot("23-context-rename")
+        // Leave the name unchanged.
+        if editing { await escape() }
+        // Return ▸ type ▸ Return renames (the extension stays out of the selection); ⌘Z undoes.
+        first.currentList?.focus()
+        await returnKey()
+        let editingAgain = await waitFor(2) { (window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        await type("memo")
+        await returnKey()
+        let renamed = await waitFor(4) { FileManager.default.fileExists(atPath: self.url("Documents/memo.txt").path) }
+        first.currentList?.focus()
+        await key("z", code: kVK_ANSI_Z, .command)
+        let undone = await waitFor(4) { FileManager.default.fileExists(atPath: self.url("Documents/notes.txt").path) }
+        record("right-click ▸ Rename and Return ▸ type ▸ Return rename in place; ⌘Z undoes",
+               editing && editedText == "notes.txt" && editingAgain && renamed && undone,
+               "menuEditing=\(editing) text=\(editedText) returnEditing=\(editingAgain) renamed=\(renamed) undone=\(undone)")
+    }
+
     private func stepLargeFolder() async {
         let large = url("Large")
         try? FileManager.default.createDirectory(at: large, withIntermediateDirectories: true)
@@ -996,4 +1054,10 @@ private final class QARunner {
         record("session saves layout and tabs", ok,
                "windows=\(result.state.windows.count) visible=\(saved?.layout.panes.count ?? -1) tabs=\(savedTabs.joined().count) liveTabs=\(liveTabs.joined().count) layoutSame=\(saved?.layout == live.layout)")
     }
+}
+
+/// Hands a main-thread-only object to a timer that runs on the main run loop.
+private struct UncheckedBox<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
 }
