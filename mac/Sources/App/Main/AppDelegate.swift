@@ -123,6 +123,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
         flushPending(activate: false)   // launched with folders: LaunchServices decides activation
         for controller in windowControllers { controller.showWindow(nil) }
         if let warning = session.loadWarning { frontController?.showNotice(warning) }
+        if options.qaOutput == nil && !options.offscreen {
+            AppInstallLocation.showNoticeIfNeeded()
+        }
 
         // QA runs never reach the network; they check updates only against a feed they provide.
         if options.qaOutput == nil || options.updateFeed != nil {
@@ -204,6 +207,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard AppServices.shared?.fileOperations.hasRunningOperations == true else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr("A copy is still in progress", "복사가 아직 진행 중입니다")
+        alert.informativeText = tr("Quitting now will stop file operations. Files being copied or moved may be incomplete.",
+                                   "지금 종료하면 파일 작업이 중단됩니다. 복사하거나 이동 중인 파일이 완전하지 않을 수 있습니다.")
+        alert.addButton(withTitle: tr("Don’t Quit", "종료하지 않음"))
+        let quit = alert.addButton(withTitle: tr("Stop and Quit", "중단하고 종료"))
+        quit.keyEquivalent = ""
+        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if windowControllers.isEmpty { reopenLastWindow() }
         else if !flag { frontController?.showWindow(nil) }
@@ -212,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
 
     func applicationWillTerminate(_ notification: Notification) {
         session?.saveNow()
-        search?.stop()
+        search?.stop(savingWithin: 2)
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

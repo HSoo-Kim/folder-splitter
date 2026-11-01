@@ -3,22 +3,28 @@ import AppKit
 /// Explicitly targets Finder rather than a file or folder's registered default application.
 @MainActor
 enum FinderBridge {
+    private static let revealQueue = DispatchQueue(label: "FolderSplitter.Finder.reveal", qos: .userInitiated)
+
     static func reveal(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         guard let finder = finderURL else { reportMissingFinder(); return }
         // Finder's Open Documents event opens files; reveal instead selects their icons.
         let files = urls.map { "POSIX file " + quoted($0.path) }.joined(separator: ", ")
         let source = "tell application \(quoted(finder.path))\nreveal {\(files)}\nactivate\nend tell"
-        var error: NSDictionary?
-        if let script = NSAppleScript(source: source) {
-            script.executeAndReturnError(&error)
-            if error == nil { return }
+        // A pending Automation consent prompt can block the Apple Event for minutes.
+        // Keep scripts serial and off the main thread so windows remain responsive.
+        revealQueue.async {
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: source) {
+                script.executeAndReturnError(&error)
+                if error == nil { return }
+            }
+            // Automation can be denied. Opening the containing folders still provides a real
+            // Finder destination, without passing the original files to their default handlers.
+            var seen = Set<URL>()
+            let parents = urls.map { $0.deletingLastPathComponent().standardizedFileURL }.filter { seen.insert($0).inserted }
+            DispatchQueue.main.async { open(parents, using: finder) }
         }
-        // Automation can be denied. Opening the containing folders still provides a real
-        // Finder destination, without passing the original files to their default handlers.
-        var seen = Set<URL>()
-        let parents = urls.map { $0.deletingLastPathComponent().standardizedFileURL }.filter { seen.insert($0).inserted }
-        open(parents, using: finder)
     }
 
     static func open(_ folder: URL) {

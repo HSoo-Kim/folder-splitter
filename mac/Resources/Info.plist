@@ -101,7 +101,7 @@
 		</dict>
 	</array>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Folder Splitter asks Finder to show Get Info windows when you choose Get Info.</string>
+	<string>When you choose Show in Finder, Folder Splitter asks Finder to reveal the selected items.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Folder Splitter lists and searches the files on your Desktop.</string>
 	<key>NSDocumentsFolderUsageDescription</key>

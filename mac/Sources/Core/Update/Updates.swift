@@ -44,7 +44,7 @@ struct ReleaseInfo: Equatable, Sendable {
 }
 
 enum UpdateFeed {
-    static let defaultURL = URL(string: "https://api.github.com/repos/HSoo-Kim/folder-splitter/releases?per_page=30")!
+    static let defaultURL = URL(string: "https://api.github.com/repos/HSoo-Kim/folder-splitter/releases?per_page=100")!
     static let packageName = "folder-splitter-mac.zip"
     nonisolated(unsafe) static var session = URLSession(configuration: privateConfiguration())
     private static let cache = ReleaseCache()
@@ -80,25 +80,56 @@ enum UpdateFeed {
                 release = try parse(Data(contentsOf: feed), githubOnly: false)
             } else {
                 guard feed.scheme == "https" else { throw UpdateError.invalidFeed }
-                let cached = await cache.entry(for: feed)
-                var request = URLRequest(url: feed, timeoutInterval: 10)
-                request.setValue("FolderSplitter-macOS/\(current)", forHTTPHeaderField: "User-Agent")
-                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-                if let etag = cached?.etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
-                let (data, response) = try await session.data(for: request)
-                guard let http = response as? HTTPURLResponse else { throw UpdateError.invalidFeed }
-                if http.statusCode == 304 {
-                    guard let cached else { throw UpdateError.invalidFeed }
-                    release = cached.release
-                } else {
-                    try checkHTTP(http)
-                    release = try parse(data, githubOnly: feed.host == "api.github.com")
-                    await cache.store(.init(etag: http.value(forHTTPHeaderField: "ETag"), release: release), for: feed)
-                }
+                release = try await fetchRelease(feed: feed, current: current)
             }
             return release.flatMap { $0.version > current ? $0 : nil }
         } catch let error as UpdateError { throw error }
         catch { throw UpdateError.failed(error.localizedDescription) }
+    }
+
+    private static func fetchRelease(feed: URL, current: AppVersion) async throws -> ReleaseInfo? {
+        var page: URL? = feed
+        var visited = Set<URL>()
+        while let url = page {
+            guard visited.insert(url).inserted else { throw UpdateError.invalidFeed }
+            // Only page 1 is cached. A 304 there must still check later pages when it
+            // contains no Mac release: those pages may have changed independently.
+            let cached = url == feed ? await cache.entry(for: feed) : nil
+            var request = URLRequest(url: url, timeoutInterval: 10)
+            request.setValue("FolderSplitter-macOS/\(current)", forHTTPHeaderField: "User-Agent")
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            if let etag = cached?.etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw UpdateError.invalidFeed }
+            let entry: ReleaseCache.Entry
+            if http.statusCode == 304 {
+                guard let cached else { throw UpdateError.invalidFeed }
+                entry = cached
+            } else {
+                try checkHTTP(http)
+                entry = try .init(etag: http.value(forHTTPHeaderField: "ETag"),
+                                  release: parse(data, githubOnly: feed.host == "api.github.com"),
+                                  nextPage: nextPage(in: http, relativeTo: feed))
+                if url == feed { await cache.store(entry, for: feed) }
+            }
+            if let release = entry.release { return release }
+            page = entry.nextPage
+        }
+        return nil
+    }
+
+    private static func nextPage(in response: HTTPURLResponse, relativeTo feed: URL) throws -> URL? {
+        guard let links = response.value(forHTTPHeaderField: "Link") else { return nil }
+        for link in links.split(separator: ",") {
+            let fields = link.split(separator: ";").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard fields.dropFirst().contains(where: { $0 == "rel=\"next\"" || $0 == "rel=next" }) else { continue }
+            guard let target = fields.first, target.hasPrefix("<"), target.hasSuffix(">"),
+                  let url = URL(string: String(target.dropFirst().dropLast()), relativeTo: feed)?.absoluteURL,
+                  url.scheme == "https", url.host == feed.host, url.port == feed.port,
+                  url.user == nil, url.password == nil else { throw UpdateError.invalidFeed }
+            return url
+        }
+        return nil
     }
 
     private static func acceptedURL(_ text: String?, githubOnly: Bool) -> URL? {
@@ -116,6 +147,7 @@ private actor ReleaseCache {
     struct Entry: Sendable {
         let etag: String?
         let release: ReleaseInfo?
+        let nextPage: URL?
     }
     private var entries: [URL: Entry] = [:]
     func entry(for url: URL) -> Entry? { entries[url] }

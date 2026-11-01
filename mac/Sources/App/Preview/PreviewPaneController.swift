@@ -106,7 +106,7 @@ private final class PreviewPosterView: NSImageView {
         posterView?.removeFromSuperview(); posterView = nil
         for child in summary.arrangedSubviews { summary.removeArrangedSubview(child); child.removeFromSuperview() }
         details.setRows([]); progress.stopAnimation(nil)
-        titleLabel.stringValue = urls.count == 1 ? urls[0].lastPathComponent : (urls.isEmpty ? tr("Preview", "미리보기") : Format.items(urls.count))
+        titleLabel.stringValue = urls.count == 1 ? FileName.display(urls[0].lastPathComponent) : (urls.isEmpty ? tr("Preview", "미리보기") : Format.items(urls.count))
         detach.isEnabled = !urls.isEmpty; openButton.isEnabled = !urls.isEmpty; pin.isEnabled = !urls.isEmpty || isPinned
         detailsScroll.isHidden = !SettingsStore.shared.settings.showPreviewDetails || urls.isEmpty
         NSLayoutConstraint.deactivate([detailsHeight, collapsedDetailsHeight])
@@ -139,7 +139,10 @@ private final class PreviewPosterView: NSImageView {
             if metadata.count == 1 {
                 let item = metadata[0]; self.titleLabel.stringValue = item.name
                 self.details.setRows(item.detailRows)
-                self.watcher = PreviewFileWatcher(item.url) { [weak self] in self?.renderSelection() }
+                self.watcher = PreviewFileWatcher(item.url) { [weak self] in
+                    guard let self, self.urls == selection else { return }
+                    self.renderSelection()
+                }
                 if item.isFolder || item.error != nil { self.showSummary(metadata) }
                 else { self.showQuickLook(item) }
             } else {

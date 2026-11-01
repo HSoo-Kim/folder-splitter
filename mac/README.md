@@ -20,7 +20,7 @@ A native macOS (Swift + AppKit) version of [Folder Splitter](../README.md) built
 | **The address bar is a search box** | Type part of a name (`report 2026`) or a path fragment (`15min_rain/rn_15m`) and matching files and folders appear as you type, ranked by nearness to what you have open. The app keeps its own file-name index (no file contents are read) and updates it with FSEvents. Korean names match regardless of how macOS stored them (NFC/NFD). |
 | **Finder-grade file list** | List view with expandable folders, icon view with thumbnails, per-folder view and sort memory, Quick Look (Space), inline rename, tags, Open With, Share, Services, drag and drop with Finder's copy/move rules, spring-loaded folders. |
 | **Cloud sync status** | Like Finder, a status icon by each name: Dropbox items up to date, online-only (size shows —) or ignored, and iCloud Drive / cloud-storage items not downloaded, downloading, uploading or in conflict, with Download Now and Remove Download. Online-only Dropbox files open through Dropbox, which downloads them first. |
-| **File operations you can undo** | Copy/move with progress and name-conflict choices (Keep Both, Replace — the replaced item goes to the Trash, Skip, Stop, apply to all). ⌘Z undoes moves, copies, renames, new folders, duplicates and Move to Trash. |
+| **File operations you can undo** | Copy/move with progress and name-conflict choices (Keep Both, Replace — the replaced item goes to the Trash, Skip, Stop, apply to all). ⌘Z undoes moves, copies, renames, new folders, duplicates and Move to Trash. Moves to another disk delete only what was completely copied. Dropbox online-only files are never copied, moved to another disk or out of Dropbox, duplicated or compressed (that would leave empty files); the app says why. Quitting during an operation asks first. |
 | **Between panes** | Copy or move the selection to the other pane (⌃⌥C / ⌃⌥X), open this folder in the other pane (⌃⌥O), compare the two folders and select what differs. |
 | **Preview and Get Info** | Inline Quick Look preview with details (dimensions, duration, pages), pin, detached preview windows, and a Get Info window with folder sizes, default app and flags. |
 | **Batch rename** | Find and replace (or regular expressions) with a running number `{n}` / `{n:3}` and a live preview; one undo reverts the batch. |
@@ -36,19 +36,26 @@ Light and dark appearance, Reduce Motion, Reduce Transparency and Increase Contr
 
 ## Install
 
+1. Download `folder-splitter-mac.zip` from the [latest Mac release](https://github.com/HSoo-Kim/folder-splitter/releases), unzip it and move **Folder Splitter** to **Applications**. Opened straight from Downloads, it can't install updates.
+2. Double-click Folder Splitter. The app isn't notarized by Apple, so macOS says "“Folder Splitter” Not Opened". Click **Done** (not **Move to Trash**).
+3. Open System Settings ▸ Privacy & Security, scroll to Security, and next to "“Folder Splitter” was blocked to protect your Mac." click **Open Anyway**, then enter your password. The button appears for about an hour after step 2.
+4. In the confirmation that follows, click **Open Anyway**. From then on it opens normally.
+
+**Full Disk Access** (recommended): in System Settings ▸ Privacy & Security ▸ Full Disk Access, turn on Folder Splitter (if it isn't listed, add it from Applications with **+**). Folder Splitter's Settings ▸ General shows the status and opens that page. Then quit Folder Splitter and open it again. Without it, macOS asks separately for Desktop, Documents and Downloads, and folders you don't allow aren't searched. Permissions you grant stay after updates.
+
+### Building it yourself
+
 ```sh
-git clone <this repository> folder-splitter-mac
-cd folder-splitter-mac
+git clone https://github.com/HSoo-Kim/folder-splitter.git
+cd folder-splitter/mac
 scripts/install.sh        # builds a release app, installs /Applications/Folder Splitter.app, launches it
 ```
 
-To hand the app to someone else, `scripts/package.sh` makes `build/folder-splitter-mac.zip` (universal). They unzip it and move **Folder Splitter** to Applications. The build is signed ad hoc and not notarized, so the first launch is blocked: after the warning, open System Settings ▸ Privacy & Security, click **Open Anyway** next to "Folder Splitter was blocked", and confirm.
-
-On first launch macOS may ask for access to Desktop, Documents and Downloads; granting **Full Disk Access** (Settings ▸ General) avoids the per-folder prompts and lets search cover protected folders.
+`scripts/package.sh` makes the release zip (`build/folder-splitter-mac.zip`, universal). Releases must be signed with the stable identity (created once by `scripts/make-signing-identity.sh`) so users keep their macOS permissions across updates. They aren't notarized.
 
 ## Using it as a Finder replacement
 
-Settings ▸ General ▸ **Use as default file viewer** makes Folder Splitter the system's file viewer in two ways: "Show in Finder" / "Reveal in Finder" from other apps opens it (`NSFileViewer`), and so does opening a folder (`open <folder>` in Terminal, folders opened from other apps; the default viewer for `public.folder`). The Desktop and folders in the Dock still belong to Finder, and Finder keeps running. Turn the setting off to restore Finder.
+Settings ▸ General ▸ **Use as default file viewer** makes Folder Splitter the system's file viewer in two ways: "Show in Finder" / "Reveal in Finder" from other apps opens it (`NSFileViewer`), and so does opening a folder (`open <folder>` in Terminal, folders opened from other apps; the default viewer for `public.folder`). The Desktop and folders in the Dock still belong to Finder, and Finder keeps running. Turn the setting off to restore Finder. Turn it off before deleting Folder Splitter; if it's already deleted, run `defaults delete -g NSFileViewer` in Terminal.
 
 Automation: `open "foldersplitter://open?path=/Users/me/Projects&in=tab"` (`in` = `current`, `tab`, `other`, `right`, `below`, `window`) and `foldersplitter://reveal?path=…`.
 
@@ -92,7 +99,7 @@ A combined release (tag `vX.Y.Z` with both `folder-splitter-win-x64.zip` and `fo
 
 - Session and settings: `~/Library/Application Support/Folder Splitter/session.json` (previous version kept as `session.json.bak`)
 - Search index: `~/Library/Application Support/Folder Splitter/Search/paths.v1.index`
-- Not indexed (the folders themselves are still found by name): `/System`, `/Library`, `/private`, `/usr`, `/opt`, `/Volumes`, `~/Library`, `~/.Trash`, `.git` and `node_modules` contents, package contents (`.app` …), plus folders you exclude in Settings ▸ Search.
+- Not indexed (the folders themselves are still found by name): `/System`, `/Library`, `/private`, `/usr`, `/opt`, `/Volumes`, `~/Library` (except iCloud Drive and the cloud folders in `~/Library/CloudStorage` — Dropbox, Google Drive, OneDrive …, which are indexed without downloading cloud-only folders), `~/.Trash`, `~/.dropbox`, `.git` and `node_modules` contents, package contents (`.app` …), plus folders you exclude in Settings ▸ Search.
 - Network: only the update check. At launch, every hour, and when the app comes back after 15 minutes or more, it reads release information from `api.github.com` (conditional requests, so unchanged answers don't use the shared rate limit). No user, machine or file information is sent. Turn it off in Settings ▸ General.
 
 ## Development

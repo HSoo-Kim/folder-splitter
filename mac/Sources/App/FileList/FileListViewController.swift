@@ -49,6 +49,9 @@ final class FileListViewController: NSViewController {
     private var presentationTask: Task<Void, Never>?
     private var loadingWorker: Task<Result<(FileListSnapshot, [URL: FileListSnapshot]), Error>, Never>?
     private var refreshPending = false
+    private var automaticReloadTask: Task<Void, Never>?
+    private var lastLoadStarted: TimeInterval = 0
+    private var watcherUpdateTask: Task<Void, Never>?
     private var childLoadTasks: [URL: Task<Void, Never>] = [:]
     private var watcher: FileListWatcher?
     private var watchedFolders = Set<URL>()
@@ -80,6 +83,8 @@ final class FileListViewController: NSViewController {
         loadingWorker?.cancel()
         childLoadTasks.values.forEach { $0.cancel() }
         presentationTask?.cancel()
+        automaticReloadTask?.cancel()
+        watcherUpdateTask?.cancel()
         watcher?.stop()
         NotificationCenter.default.removeObserver(self)
     }
@@ -181,6 +186,9 @@ final class FileListViewController: NSViewController {
         pendingSelection = selecting
         if let expected = renameAfterLoadURL, expected.deletingLastPathComponent().standardizedFileURL != folder { renameAfterLoadURL = nil }
         if changed {
+            automaticReloadTask?.cancel(); automaticReloadTask = nil
+            watcherUpdateTask?.cancel(); watcherUpdateTask = nil
+            refreshPending = false
             watcher?.stop()
             watcher = nil
             watchedFolders.removeAll()
@@ -207,6 +215,8 @@ final class FileListViewController: NSViewController {
             loadingWorker?.cancel()
             refreshPending = false
         }
+        automaticReloadTask?.cancel(); automaticReloadTask = nil
+        lastLoadStarted = ProcessInfo.processInfo.systemUptime
         generation += 1
         let token = generation
         for (url, task) in childLoadTasks { task.cancel(); nodes[url]?.isLoading = false }
@@ -302,10 +312,31 @@ final class FileListViewController: NSViewController {
         guard refreshPending else { return }
         refreshPending = false
         if renameURL != nil { inlineRenameNeedsRefresh = true }
-        else { reloadPreservingState() }
+        else { scheduleAutomaticReload() }
     }
 
-    func reloadPreservingState() { load(changedFolder: false) }
+    func reloadPreservingState() {
+        automaticReloadTask?.cancel(); automaticReloadTask = nil
+        refreshPending = false
+        // An explicit Refresh must not wait for a scan that started before the request.
+        loadingTask?.cancel(); loadingTask = nil
+        loadingWorker?.cancel(); loadingWorker = nil
+        load(changedFolder: false)
+    }
+
+    private func scheduleAutomaticReload() {
+        guard folder != nil else { return }
+        guard renameURL == nil else { inlineRenameNeedsRefresh = true; return }
+        guard automaticReloadTask == nil else { return }
+        let delay = max(0, 1 - (ProcessInfo.processInfo.systemUptime - lastLoadStarted))
+        automaticReloadTask = Task { [weak self] in
+            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            guard let self, !Task.isCancelled else { return }
+            self.automaticReloadTask = nil
+            if self.loadingTask != nil { self.refreshPending = true }
+            else { self.load(changedFolder: false) }
+        }
+    }
 
     private func rebuildPresentation(resetScroll: Bool = false, revealSelection: Bool = false) {
         guard renameURL == nil else { inlineRenameNeedsRefresh = true; return }
@@ -611,13 +642,30 @@ final class FileListViewController: NSViewController {
         if let window = view.window { alert.beginSheetModal(for: window) } else { alert.runModal() }
     }
     private func installWatcher() {
-        guard let folder else { return }
-        let folders = Set(([folder] + Array(expanded)).map(\.standardizedFileURL))
-        guard folders != watchedFolders else { return }
-        watcher?.stop()
-        watchedFolders = folders
-        watcher = FileListWatcher(folders: Array(folders)) { [weak self] in
-            Task { @MainActor in self?.reloadPreservingState() }
+        watcherUpdateTask?.cancel()
+        watcherUpdateTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let self, !Task.isCancelled, let folder = self.folder else { return }
+            self.watcherUpdateTask = nil
+            // Listings already resolved aliases/symlinks. Never re-probe every expanded path.
+            let folders = Set(([folder] + Array(self.expanded)).compactMap { self.directoryLocations[$0]?.path })
+            // FSEvents is recursive: ordinary descendants need a filter update, not a new stream.
+            var rootPaths: [String] = []
+            for path in folders.sorted(by: { $0.count < $1.count }) {
+                if !rootPaths.contains(where: { $0 == "/" || path == $0 || path.hasPrefix($0 + "/") }) {
+                    rootPaths.append(path)
+                }
+            }
+            let roots = Set(rootPaths.map { URL(fileURLWithPath: $0, isDirectory: true) })
+            if roots != self.watchedFolders {
+                self.watcher?.stop()
+                self.watchedFolders = roots
+                self.watcher = FileListWatcher(folders: Array(roots), watchedPaths: folders) { [weak self] in
+                    Task { @MainActor in self?.scheduleAutomaticReload() }
+                }
+            } else {
+                self.watcher?.updateWatchedPaths(folders)
+            }
         }
     }
 

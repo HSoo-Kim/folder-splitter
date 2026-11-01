@@ -42,7 +42,7 @@ struct PreviewMetadata: @unchecked Sendable {
             MDItemCopyAttribute($0, kMDItemLastUsedDate) as? Date
         }
         var metadata = PreviewMetadata(
-            url: url, name: values?.localizedName ?? url.lastPathComponent,
+            url: url, name: FileName.display(values?.localizedName ?? url.lastPathComponent),
             icon: NSWorkspace.shared.icon(forFile: url.path),
             isFolder: values?.isDirectory == true && values?.isPackage != true,
             size: Int64(values?.fileSize ?? 0), kind: values?.localizedTypeDescription ?? tr("Item", "항목"),
@@ -158,17 +158,84 @@ struct PreviewMetadata: @unchecked Sendable {
     }
 }
 
+/// Parent notifications are only a hint that an atomic save may have replaced the item.
+/// Probe the item's identity/metadata before notifying; sibling writes are not item changes.
 @MainActor final class PreviewFileWatcher {
-    private var sources: [DispatchSourceFileSystemObject] = []
-    init(_ url: URL, changed: @escaping @MainActor () -> Void) {
-        // The parent also reports atomic saves and replacement of the watched inode.
-        for path in [url.path, url.deletingLastPathComponent().path] {
-            let fd = open(path, O_EVTONLY)
-            guard fd >= 0 else { continue }
-            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .delete, .rename, .attrib, .extend, .revoke], queue: .main)
-            source.setEventHandler { MainActor.assumeIsolated { changed() } }
-            source.setCancelHandler { close(fd) }; source.resume(); sources.append(source)
+    private final class Monitor: @unchecked Sendable {
+        private struct Signature: Equatable {
+            let device: dev_t
+            let inode: ino_t
+            let size: off_t
+            let modifiedSeconds: Int
+            let modifiedNanos: Int
+            let changedSeconds: Int
+            let changedNanos: Int
+            init?(_ url: URL) {
+                var value = stat()
+                guard lstat(url.path, &value) == 0 else { return nil }
+                device = value.st_dev; inode = value.st_ino; size = value.st_size
+                modifiedSeconds = value.st_mtimespec.tv_sec; modifiedNanos = value.st_mtimespec.tv_nsec
+                changedSeconds = value.st_ctimespec.tv_sec; changedNanos = value.st_ctimespec.tv_nsec
+            }
+        }
+        private let queue = DispatchQueue(label: "FolderSplitter.preview-events", qos: .utility)
+        private let url: URL
+        private let changed: @Sendable () -> Void
+        private var itemSource: DispatchSourceFileSystemObject?
+        private var parentSource: DispatchSourceFileSystemObject?
+        private var signature: Signature?
+        private var pending: DispatchWorkItem?
+        private var itemChanged = false
+        private var stopped = false
+
+        init(_ url: URL, changed: @escaping @Sendable () -> Void) {
+            self.url = url; self.changed = changed
+            queue.async { [self] in
+                signature = Signature(url)
+                itemSource = watch(url, item: true)
+                parentSource = watch(url.deletingLastPathComponent(), item: false)
+            }
+        }
+        private func watch(_ url: URL, item: Bool) -> DispatchSourceFileSystemObject? {
+            let fd = open(url.path, O_EVTONLY)
+            guard fd >= 0 else { return nil }
+            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .delete, .rename, .attrib, .extend, .revoke], queue: queue)
+            source.setEventHandler { [weak self] in self?.schedule(item: item) }
+            source.setCancelHandler { close(fd) }; source.resume()
+            return source
+        }
+        private func schedule(item: Bool) {
+            guard !stopped else { return }
+            itemChanged = itemChanged || item
+            guard pending == nil else { return }
+            // Fixed coalescing window, not a trailing debounce that can starve during a sync.
+            let work = DispatchWorkItem { [weak self] in self?.probe() }
+            pending = work
+            queue.asyncAfter(deadline: .now() + 0.35, execute: work)
+        }
+        private func probe() {
+            pending = nil
+            guard !stopped else { return }
+            let next = Signature(url)
+            let didChange = itemChanged || next != signature
+            itemChanged = false
+            if next?.device != signature?.device || next?.inode != signature?.inode {
+                itemSource?.cancel(); itemSource = watch(url, item: true)
+            }
+            signature = next
+            if didChange { changed() }
+        }
+        func stop() {
+            queue.async { [self] in
+                stopped = true; pending?.cancel(); pending = nil
+                itemSource?.cancel(); itemSource = nil
+                parentSource?.cancel(); parentSource = nil
+            }
         }
     }
-    deinit { for source in sources { source.cancel() } }
+    private let monitor: Monitor
+    init(_ url: URL, changed: @escaping @MainActor () -> Void) {
+        monitor = Monitor(url) { Task { @MainActor in changed() } }
+    }
+    deinit { monitor.stop() }
 }

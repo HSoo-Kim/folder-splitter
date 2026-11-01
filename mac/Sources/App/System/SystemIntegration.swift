@@ -4,6 +4,29 @@ import CoreServices
 import ServiceManagement
 import Darwin
 
+enum AppInstallLocation {
+    static var isTranslocated: Bool { Bundle.main.bundleURL.path.contains("/AppTranslocation/") }
+
+    static var moveToApplicationsMessage: String {
+        tr("Move Folder Splitter to the Applications folder, then open it again.",
+           "Folder Splitter를 응용 프로그램 폴더로 옮긴 다음 다시 여십시오.")
+    }
+
+    @MainActor static func showNoticeIfNeeded() {
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL.path
+        guard isTranslocated || !path.hasPrefix("/Applications/") else { return }
+        let key = "FolderSplitter.installLocationNoticePaths"
+        var shown = UserDefaults.standard.stringArray(forKey: key) ?? []
+        guard !shown.contains(path) else { return }
+        shown.append(path)
+        UserDefaults.standard.set(shown, forKey: key)
+        let alert = NSAlert()
+        alert.messageText = moveToApplicationsMessage
+        alert.addButton(withTitle: tr("OK", "확인"))
+        alert.runModal()
+    }
+}
+
 /// Finder's reveal-service preference is global, not in the app's defaults domain.
 /// Disabling always restores Finder; this does not replace Finder's Desktop or Dock.
 enum DefaultFileViewer {
@@ -22,6 +45,10 @@ enum DefaultFileViewer {
 
     static func setEnabled(_ enabled: Bool) {
         lastError = nil
+        guard !enabled || !AppInstallLocation.isTranslocated else {
+            lastError = AppInstallLocation.moveToApplicationsMessage
+            return
+        }
         guard let identifier = Bundle.main.bundleIdentifier else {
             lastError = tr("This copy of Folder Splitter has no app identifier. Open the installed app and try again.",
                            "이 Folder Splitter에는 앱 식별자가 없습니다. 설치된 앱을 열고 다시 시도하십시오.")
@@ -141,6 +168,10 @@ enum LoginItem {
     static var needsApproval: Bool { SMAppService.mainApp.status == .requiresApproval }
 
     static func setEnabled(_ enabled: Bool) throws {
+        guard !enabled || !AppInstallLocation.isTranslocated else {
+            throw NSError(domain: "FolderSplitter.InstallLocation", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: AppInstallLocation.moveToApplicationsMessage])
+        }
         if enabled { try SMAppService.mainApp.register() }
         else { try SMAppService.mainApp.unregister() }
     }
@@ -154,6 +185,14 @@ enum AppRelauncher {
     }
 
     @MainActor static func relaunch() {
+        guard AppServices.shared?.fileOperations.hasRunningOperations != true else {
+            let alert = NSAlert()
+            alert.messageText = tr("Wait for file operations to finish before restarting.",
+                                   "파일 작업이 완료된 다음 재시동하십시오.")
+            alert.addButton(withTitle: tr("OK", "확인"))
+            alert.runModal()
+            return
+        }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
         task.arguments = ["/bin/sh", "-c", command(bundlePath: Bundle.main.bundlePath,

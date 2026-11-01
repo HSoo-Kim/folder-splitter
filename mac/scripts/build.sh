@@ -40,7 +40,19 @@ plutil -lint -s "$contents/Info.plist"
 cp "$BUILD/AppIcon.icns" "$contents/Resources/AppIcon.icns"
 for lproj in "$ROOT"/Resources/*.lproj; do cp -R "$lproj" "$contents/Resources/"; done
 
-# Ad-hoc signature: enough to run locally. TCC remembers grants per signature, so a
-# rebuilt app may be asked for folder access again.
-codesign --force --sign - --identifier io.github.hsoo-kim.FolderSplitter --timestamp=none "$app"
+# macOS keeps privacy grants per designated requirement. The release identity (created once by
+# scripts/make-signing-identity.sh) makes it the same for every build, so updates keep Full Disk
+# Access and folder access; an ad-hoc signature changes it with every build.
+signing_keychain="$HOME/Library/Keychains/folder-splitter-signing.keychain-db"
+identity=""
+if [[ -f "$signing_keychain" ]]; then
+    security unlock-keychain -p "$(security find-generic-password -a "$USER" -s folder-splitter-signing-keychain -w)" "$signing_keychain"
+    identity="$(security find-identity -p codesigning "$signing_keychain" | awk '/"Folder Splitter Signing \(HSoo-Kim\)"/ { print $2; exit }')"
+fi
+if [[ -n "$identity" ]]; then
+    codesign --force --sign "$identity" --identifier io.github.hsoo-kim.FolderSplitter --timestamp=none "$app"
+else
+    echo "note: no release signing identity (scripts/make-signing-identity.sh); signing ad hoc" >&2
+    codesign --force --sign - --identifier io.github.hsoo-kim.FolderSplitter --timestamp=none "$app"
+fi
 echo "built $app ($config)"

@@ -226,8 +226,8 @@ final class BulkRenameSheetController: NSWindowController, NSTextFieldDelegate, 
             return
         }
         var options = BulkRenameOptions()
-        options.find = findField.stringValue
-        options.replace = replaceField.stringValue
+        options.find = FileName.disk(findField.stringValue)
+        options.replace = FileName.disk(replaceField.stringValue)
         options.useRegex = regexCheckbox.state == .on
         options.caseSensitive = matchCaseCheckbox.state == .on
         options.startNumber = start
@@ -310,8 +310,8 @@ final class BulkRenameSheetController: NSWindowController, NSTextFieldDelegate, 
         let preview = previews[row]
         let value: String
         switch tableColumn?.identifier.rawValue {
-        case "old": value = preview.oldName
-        case "new": value = preview.newName
+        case "old": value = FileName.display(preview.oldName)
+        case "new": value = FileName.display(preview.newName)
         default: value = preview.problem.map(Self.reason) ?? ""
         }
         let label = ModelSheetUI.label(value)
@@ -562,10 +562,13 @@ private final class WorkspaceDeletion {
 
     func delete() {
         store.delete(named: workspace.name)
+        let grouping = undoManager?.isUndoing == false && undoManager?.isRedoing == false
+        if grouping { undoManager?.beginUndoGrouping() }
         undoManager?.registerUndo(withTarget: self) { action in
             MainActor.assumeIsolated { action.restore() }
         }
         undoManager?.setActionName(tr("Delete Workspace", "작업 구성 삭제"))
+        if grouping { undoManager?.endUndoGrouping() }
     }
 
     private func restore() {

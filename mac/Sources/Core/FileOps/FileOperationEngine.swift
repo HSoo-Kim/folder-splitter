@@ -27,14 +27,20 @@ struct FileConflict: Sendable {
     let sourceModified: Date?
     let destinationModified: Date?
     let remainingItems: Int
+    var sourceOnlineOnly = false
+    var destinationOnlineOnly = false
 }
 
 enum FileEngineError: LocalizedError {
     case invalidName, exists(URL), recursiveDestination, cancelled, trashUnavailable(URL, String), rollback(String)
     case sourceRemovalFailed(URL, URL, String)
+    case onlineOnly(URL)
     var errorDescription: String? {
         switch self {
-        case .invalidName: return tr("A name cannot be empty or contain / or :.", "이름은 비어 있거나 / 또는 : 문자를 포함할 수 없습니다.")
+        case .invalidName: return tr("A name cannot be empty or contain /.", "이름은 비어 있거나 / 문자를 포함할 수 없습니다.")
+        case .onlineOnly(let url):
+            let name = FileName.display(url.lastPathComponent)
+            return tr("“\(name)” is online-only in Dropbox, so its contents aren't on this Mac. Copying or moving it now would create an empty file. Make it available offline in Dropbox, then try again.", "‘\(name)’ 파일은 Dropbox에 온라인 전용으로 저장되어 있어 이 Mac에 내용이 없습니다. 지금 복사하거나 이동하면 빈 파일이 만들어집니다. Dropbox에서 오프라인으로 사용할 수 있게 설정한 다음 다시 시도하십시오.")
         case .exists(let url): return tr("An item named “\(url.lastPathComponent)” already exists.", "‘\(url.lastPathComponent)’ 이름의 항목이 이미 있습니다.")
         case .recursiveDestination: return tr("An item cannot be copied or moved onto itself or into itself.", "항목을 자기 자신 또는 자신의 하위 폴더로 복사하거나 이동할 수 없습니다.")
         case .cancelled: return tr("The operation was stopped.", "작업이 정지되었습니다.")
@@ -68,6 +74,7 @@ private final class CopyContext {
     let progress: @Sendable (FileOperationProgress) -> Void
     var finishedBytes: Int64 = 0
     var errorCode: Int32?
+    var onlineOnly: URL?
     init(_ token: FileOperationCancellation, total: Int64, base: Int64, source: URL,
          progress: @escaping @Sendable (FileOperationProgress) -> Void) {
         self.token = token; self.total = total; self.base = base; self.source = source; self.progress = progress
@@ -78,6 +85,10 @@ private let copyProgressCallback: copyfile_callback_t = { what, stage, state, so
     guard let raw else { return COPYFILE_CONTINUE }
     let context = Unmanaged<CopyContext>.fromOpaque(raw).takeUnretainedValue()
     if context.token.isCancelled || what == COPYFILE_RECURSE_ERROR || stage == COPYFILE_ERR { return COPYFILE_QUIT }
+    if what == COPYFILE_RECURSE_FILE && stage == COPYFILE_START, let source {
+        let url = URL(fileURLWithPath: String(cString: source))
+        if OnlineOnlyItems.isStub(url) { context.onlineOnly = url; return COPYFILE_QUIT }
+    }
     if (what == COPYFILE_RECURSE_DIR || what == COPYFILE_RECURSE_DIR_CLEANUP) && stage == COPYFILE_FINISH, let source, let destination {
         // With COPYFILE_CLONE, copyfile installs directory permissions before visiting
         // children. Temporarily grant access only on our private staging copy, then put
@@ -108,10 +119,12 @@ final class FileOperationEngine: @unchecked Sendable {
     typealias ConflictHandler = @Sendable (FileConflict) async -> FileConflictResolution
     private let fm = FileManager.default
     private let renameItem: @Sendable (URL, URL) -> Int32
+    private let dropboxRoots: [URL]
 
     /// The injected rename reports an errno (zero on success), allowing another filesystem
     /// implementation to request the same copy-and-remove path as a cross-volume rename.
-    init(renameItem: @escaping @Sendable (URL, URL) -> Int32 = { FileOperationEngine.renameExclusively($0, $1) }) {
+    init(dropboxRoots: [URL] = [], renameItem: @escaping @Sendable (URL, URL) -> Int32 = { FileOperationEngine.renameExclusively($0, $1) }) {
+        self.dropboxRoots = dropboxRoots.map { $0.resolvingSymlinksInPath().standardizedFileURL }
         self.renameItem = renameItem
     }
     static func renameExclusively(_ source: URL, _ destination: URL) -> Int32 {
@@ -144,11 +157,30 @@ final class FileOperationEngine: @unchecked Sendable {
         return total
     }
     static func validateName(_ name: String) throws {
-        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains(":"), !name.contains("\0") else { throw FileEngineError.invalidName }
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\0") else { throw FileEngineError.invalidName }
+    }
+    static func isNamingFolder(_ item: URL) throws -> Bool {
+        let values = try item.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        return values.isDirectory == true && values.isPackage != true
+    }
+    private func checkMove(_ source: URL, to destination: URL) throws {
+        // Resolve parent links but not the item itself: moving a symbolic link must not
+        // inspect or restrict the target it happens to point at.
+        func location(_ item: URL) -> String {
+            item.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(item.lastPathComponent).standardizedFileURL.path
+        }
+        func contains(_ path: String, root: URL) -> Bool {
+            path == root.path || path.hasPrefix(root.path.hasSuffix("/") ? root.path : root.path + "/")
+        }
+        let sourcePath = location(source), destinationPath = location(destination)
+        if let root = dropboxRoots.first(where: { contains(sourcePath, root: $0) }),
+           !contains(destinationPath, root: root), let stub = OnlineOnlyItems.firstStub(in: source) {
+            throw FileEngineError.onlineOnly(stub)
+        }
     }
     static func unique(_ proposed: URL, isDirectory: Bool? = nil) -> URL {
         if !exists(proposed) { return proposed }
-        let folder = isDirectory ?? ((try? proposed.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true)
+        let folder = isDirectory ?? ((try? isNamingFolder(proposed)) == true)
         let ext = folder ? "" : proposed.pathExtension
         let stem = ext.isEmpty ? proposed.lastPathComponent : proposed.deletingPathExtension().lastPathComponent
         var index = 2
@@ -209,6 +241,9 @@ final class FileOperationEngine: @unchecked Sendable {
         func allowAccess(_ item: URL) {
             item.path.withCString { path in
                 var info = stat()
+                if lstat(path, &info) == 0 && (info.st_mode & S_IFMT) != S_IFLNK && (info.st_flags & UInt32(UF_IMMUTABLE)) != 0 {
+                    _ = chflags(path, info.st_flags & ~UInt32(UF_IMMUTABLE))
+                }
                 if lstat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR && (info.st_mode & 0o700) != 0o700 { _ = chmod(path, (info.st_mode & 0o7777) | 0o700) }
             }
         }
@@ -221,6 +256,7 @@ final class FileOperationEngine: @unchecked Sendable {
     func copy(_ source: URL, to destination: URL, token: FileOperationCancellation,
               base: Int64, total: Int64, progress: @escaping @Sendable (FileOperationProgress) -> Void) throws {
         if token.isCancelled { throw FileEngineError.cancelled }
+        if OnlineOnlyItems.isStub(source) { throw FileEngineError.onlineOnly(source) }
         if Self.exists(destination) { throw FileEngineError.exists(destination) }
         let staging = destination.deletingLastPathComponent().appendingPathComponent(".folder-splitter-copy-\(UUID().uuidString)")
         defer { removeStaging(staging) }
@@ -233,11 +269,23 @@ final class FileOperationEngine: @unchecked Sendable {
         let result = source.path.withCString { src in staging.path.withCString { dst in copyfile(src, dst, state, flags) } }
         let savedErrno = context.errorCode ?? errno
         if result != 0 || token.isCancelled {
+            if let stub = context.onlineOnly { throw FileEngineError.onlineOnly(stub) }
             if token.isCancelled { throw FileEngineError.cancelled }
             throw POSIXError(POSIXErrorCode(rawValue: savedErrno) ?? .EIO)
         }
+        var stagedInfo = stat()
+        let locked = staging.path.withCString { lstat($0, &stagedInfo) } == 0 &&
+            (stagedInfo.st_mode & S_IFMT) != S_IFLNK && (stagedInfo.st_flags & UInt32(UF_IMMUTABLE)) != 0
+        if locked && staging.path.withCString({ chflags($0, stagedInfo.st_flags & ~UInt32(UF_IMMUTABLE)) }) != 0 {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
         let committed = staging.path.withCString { src in destination.path.withCString { dst in renamex_np(src, dst, UInt32(RENAME_EXCL)) } }
         if committed != 0 { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        if locked && destination.path.withCString({ chflags($0, stagedInfo.st_flags) }) != 0 {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            removeStaging(destination)
+            throw error
+        }
     }
     func relocate(_ source: URL, to destination: URL,
                   cancellation: FileOperationCancellation = FileOperationCancellation(),
@@ -245,20 +293,21 @@ final class FileOperationEngine: @unchecked Sendable {
         if cancellation.isCancelled { throw FileEngineError.cancelled }
         try Self.rejectRecursion(source, destination)
         if Self.exists(destination) { throw FileEngineError.exists(destination) }
+        try checkMove(source, to: destination)
         let code = renameItem(source, destination)
         if code == 0 { return }
         guard code == EXDEV else { throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO) }
         let total = try Self.size(source, cancellation: cancellation)
         progress(.init(completedBytes: 0, totalBytes: total, item: source))
+        let inventory = try CopiedSourceInventory(source)
         try copy(source, to: destination, token: cancellation, base: 0, total: total, progress: progress)
         progress(.init(completedBytes: total, totalBytes: total, item: source))
-        // removeItem may delete part of a tree before failing. The destination is now
-        // the only complete copy and must never be discarded on a removal failure.
-        do { try fm.removeItem(at: source) }
+        // Preserve the committed copy if anything new, changed, or unremovable remains.
+        do { try inventory.removeCopiedEntries(destination: destination) }
         catch { throw FileEngineError.sourceRemovalFailed(source, destination, error.localizedDescription) }
     }
     private func duplicateDestination(for item: URL) throws -> URL {
-        let folder = try item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        let folder = try Self.isNamingFolder(item)
         let ext = folder ? "" : item.pathExtension
         let stem = ext.isEmpty ? item.lastPathComponent : item.deletingPathExtension().lastPathComponent
         let name = stem + tr(" copy", " 복사본") + (ext.isEmpty ? "" : ".\(ext)")
@@ -278,6 +327,7 @@ final class FileOperationEngine: @unchecked Sendable {
                 var destination = folder.appendingPathComponent(source.lastPathComponent)
                 var replaced: URL?
                 do {
+                    if mode == .move { try checkMove(source, to: destination) }
                     if Self.sameItem(source.deletingLastPathComponent().resolvingSymlinksInPath(), folder.resolvingSymlinksInPath()) {
                         if mode == .move { result.outcome.skipped.append(source); continue }
                         destination = try duplicateDestination(for: source)
@@ -290,13 +340,13 @@ final class FileOperationEngine: @unchecked Sendable {
                             let remainingConflicts = items.dropFirst(index + 1).filter { Self.exists(folder.appendingPathComponent($0.lastPathComponent)) }.count
                             let sourceSize = try Self.size(source, cancellation: cancellation)
                             let destinationSize = try Self.size(destination, cancellation: cancellation)
-                            resolution = await conflict(.init(source: source, destination: destination, sourceBytes: sourceSize, destinationBytes: destinationSize, sourceModified: try? source.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, destinationModified: try? destination.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, remainingItems: remainingConflicts))
+                            resolution = await conflict(.init(source: source, destination: destination, sourceBytes: sourceSize, destinationBytes: destinationSize, sourceModified: try? source.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, destinationModified: try? destination.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, remainingItems: remainingConflicts, sourceOnlineOnly: OnlineOnlyItems.isStub(source), destinationOnlineOnly: OnlineOnlyItems.isStub(destination)))
                         }
                         if resolution.applyToAll { all = resolution.choice }
                         switch resolution.choice {
                         case .stop: result.outcome.cancelled = true
                         case .skip: result.outcome.skipped.append(source)
-                        case .keepBoth: destination = Self.unique(destination, isDirectory: try source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true)
+                        case .keepBoth: destination = Self.unique(destination, isDirectory: try Self.isNamingFolder(source))
                         case .replace:
                             replaced = try trash(destination)
                             result.trashed.append(.init(from: destination, to: replaced!))
@@ -314,11 +364,12 @@ final class FileOperationEngine: @unchecked Sendable {
                         let size = try Self.size(source, cancellation: cancellation)
                         total += size
                         progress(.init(completedBytes: done, totalBytes: total, item: source))
+                        let inventory = mode == .move ? try CopiedSourceInventory(source) : nil
                         try copy(source, to: destination, token: cancellation, base: done, total: total, progress: progress)
                         done += size
                         progress(.init(completedBytes: done, totalBytes: total, item: source))
                         if mode == .move {
-                            do { try fm.removeItem(at: source) }
+                            do { try inventory?.removeCopiedEntries(destination: destination) }
                             catch { throw FileEngineError.sourceRemovalFailed(source, destination, error.localizedDescription) }
                         }
                     }
@@ -443,6 +494,10 @@ final class FileOperationEngine: @unchecked Sendable {
     func compress(_ items: [URL], cancellation: FileOperationCancellation = FileOperationCancellation(),
                   progress: @escaping @Sendable (FileOperationProgress) -> Void = { _ in }) throws -> FileEngineResult {
         guard let first = items.first else { return FileEngineResult() }
+        for item in items {
+            if cancellation.isCancelled { throw FileEngineError.cancelled }
+            if let stub = OnlineOnlyItems.firstStub(in: item) { throw FileEngineError.onlineOnly(stub) }
+        }
         let parent = first.deletingLastPathComponent()
         let target = Self.unique(parent.appendingPathComponent(items.count == 1 ? first.lastPathComponent + ".zip" : tr("Archive.zip", "아카이브.zip")), isDirectory: false)
         let stage = parent.appendingPathComponent(".folder-splitter-archive-stage-\(UUID().uuidString)", isDirectory: true)

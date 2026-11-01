@@ -23,7 +23,9 @@ final class PaneController: NSViewController, PaneCommands, FileListHost, NSMenu
     private let statusBar = StatusBarView(frame: .zero)
     private let emptyState = PaneEmptyStateView()
     private var statusHeight: NSLayoutConstraint?
-    private var availableBytes: [String: Int64] = [:]
+    private var availableBytes: [String: (bytes: Int64?, checkedAt: TimeInterval)] = [:]
+    private var capacityLoads = Set<String>()
+    private static let capacityQueue = DispatchQueue(label: "FolderSplitter.available-capacity", qos: .utility)
     private var iconLoads: Set<UUID> = []
 
     init(id: UUID = UUID(), snapshot: PaneSnapshot? = nil) {
@@ -442,23 +444,27 @@ final class PaneController: NSViewController, PaneCommands, FileListHost, NSMenu
         if case .loaded = list.loadState {
             secondary.append(tr("\(Format.bytes(list.folderFileBytes)) here", "이 폴더 \(Format.bytes(list.folderFileBytes))"))
         }
-        if let available = availableBytes[folder.path] {
+        if let available = availableBytes[folder.path]?.bytes {
             secondary.append(tr("\(Format.bytes(available)) available", "\(Format.bytes(available)) 사용 가능"))
-        } else {
-            loadAvailableCapacity(for: folder)
         }
+        loadAvailableCapacity(for: folder)
         statusBar.update(primary: primary, secondary: secondary.joined(separator: " · "))
     }
 
     private func loadAvailableCapacity(for folder: URL) {
         let path = folder.path
-        Task.detached(priority: .utility) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard !capacityLoads.contains(path),
+              availableBytes[path].map({ now - $0.checkedAt >= 5 }) ?? true else { return }
+        capacityLoads.insert(path)
+        Self.capacityQueue.async { [weak self] in
             let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
             let bytes = values?.volumeAvailableCapacityForImportantUsage ?? values?.volumeAvailableCapacity.map(Int64.init)
-            guard let bytes else { return }
-            await MainActor.run { [weak self] in
+            DispatchQueue.main.async {
                 guard let self else { return }
-                self.availableBytes[path] = bytes
+                self.capacityLoads.remove(path)
+                // Cache failures too, so inaccessible volumes cannot cause a probe storm.
+                self.availableBytes[path] = (bytes, ProcessInfo.processInfo.systemUptime)
                 if self.currentFolder?.path == path { self.updateStatus() }
             }
         }
@@ -477,7 +483,6 @@ final class PaneController: NSViewController, PaneCommands, FileListHost, NSMenu
     func fileListContentDidChange(_ list: NSViewController) {
         guard list === currentList, let fileList = currentList else { return }
         if filterField.stringValue != fileList.filterText { filterField.stringValue = fileList.filterText }
-        availableBytes[currentFolder?.path ?? ""] = nil
         updateStatus()
         windowController?.paneContentDidChange(self)
     }
@@ -682,6 +687,12 @@ extension PaneController: TabBarViewDelegate {
 
     func tabBar(_ bar: TabBarView, acceptTab payload: TabDragPayload, at index: Int) -> Bool {
         windowController?.acceptTab(payload, into: self, at: index) ?? false
+    }
+
+    func tabBar(_ bar: TabBarView, validateFiles urls: [URL], onto id: UUID, operation: NSDragOperation) -> NSDragOperation {
+        guard let folder = tabs.first(where: { $0.id == id })?.folder,
+              let mode = FileDrop.mode(for: urls, into: folder, operation: operation) else { return [] }
+        return mode == .copy ? .copy : .move
     }
 
     func tabBar(_ bar: TabBarView, acceptFiles urls: [URL], onto id: UUID, operation: NSDragOperation) -> Bool {

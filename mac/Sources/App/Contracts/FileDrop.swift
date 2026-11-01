@@ -4,6 +4,8 @@ import AppKit
 /// for a folder: same volume moves, another volume copies, ⌥ forces copy, ⌘ forces move.
 @MainActor
 enum FileDrop {
+    /// Pass AppKit's original draggingSourceOperationMask, never a destination's chosen
+    /// cursor operation: narrowing it to .move would bypass the cross-volume copy rule.
     static func mode(for urls: [URL], into folder: URL, operation: NSDragOperation) -> TransferMode? {
         // AppKit narrows the source mask to .copy while ⌥ is held and to .generic while ⌘ is held.
         if operation == .copy { return .copy }

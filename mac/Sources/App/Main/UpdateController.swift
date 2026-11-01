@@ -15,7 +15,7 @@ final class UpdateController {
     enum Phase: Equatable {
         case idle
         case installing(progress: Double?)
-        /// QA only (`relaunchAfterInstall == false`): the new bundle is in place.
+        /// The new bundle is in place, even if restarting must wait for file operations.
         case installed
     }
 
@@ -121,6 +121,11 @@ final class UpdateController {
     /// release page so the user can download it.
     func install() async {
         guard let release = available, phase == .idle else { return }
+        guard AppServices.shared?.fileOperations.hasRunningOperations != true else {
+            inform(tr("Wait for file operations to finish before updating.",
+                      "파일 작업이 완료된 다음 업데이트하십시오."), "")
+            return
+        }
         guard canInstallAvailable else {
             NSWorkspace.shared.open(release.pageURL)
             dismissedVersion = release.version
@@ -153,12 +158,9 @@ final class UpdateController {
             if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(release.pageURL) }
             return
         }
-        if relaunchAfterInstall {
-            AppRelauncher.relaunch()
-        } else {
-            phase = .installed
-            post()
-        }
+        phase = .installed
+        post()
+        if relaunchAfterInstall { AppRelauncher.relaunch() }
     }
 
     private func inform(_ message: String, _ detail: String) {

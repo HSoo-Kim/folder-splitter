@@ -67,7 +67,7 @@ enum FileListReader {
                 if isMissing(error) { continue }
                 throw error
             }
-            let name = PathText.nfc(values.name ?? url.lastPathComponent)
+            let name = FileName.display(PathText.nfc(values.name ?? url.lastPathComponent))
             let hidden = values.isHidden == true || name.hasPrefix(".")
             if !showHidden && hidden { continue }
             let isAlias = values.isAliasFile == true
@@ -252,9 +252,8 @@ enum FileListReader {
     }
 }
 
-/// One stream watches the current folder and every expanded outline folder. FSEvents itself
-/// coalesces writes at the stream latency; continuous activity never postpones a reload forever.
-/// Only watched-folder content, direct child items, root changes and lost events reload the list.
+/// Recursive streams cover the displayed root (and any expanded out-of-tree alias targets).
+/// The visible-directory filter can change without rebuilding or resolving the stream roots.
 final class FileListWatcher {
     private final class CallbackState {
         let onChange: @Sendable () -> Void
@@ -330,25 +329,17 @@ final class FileListWatcher {
     private let queue = DispatchQueue(label: "FolderSplitter.file-list-events", qos: .utility)
     private var stream: FSEventStreamRef?
 
-    init(folders: [URL], onChange: @escaping @Sendable () -> Void) {
+    init(folders: [URL], watchedPaths: Set<String>, onChange: @escaping @Sendable () -> Void) {
         state = CallbackState(onChange)
+        state.setWatchedPaths(watchedPaths)
         queue.async { [weak self] in self?.start(folders: folders) }
     }
 
+    func updateWatchedPaths(_ paths: Set<String>) { state.setWatchedPaths(paths) }
+
     private func start(folders: [URL]) {
-        var paths: Set<String> = []
-        for folder in folders where folder.isFileURL {
-            let expanded = (folder.path as NSString).expandingTildeInPath
-            let url = URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL
-            paths.insert(url.path)
-            let values = try? url.resourceValues(forKeys: [.isAliasFileKey])
-            let resolved = values?.isAliasFile == true
-                ? (try? URL(resolvingAliasFileAt: url, options: [.withoutUI, .withoutMounting])) ?? url
-                : url
-            paths.insert(resolved.resolvingSymlinksInPath().standardizedFileURL.path)
-        }
+        let paths = Set(folders.filter(\.isFileURL).map { $0.standardizedFileURL.path })
         guard !paths.isEmpty, state.isActive else { return }
-        state.setWatchedPaths(paths)
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(state).toOpaque(),
             retain: { pointer in

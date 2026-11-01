@@ -16,6 +16,7 @@ protocol TabBarViewDelegate: AnyObject {
     func tabBar(_ bar: TabBarView, didMove id: UUID, to index: Int)
     func tabBar(_ bar: TabBarView, menuFor id: UUID) -> NSMenu?
     func tabBar(_ bar: TabBarView, acceptTab payload: TabDragPayload, at index: Int) -> Bool
+    func tabBar(_ bar: TabBarView, validateFiles urls: [URL], onto id: UUID, operation: NSDragOperation) -> NSDragOperation
     func tabBar(_ bar: TabBarView, acceptFiles urls: [URL], onto id: UUID, operation: NSDragOperation) -> Bool
     func tabBar(_ bar: TabBarView, didTearOff id: UUID, at screenPoint: NSPoint)
     func tabBarDidRequestReopenClosedTab(_ bar: TabBarView)
@@ -241,7 +242,10 @@ final class TabBarView: NSView, NSDraggingSource {
             if insertionIndex != index { insertionIndex = index; positionTabs(animated: true) }
             return .move
         }
-        guard let cell = visibleIDs.compactMap({ cells[$0] }).first(where: { $0.frame.contains(point) }) else { cancelSpringLoad(); return [] }
+        guard let cell = visibleIDs.compactMap({ cells[$0] }).first(where: { $0.frame.contains(point) }),
+              let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty else { cancelSpringLoad(); return [] }
+        let operation = delegate?.tabBar(self, validateFiles: urls, onto: cell.item.id, operation: sender.draggingSourceOperationMask) ?? []
+        guard !operation.isEmpty else { cancelSpringLoad(); return [] }
         if springID != cell.item.id {
             cancelSpringLoad(); springID = cell.item.id
             springTask = Task { [weak self] in
@@ -249,7 +253,7 @@ final class TabBarView: NSView, NSDraggingSource {
                 guard !Task.isCancelled, let self else { return }; self.select(cell.item.id)
             }
         }
-        return sender.draggingSourceOperationMask.contains(.move) && !NSEvent.modifierFlags.contains(.option) ? .move : .copy
+        return operation
     }
     override func draggingExited(_ sender: NSDraggingInfo?) { clearDrop() }
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { true }
@@ -260,8 +264,7 @@ final class TabBarView: NSView, NSDraggingSource {
         }
         let point = convert(sender.draggingLocation, from: nil)
         guard let cell = visibleIDs.compactMap({ cells[$0] }).first(where: { $0.frame.contains(point) }), let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty else { return false }
-        let operation: NSDragOperation = sender.draggingSourceOperationMask.contains(.move) && !NSEvent.modifierFlags.contains(.option) ? .move : .copy
-        return delegate?.tabBar(self, acceptFiles: urls, onto: cell.item.id, operation: operation) ?? false
+        return delegate?.tabBar(self, acceptFiles: urls, onto: cell.item.id, operation: sender.draggingSourceOperationMask) ?? false
     }
     private func cancelSpringLoad() { springTask?.cancel(); springTask = nil; springID = nil }
     private func clearDrop() { cancelSpringLoad(); insertionIndex = nil; positionTabs(animated: true) }

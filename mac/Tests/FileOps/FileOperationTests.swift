@@ -158,7 +158,7 @@ struct FileOperationTests {
         let box = try Sandbox()
         let a = try box.file("a.txt", "a")
         _ = try box.file("b.txt", "b")
-        for name in ["", ".", "..", "a/b", "a:b", "\0", "b.txt"] {
+        for name in ["", ".", "..", "a/b", "\0", "b.txt"] {
             #expect(throws: (any Error).self) { try box.engine.rename(a, to: name) }
         }
         let upper = try box.engine.rename(a, to: "A.txt")
@@ -446,5 +446,134 @@ struct FileOperationTests {
         let destination = try box.file("destination", "old")
         #expect(throws: (any Error).self) { try box.engine.copy(source, to: destination, token: FileOperationCancellation(), base: 0, total: 3, progress: { _ in }) }
         #expect(try box.read(destination) == "old")
+    }
+
+    @Test func onlineOnlyOperationsLeaveSourceAndNoOutput() async throws {
+        let box = try Sandbox()
+        let source = try box.file("source/paper.pdf", "")
+        #expect(source.path.withCString { setxattr($0, "com.dropbox.placeholder", nil, 0, 0, XATTR_NOFOLLOW) } == 0)
+        #expect(OnlineOnlyItems.firstStub(in: source) == source)
+        let target = try box.folder("target")
+        for mode in [TransferMode.copy, .move] {
+            let engine = FileOperationEngine(renameItem: { _, _ in EXDEV })
+            let result = await engine.transfer([source], to: target, mode: mode, conflict: { _ in .init(choice: .stop) })
+            #expect(result.outcome.failures.count == 1)
+            #expect(result.outcome.produced.isEmpty)
+            #expect(FileOperationEngine.exists(source))
+            #expect(try FileManager.default.contentsOfDirectory(atPath: target.path).isEmpty)
+        }
+        #expect(box.engine.duplicate([source]).outcome.failures.count == 1)
+        #expect(throws: (any Error).self) { try box.engine.compress([source]) }
+        let normal = try box.file("source/normal.txt", "real")
+        #expect(throws: (any Error).self) { try box.engine.compress([normal, source]) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: source.deletingLastPathComponent().path).sorted() == ["normal.txt", "paper.pdf"])
+        let symlink = box.root.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: source)
+        #expect(OnlineOnlyItems.firstStub(in: symlink) == nil)
+        #expect(box.engine.duplicate([symlink]).outcome.succeeded)
+    }
+
+    @Test func stubInsideFolderRefusesCopyAndDropboxExitButAllowsInternalMove() async throws {
+        let box = try Sandbox()
+        let root = try box.folder("Dropbox")
+        let source = try box.folder("Dropbox/project")
+        let stub = try box.file("Dropbox/project/online.pdf", "")
+        #expect(stub.path.withCString { setxattr($0, "com.dropbox.placeholder", nil, 0, 0, XATTR_NOFOLLOW) } == 0)
+        _ = try box.file("Dropbox/project/local.txt", "safe")
+        let outside = try box.folder("outside")
+        let engine = FileOperationEngine(dropboxRoots: [root])
+        let copied = await engine.transfer([source], to: outside, mode: .copy, conflict: { _ in .init(choice: .stop) })
+        #expect(copied.outcome.failures.count == 1)
+        let moved = await engine.transfer([source], to: outside, mode: .move, conflict: { _ in .init(choice: .stop) })
+        #expect(moved.outcome.failures.count == 1)
+        #expect(FileOperationEngine.exists(stub))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
+        let inside = try box.folder("Dropbox/inside")
+        let allowed = await engine.transfer([source], to: inside, mode: .move, conflict: { _ in .init(choice: .stop) })
+        #expect(allowed.outcome.succeeded)
+        #expect(FileOperationEngine.exists(inside.appendingPathComponent("project/online.pdf")))
+        #expect(!FileOperationEngine.exists(source))
+    }
+
+    @Test func packageNamesKeepExtension() async throws {
+        let box = try Sandbox()
+        let package = try box.folder("source/Lecture.rtfd")
+        _ = try box.file("source/Lecture.rtfd/TXT.rtf", "content")
+        #expect(try FileOperationEngine.isNamingFolder(package) == false)
+        #expect(FileOperationEngine.unique(package).lastPathComponent == "Lecture 2.rtfd")
+        let duplicate = try #require(box.engine.duplicate([package]).outcome.produced.first)
+        #expect(duplicate.pathExtension == "rtfd")
+        let target = try box.folder("target")
+        _ = try box.folder("target/Lecture.rtfd")
+        let kept = await box.engine.transfer([package], to: target, mode: .copy, conflict: { _ in .init(choice: .keepBoth) })
+        #expect(kept.outcome.produced.first?.lastPathComponent == "Lecture 2.rtfd")
+    }
+
+    @Test func lockedCopyPreservesLockAndFailedStagingIsRemoved() async throws {
+        let box = try Sandbox()
+        let source = try box.file("source/locked.txt", "locked content")
+        #expect(source.path.withCString { chflags($0, UInt32(UF_IMMUTABLE)) } == 0)
+        let target = try box.folder("target")
+        let destination = target.appendingPathComponent("locked.txt")
+        defer {
+            _ = source.path.withCString { chflags($0, 0) }
+            _ = destination.path.withCString { chflags($0, 0) }
+        }
+        let result = await box.engine.transfer([source], to: target, mode: .copy, conflict: { _ in .init(choice: .stop) })
+        #expect(result.outcome.succeeded)
+        #expect(try box.read(destination) == "locked content")
+        var info = stat()
+        #expect(destination.path.withCString { lstat($0, &info) } == 0)
+        #expect((info.st_flags & UInt32(UF_IMMUTABLE)) != 0)
+        let cancelled = FileOperationCancellation()
+        let failed = box.engine.duplicate([source], cancellation: cancelled, progress: { if $0.completedBytes > 0 { cancelled.cancel() } })
+        #expect(failed.outcome.cancelled)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: source.deletingLastPathComponent().path) == ["locked.txt"])
+        let normal = try box.file("source/normal.txt")
+        let archiveCancelled = FileOperationCancellation()
+        #expect(throws: (any Error).self) {
+            try box.engine.compress([source, normal], cancellation: archiveCancelled, progress: {
+                if $0.completedBytes > 0 { archiveCancelled.cancel() }
+            })
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: source.deletingLastPathComponent().path).sorted() == ["locked.txt", "normal.txt"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: target.path) == ["locked.txt"])
+    }
+
+    @Test func crossVolumeMoveKeepsNewAndChangedOriginals() async throws {
+        let box = try Sandbox()
+        let source = try box.folder("source/project")
+        _ = try box.file("source/project/copied.txt", "complete")
+        let changed = try box.file("source/project/changed.txt", "old")
+        let target = try box.folder("target")
+        let destination = target.appendingPathComponent("project")
+        let added = source.appendingPathComponent("new.txt")
+        let engine = FileOperationEngine(renameItem: { _, _ in EXDEV })
+        let result = await engine.transfer([source], to: target, mode: .move, progress: { _ in
+            if FileOperationEngine.exists(destination), !FileOperationEngine.exists(added) {
+                try? Data("new draft".utf8).write(to: added)
+                try? Data("new".utf8).write(to: changed)
+                try? FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_900_000_000)], ofItemAtPath: changed.path)
+            }
+        }, conflict: { _ in .init(choice: .stop) })
+        #expect(result.outcome.failures.count == 1)
+        #expect(result.outcome.produced == [destination])
+        #expect(try box.read(added) == "new draft")
+        #expect(try box.read(changed) == "new")
+        #expect(!FileOperationEngine.exists(source.appendingPathComponent("copied.txt")))
+        #expect(try box.read(destination.appendingPathComponent("copied.txt")) == "complete")
+        #expect(try box.read(destination.appendingPathComponent("changed.txt")) == "old")
+        #expect(!FileOperationEngine.exists(destination.appendingPathComponent("new.txt")))
+    }
+
+    @Test func colonNameRenameUndoAndFinderConversion() throws {
+        let box = try Sandbox()
+        let source = try box.file("Meeting 3:15.txt", "notes")
+        #expect(FileName.display(source.lastPathComponent) == "Meeting 3/15.txt")
+        #expect(FileName.disk("Meeting 3/15.txt") == source.lastPathComponent)
+        let renamed = try box.engine.rename(source, to: "Meeting.txt")
+        let undone = box.engine.applyUndo([.renameBatch([.init(from: renamed, to: source)])])
+        #expect(undone.outcome.succeeded)
+        #expect(try box.read(source) == "notes")
     }
 }

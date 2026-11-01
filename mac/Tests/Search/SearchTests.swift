@@ -29,14 +29,14 @@ private final class SearchTestTree {
     }
 }
 
-private struct SearchWaitTimeout: Error {}
-private func searchEventually(timeout: TimeInterval = 20, _ predicate: () async throws -> Bool) async throws {
+private struct SearchWaitTimeout: Error { let line: Int }
+private func searchEventually(timeout: TimeInterval = 20, line: Int = #line, _ predicate: () async throws -> Bool) async throws {
     let end = Date().addingTimeInterval(timeout)
     while Date() < end {
         if try await predicate() { return }
         try await Task.sleep(for: .milliseconds(30))
     }
-    throw SearchWaitTimeout()
+    throw SearchWaitTimeout(line: line)
 }
 
 private func hits(_ snapshot: SearchSnapshot, _ text: String, priority: [String] = [], limit: Int = 500) -> [SearchHit] {

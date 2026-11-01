@@ -52,8 +52,14 @@ next_version="$(echo "$version" | awk -F. '{ printf "%d.%d.%d", $1, $2, $3 + 1 }
 status=0
 for lang in "${languages[@]}"; do
     out="$BUILD/qa/$lang"
+    hdiutil detach -quiet -force "$out/volume" 2>/dev/null || true
+    chflags -R nouchg "$out" 2>/dev/null || true   # locked-file checks
     rm -rf "$out"
-    mkdir -p "$out/update"
+    mkdir -p "$out/update" "$out/volume"
+    # A second volume for the cross-volume drop rule; -nobrowse keeps it out of Finder and sidebars.
+    hdiutil create -quiet -size 8m -fs HFS+ -volname "FS QA" -ov "$out/volume.dmg"
+    hdiutil attach -quiet -nobrowse -mountpoint "$out/volume" "$out/volume.dmg"
+    echo "other volume" > "$out/volume/from-other-volume.txt"
     make_app "$app" "$version"
     # A fake newer Mac release beside a Windows-only one, served from a file:// feed.
     make_app "$out/update/Folder Splitter QA.app" "$next_version"
@@ -84,6 +90,8 @@ JSON
     if kill -0 "$opener" 2>/dev/null; then
         echo "QA ($lang) timed out after 240 s" >&2
         pkill -f "Folder Splitter QA.app/Contents/MacOS/FolderSplitter" 2>/dev/null || true
+        sleep 2
+        pkill -KILL -f "Folder Splitter QA.app/Contents/MacOS/FolderSplitter" 2>/dev/null || true
         status=1
         continue
     fi
@@ -91,6 +99,7 @@ JSON
     sed -n 3p "$out/report.md"
     grep '\*\*FAIL\*\*' "$out/report.md" && status=1
 done
+for lang in "${languages[@]}"; do hdiutil detach -quiet -force "$BUILD/qa/$lang/volume" 2>/dev/null || true; done
 # Duplicates undone during QA land in the user's Trash; remove those fixture copies.
 rm -f "$HOME/.Trash/report 2026 final copy"*.pdf "$HOME/.Trash/report 2026 final 복사본"*.pdf 2>/dev/null || true
 exit $status

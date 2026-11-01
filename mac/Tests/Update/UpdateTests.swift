@@ -232,6 +232,67 @@ struct UpdateTests {
         #expect(try await UpdateFeed.fetchNewer(than: AppVersion("3")!, feed: feed) == nil)
     }
 
+    @Test func findsMacReleaseBeyondFirstPageAndContinuesAfter304() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FeedStub.self]
+        let previous = UpdateFeed.session
+        let stubSession = URLSession(configuration: configuration)
+        UpdateFeed.session = stubSession
+        defer { UpdateFeed.session = previous; stubSession.invalidateAndCancel(); FeedStub.handler = nil }
+        #expect(URLComponents(url: UpdateFeed.defaultURL, resolvingAgainstBaseURL: false)?
+            .queryItems?.contains(URLQueryItem(name: "per_page", value: "100")) == true)
+        let feed = URL(string: "https://api.github.com/repos/test/\(UUID().uuidString)/releases?per_page=100")!
+        let second = URL(string: feed.absoluteString + "&page=2")!
+        let third = URL(string: feed.absoluteString + "&page=3")!
+        let windows = try feedData((1...100).map { releaseEntry("v\($0)", mac: false) })
+        let mac = try feedData([releaseEntry("mac-v2.0")])
+        var requests: [URL] = []
+        var rechecking = false
+        FeedStub.handler = { request in
+            let url = try #require(request.url)
+            requests.append(url)
+            if url == feed {
+                #expect(request.value(forHTTPHeaderField: "If-None-Match") == (rechecking ? "\"windows\"" : nil))
+                return .init(status: rechecking ? 304 : 200,
+                             headers: ["ETag": "\"windows\"", "Link": "<\(second)>; rel=\"next\", <\(third)>; rel=\"last\""],
+                             data: rechecking ? Data() : windows)
+            }
+            #expect(request.value(forHTTPHeaderField: "If-None-Match") == nil)
+            if url == second {
+                return .init(status: 200, headers: ["Link": "<\(third)>; rel=\"next\""], data: windows)
+            }
+            #expect(url == third)
+            return .init(status: 200, headers: [:], data: mac)
+        }
+        #expect(try await UpdateFeed.fetchNewer(than: AppVersion("1")!, feed: feed)?.version == AppVersion("2"))
+        #expect(requests == [feed, second, third])
+        requests.removeAll()
+        rechecking = true
+        #expect(try await UpdateFeed.fetchNewer(than: AppVersion("2")!, feed: feed) == nil)
+        #expect(requests == [feed, second, third])
+    }
+
+    @Test func paginationStopsAtLastPageWithoutMacRelease() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FeedStub.self]
+        let previous = UpdateFeed.session
+        let stubSession = URLSession(configuration: configuration)
+        UpdateFeed.session = stubSession
+        defer { UpdateFeed.session = previous; stubSession.invalidateAndCancel(); FeedStub.handler = nil }
+        let feed = URL(string: "https://api.github.com/repos/test/\(UUID().uuidString)/releases?per_page=100")!
+        let second = URL(string: feed.absoluteString + "&page=2")!
+        let windows = try feedData([releaseEntry("v9", mac: false)])
+        var requests: [URL] = []
+        FeedStub.handler = { request in
+            let url = try #require(request.url)
+            requests.append(url)
+            return .init(status: 200, headers: url == feed ? ["Link": "<\(second)>; rel=\"next\""] : [:],
+                         data: url == feed ? windows : Data("[]".utf8))
+        }
+        #expect(try await UpdateFeed.fetchNewer(than: AppVersion("1")!, feed: feed) == nil)
+        #expect(requests == [feed, second])
+    }
+
     @Test func cachedEmptyFeedAndRateLimitErrors() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [FeedStub.self]

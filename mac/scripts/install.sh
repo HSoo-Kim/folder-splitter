@@ -9,6 +9,11 @@ target="/Applications/Folder Splitter.app"
 if pkill -TERM -f "$target/Contents/MacOS/FolderSplitter"; then
     for _ in $(seq 1 40); do pgrep -f "$target/Contents/MacOS/FolderSplitter" >/dev/null || break; sleep 0.25; done
 fi
+# The app declines to quit while a copy or move runs: never replace it under a running operation.
+if pgrep -f "$target/Contents/MacOS/FolderSplitter" >/dev/null; then
+    echo "Folder Splitter is still running (a file operation may be in progress). Quit it, then run this again." >&2
+    exit 1
+fi
 rm -rf "$target"
 ditto "$BUILD/Folder Splitter.app" "$target"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister

@@ -25,7 +25,9 @@ private final class FileUndoJournal {
 final class FileOperationCenter: FileOperating {
     private let fileUndoManager = FileOperationUndoManager()
     var undoManager: UndoManager { fileUndoManager }
-    private let engine = FileOperationEngine()
+    private var engine: FileOperationEngine { FileOperationEngine(dropboxRoots: CloudStatusReader.dropboxRoots()) }
+    private var backgroundOperations = 0
+    var hasRunningOperations: Bool { !rows.isEmpty || backgroundOperations > 0 }
     private var progressPanel: FileProgressPanel?
     private var rows: [UUID: FileProgressRow] = [:]
     private var order: [UUID] = []
@@ -39,6 +41,7 @@ final class FileOperationCenter: FileOperating {
         let action = mode == .copy ? tr("Copy", "복사하기") : tr("Move", "이동")
         let title = mode == .copy ? tr("Copying \(items.count) items to “\(folder.lastPathComponent)”", "항목 \(items.count)개를 ‘\(folder.lastPathComponent)’에 복사하는 중") : tr("Moving \(items.count) items to “\(folder.lastPathComponent)”", "항목 \(items.count)개를 ‘\(folder.lastPathComponent)’(으)로 이동하는 중")
         let operation = beginProgress(title)
+        let engine = self.engine
         let result = await engine.transfer(items, to: folder, mode: mode, cancellation: operation.token, progress: { operation.snapshot.set($0) }, conflict: { [weak self] conflict in
             guard let self else { return .init(choice: .stop) }
             return await self.resolve(conflict)
@@ -47,6 +50,8 @@ final class FileOperationCenter: FileOperating {
         return finish(result, action: action)
     }
     func moveToTrash(_ items: [URL]) async -> FileOperationOutcome {
+        backgroundOperations += 1
+        defer { backgroundOperations -= 1 }
         let engine = self.engine
         var result = await Task.detached { engine.trash(items) }.value
         if !result.trashUnavailable.isEmpty {
@@ -87,6 +92,8 @@ final class FileOperationCenter: FileOperating {
         return target
     }
     func newFolder(containing items: [URL]) async -> FileOperationOutcome {
+        backgroundOperations += 1
+        defer { backgroundOperations -= 1 }
         let engine = self.engine
         do {
             let result = try await Task.detached { try engine.newFolder(containing: items) }.value
@@ -190,7 +197,11 @@ final class FileOperationCenter: FileOperating {
         Task { _ = await present(alert) }
     }
     private func present(_ alert: NSAlert) async -> NSApplication.ModalResponse {
-        if let window = NSApp.mainWindow ?? NSApp.keyWindow, window !== progressPanel {
+        // While the app is in the background there is no main window; still attach to the front
+        // browser window: an app-modal alert would stall every main-actor task until answered.
+        let host = NSApp.mainWindow ?? NSApp.keyWindow
+            ?? NSApp.orderedWindows.first { $0 is MainWindow && $0.isVisible && !$0.isMiniaturized }
+        if let window = host, window !== progressPanel {
             // Another operation may currently own a sheet. Wait for its dismissal rather
             // than replacing it or starting a nested modal loop.
             while window.attachedSheet != nil { try? await Task.sleep(for: .milliseconds(50)) }

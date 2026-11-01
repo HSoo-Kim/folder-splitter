@@ -68,7 +68,8 @@ enum BulkRenamePlanner {
 
         for (index, item) in items.enumerated() {
             let oldName = PathText.nfc(item.lastPathComponent)
-            let directory = (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? item.hasDirectoryPath
+            let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+            let directory = (values?.isDirectory ?? item.hasDirectoryPath) && values?.isPackage != true
             let ext = directory ? "" : (oldName as NSString).pathExtension
             let stem = ext.isEmpty ? oldName : (oldName as NSString).deletingPathExtension
             let replacement = expandNumber(PathText.nfc(options.replace), start: options.startNumber, offset: index)
@@ -93,7 +94,7 @@ enum BulkRenamePlanner {
             if let patternProblem { problem = patternProblem }
             else if newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newName == "." || newName == ".." {
                 problem = .empty
-            } else if newName.contains("/") || newName.contains(":") || newName.contains("\0") {
+            } else if newName.contains("/") || newName.contains("\0") {
                 problem = .invalidCharacter
             } else { problem = nil }
             problems.append(problem)

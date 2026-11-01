@@ -20,7 +20,7 @@
 | **주소 막대가 곧 검색** | 이름 일부(`report 2026`)나 경로 조각(`15min_rain/rn_15m`)을 입력하면 입력하는 대로 파일과 폴더가 나타나고, 열어 둔 위치에 가까운 항목이 먼저 나옵니다. 앱이 직접 파일 이름 색인을 만들고(파일 내용은 읽지 않음) FSEvents로 갱신합니다. 한글 이름은 macOS가 저장한 방식(NFC/NFD)과 관계없이 찾습니다. |
 | **Finder 수준의 파일 목록** | 폴더를 펼치는 목록 보기, 썸네일 아이콘 보기, 폴더별 보기·정렬 기억, 훑어보기(스페이스 바), 이름 변경, 태그, 다음으로 열기, 공유, 서비스, Finder와 같은 복사/이동 규칙의 드래그 앤 드롭, 스프링 로드 폴더. |
 | **클라우드 동기화 상태** | Finder처럼 이름 옆에 상태 아이콘: Dropbox 항목의 최신 상태·온라인 전용(크기는 —)·무시됨, iCloud Drive와 클라우드 저장소 항목의 다운로드되지 않음·다운로드 중·업로드 중·충돌. '지금 다운로드'와 '다운로드 제거'를 지원합니다. 온라인 전용 Dropbox 파일은 Dropbox가 내려받은 뒤 열립니다. |
-| **실행 취소되는 파일 작업** | 진행률과 이름 충돌 선택(모두 유지, 대치 — 대치된 항목은 휴지통으로, 건너뛰기, 정지, 모두에 적용)이 있는 복사·이동. ⌘Z로 이동, 복사, 이름 변경, 새로운 폴더, 복제, 휴지통으로 이동을 되돌립니다. |
+| **실행 취소되는 파일 작업** | 진행률과 이름 충돌 선택(모두 유지, 대치 — 대치된 항목은 휴지통으로, 건너뛰기, 정지, 모두에 적용)이 있는 복사·이동. ⌘Z로 이동, 복사, 이름 변경, 새로운 폴더, 복제, 휴지통으로 이동을 되돌립니다. 다른 디스크로 옮길 때는 끝까지 복사된 항목만 원본에서 지웁니다. Dropbox 온라인 전용 파일은 빈 파일이 되지 않도록 복사·다른 디스크로 이동·Dropbox 밖으로 이동·복제·압축하지 않고 이유를 알립니다. 작업 중에 종료하려 하면 먼저 묻습니다. |
 | **영역 사이 작업** | 선택 항목을 다른 영역으로 복사·이동(⌃⌥C / ⌃⌥X), 이 폴더를 다른 영역에서 열기(⌃⌥O), 두 폴더 비교 후 다른 항목 선택. |
 | **미리보기와 정보 가져오기** | 세부 정보(크기, 재생 시간, 페이지)가 있는 미리보기, 고정, 별도 미리보기 윈도우, 폴더 크기·기본 앱·잠금 등을 보여 주는 정보 윈도우. |
 | **여러 항목 이름 변경** | 찾기/바꾸기(정규 표현식 가능)와 일련번호 `{n}` / `{n:3}`, 실시간 미리보기. 실행 취소 한 번으로 전체를 되돌립니다. |
@@ -36,19 +36,26 @@
 
 ## 설치
 
+1. [최신 Mac 릴리스](https://github.com/HSoo-Kim/folder-splitter/releases)에서 `folder-splitter-mac.zip`을 내려받아 압축을 풀고, **Folder Splitter**를 **응용 프로그램** 폴더로 옮깁니다. 다운로드 폴더에서 바로 열면 업데이트가 설치되지 않습니다.
+2. Folder Splitter를 두 번 클릭합니다. Apple 공증을 받지 않은 앱이라 '‘Folder Splitter’을(를) 열지 않음' 경고가 뜹니다. **완료**를 누릅니다(**휴지통으로 이동**이 아님).
+3. 시스템 설정 ▸ 개인정보 보호 및 보안을 열고 아래쪽 '보안'에서 'Mac을 보호하기 위해 ‘Folder Splitter’을(를) 차단했습니다.' 옆의 **그래도 열기**를 누른 뒤 암호를 입력합니다. 이 버튼은 2번을 한 뒤 한 시간 동안만 보입니다.
+4. 다시 뜨는 확인 창에서 **그래도 열기**를 누릅니다. 이후에는 그냥 열립니다.
+
+**전체 디스크 접근 권한**(권장): 시스템 설정 ▸ 개인정보 보호 및 보안 ▸ 전체 디스크 접근 권한에서 Folder Splitter를 켭니다(목록에 없으면 **+**로 응용 프로그램 폴더의 Folder Splitter를 추가). Folder Splitter 설정 ▸ 일반에서도 상태를 보고 이 화면을 열 수 있습니다. 켠 뒤에는 Folder Splitter를 종료하고 다시 엽니다. 이 권한이 없으면 macOS가 데스크탑, 문서, 다운로드 폴더 접근을 따로 묻고, 허용하지 않은 폴더는 검색되지 않습니다. 업데이트해도 허용한 권한은 유지됩니다.
+
+### 직접 빌드하기
+
 ```sh
-git clone <이 저장소> folder-splitter-mac
-cd folder-splitter-mac
+git clone https://github.com/HSoo-Kim/folder-splitter.git
+cd folder-splitter/mac
 scripts/install.sh        # 릴리스 빌드 후 /Applications/Folder Splitter.app 에 설치하고 실행
 ```
 
-다른 사람에게 줄 때는 `scripts/package.sh`로 `build/folder-splitter-mac.zip`(Apple 실리콘·Intel 공용)을 만듭니다. 받은 사람은 압축을 풀고 **Folder Splitter**를 응용 프로그램 폴더로 옮깁니다. 애드혹 서명이고 Apple 공증을 받지 않아 첫 실행이 막힙니다. 경고가 뜬 뒤 시스템 설정 ▸ 개인정보 보호 및 보안에서 'Folder Splitter이(가) 차단되었습니다' 옆의 **그래도 열기**를 누르고 확인하면 됩니다.
-
-처음 실행하면 macOS가 데스크탑, 문서, 다운로드 폴더 접근을 물을 수 있습니다. 설정 ▸ 일반에서 **전체 디스크 접근 권한**을 주면 폴더마다 묻지 않고, 보호된 폴더도 검색할 수 있습니다.
+배포용 zip은 `scripts/package.sh`로 만듭니다(`build/folder-splitter-mac.zip`, Apple 실리콘·Intel 공용). 릴리스는 고정 서명 인증서(`scripts/make-signing-identity.sh`로 한 번 만듦)로 서명해야 사용자가 업데이트해도 macOS 권한이 유지됩니다. 공증은 받지 않습니다.
 
 ## Finder 대신 쓰기
 
-설정 ▸ 일반 ▸ **기본 파일 뷰어로 사용**을 켜면 두 가지가 Folder Splitter로 열립니다. 다른 앱의 'Finder에서 보기'(`NSFileViewer`)와 폴더 열기(터미널의 `open <폴더>`, 다른 앱에서 연 폴더; `public.folder` 기본 뷰어)입니다. 데스크탑과 Dock의 폴더는 계속 Finder가 열고, Finder도 계속 실행됩니다. 끄면 Finder로 돌아갑니다.
+설정 ▸ 일반 ▸ **기본 파일 뷰어로 사용**을 켜면 두 가지가 Folder Splitter로 열립니다. 다른 앱의 'Finder에서 보기'(`NSFileViewer`)와 폴더 열기(터미널의 `open <폴더>`, 다른 앱에서 연 폴더; `public.folder` 기본 뷰어)입니다. 데스크탑과 Dock의 폴더는 계속 Finder가 열고, Finder도 계속 실행됩니다. 끄면 Finder로 돌아갑니다. Folder Splitter를 지우기 전에 이 설정을 끄십시오. 이미 지웠다면 터미널에서 `defaults delete -g NSFileViewer`를 실행합니다.
 
 자동화: `open "foldersplitter://open?path=/Users/me/Projects&in=tab"` (`in` = `current`, `tab`, `other`, `right`, `below`, `window`), `foldersplitter://reveal?path=…`
 
@@ -92,7 +99,7 @@ Windows와 함께 내는 릴리스(태그 `vX.Y.Z`에 `folder-splitter-win-x64.z
 
 - 세션과 설정: `~/Library/Application Support/Folder Splitter/session.json` (직전 버전은 `session.json.bak`)
 - 검색 색인: `~/Library/Application Support/Folder Splitter/Search/paths.v1.index`
-- 색인하지 않는 곳(폴더 자체는 이름으로 찾을 수 있음): `/System`, `/Library`, `/private`, `/usr`, `/opt`, `/Volumes`, `~/Library`, `~/.Trash`, `.git`·`node_modules` 내용, 패키지(`.app` 등) 내용, 설정 ▸ 검색에서 제외한 폴더
+- 색인하지 않는 곳(폴더 자체는 이름으로 찾을 수 있음): `/System`, `/Library`, `/private`, `/usr`, `/opt`, `/Volumes`, `~/Library`(iCloud Drive와 `~/Library/CloudStorage`의 Dropbox·Google Drive·OneDrive 등 클라우드 폴더는 색인함; 클라우드에만 있는 폴더를 내려받지는 않음), `~/.Trash`, `~/.dropbox`, `.git`·`node_modules` 내용, 패키지(`.app` 등) 내용, 설정 ▸ 검색에서 제외한 폴더
 - 네트워크: 업데이트 확인만 합니다. 실행할 때, 1시간마다, 15분 이상 지나 앱으로 돌아올 때 `api.github.com`에서 릴리스 정보만 읽습니다(조건부 요청이라 바뀌지 않은 응답은 공용 요청 한도를 쓰지 않습니다). 사용자·기기·파일 정보는 보내지 않습니다. 설정 ▸ 일반에서 끌 수 있습니다.
 
 ## 개발

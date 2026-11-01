@@ -156,7 +156,7 @@ struct AlgorithmsTests {
             options.find = "plain"
             let empty = BulkRenamePlanner.preview([item], options: options, existingNames: [])
             #expect(empty.first?.problem == .empty)
-            for replacement in ["a/b", "a:b", "a\0b"] {
+            for replacement in ["a/b", "a\0b"] {
                 options.replace = replacement
                 let invalid = BulkRenamePlanner.preview([item], options: options, existingNames: [])
                 #expect(invalid.first?.problem == .invalidCharacter)
@@ -167,6 +167,22 @@ struct AlgorithmsTests {
             options.find = "hidden"
             options.replace = "visible"
             #expect(BulkRenamePlanner.preview([dotfile], options: options, existingNames: []).first?.newName == ".visible")
+        }
+    }
+
+    @Test func bulkRenamePreservesPackageExtensionsAndColonNames() throws {
+        try withDirectory { root in
+            let package = root.appendingPathComponent("Lecture.rtfd", isDirectory: true)
+            try FileManager.default.createDirectory(at: package, withIntermediateDirectories: false)
+            let colon = try file("Meeting 3:15.txt", in: root)
+            let unchanged = BulkRenamePlanner.preview([colon], options: BulkRenameOptions(), existingNames: ["meeting 3:15.txt"])
+            #expect(unchanged.first?.problem == nil)
+            #expect(unchanged.first?.changes == false)
+            var options = BulkRenameOptions()
+            options.replace = "Class {n}:notes"
+            let plans = BulkRenamePlanner.preview([package, colon], options: options, existingNames: [])
+            #expect(plans.map(\.newName) == ["Class 1:notes.rtfd", "Class 2:notes.txt"])
+            #expect(plans.allSatisfy { $0.problem == nil })
         }
     }
 

@@ -457,14 +457,16 @@ private final class CrumbButton: NSButton {
     override func otherMouseDown(with event: NSEvent) { if event.buttonNumber == 2 { onPress?(event) } }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { highlight(true); return draggingUpdated(sender) }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard folder != nil else { return [] }
-        return sender.draggingSourceOperationMask.contains(.move) && !NSEvent.modifierFlags.contains(.option) ? .move : .copy
+        guard let folder,
+              let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty,
+              let mode = FileDrop.mode(for: urls, into: folder, operation: sender.draggingSourceOperationMask) else { return [] }
+        return mode == .copy ? .copy : .move
     }
     override func draggingExited(_ sender: NSDraggingInfo?) { highlight(false) }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         defer { highlight(false) }
         guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty else { return false }
-        return onDrop?(urls, draggingUpdated(sender)) ?? false
+        return onDrop?(urls, sender.draggingSourceOperationMask) ?? false
     }
 }
 

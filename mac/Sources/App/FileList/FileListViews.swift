@@ -405,7 +405,7 @@ final class FileSelectionRow: NSTableRowView {
         guard let field, inlineRenameField(field, represents: url) else { return }
         renameURL = url
         renameField = field
-        field.stringValue = PathText.nfc(url.lastPathComponent)
+        field.stringValue = FileName.display(PathText.nfc(url.lastPathComponent))
         field.isEditable = true
         field.isSelectable = true
         // One way in: making the field first responder starts editing. Calling selectText first
@@ -415,7 +415,7 @@ final class FileSelectionRow: NSTableRowView {
             completeInlineRename(endingField: field, commit: false)
             return
         }
-        let name = url.lastPathComponent as NSString
+        let name = FileName.display(PathText.nfc(url.lastPathComponent)) as NSString
         let stem = (nodes[url]?.item.isDirectory == true ? name as String : name.deletingPathExtension) as NSString
         editor.selectedRange = NSRange(location: 0, length: stem.length)
     }
@@ -457,7 +457,7 @@ final class FileSelectionRow: NSTableRowView {
         let editorField = renameField
         let validBinding = editorField != nil && endingField === editorField
             && editorField.map { inlineRenameField($0, represents: url) } == true
-        let currentName = PathText.nfc(nodes[url]?.item.name ?? url.lastPathComponent)
+        let currentName = FileName.display(PathText.nfc(nodes[url]?.item.name ?? url.lastPathComponent))
         let newName = validBinding ? editorField.map { PathText.nfc($0.stringValue) } : nil
         // Clear the session before aborting/disabling the field; AppKit may notify reentrantly.
         renameURL = nil
@@ -472,7 +472,7 @@ final class FileSelectionRow: NSTableRowView {
         }
         var renamed: URL?
         if commit, validBinding, let newName, newName != currentName {
-            do { renamed = try AppServices.shared.fileOperations.rename(url, to: newName) }
+            do { renamed = try AppServices.shared.fileOperations.rename(url, to: FileName.disk(newName)) }
             catch { presentError(error.localizedDescription) }
         }
         finishDeferredInlineRenameRefresh(selecting: renamed)

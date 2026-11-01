@@ -101,6 +101,7 @@ private final class QARunner {
         await stepQuickLookAndMenu()
         await stepContextMenuRename()
         await stepCloudStatus()
+        await stepFileSafety()
         await stepLargeFolder()
         await stepDarkMode()
         await stepUpdate()
@@ -1049,6 +1050,88 @@ private final class QARunner {
         record("right-click ▸ Rename and Return ▸ type ▸ Return rename in place; ⌘Z undoes",
                editing && editedText == "notes.txt" && editingAgain && renamed && undone,
                "menuEditing=\(editing) text=\(editedText) returnEditing=\(editingAgain) renamed=\(renamed) undone=\(undone)")
+    }
+
+    /// Data-safety rules: Dropbox online-only stubs are never copied (they'd become empty files),
+    /// packages keep their extension, locked files copy cleanly, drops from another volume copy,
+    /// and a ":" on disk shows as "/" like Finder.
+    private func stepFileSafety() async {
+        guard let first = pane(1) else { return }
+        let ops = AppServices.shared.fileOperations
+        let manager = FileManager.default
+        let documents = url("Documents")
+        // Failure alerts would wait for a click: answer them from the run loop (a timer still
+        // fires while a modal alert runs, unlike main-actor tasks).
+        let answer = Timer(timeInterval: 0.3, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                if let modal = NSApp.modalWindow { NSApp.stopModal(); modal.orderOut(nil) }
+                for window in NSApp.windows where window is MainWindow {
+                    if let sheet = window.attachedSheet, sheet.windowController == nil { window.endSheet(sheet) }
+                }
+            }
+        }
+        RunLoop.main.add(answer, forMode: .common)
+        defer { answer.invalidate() }
+        func dismissAlert() async { await settle(0.8) }
+        // 1. Online-only stub: copy and duplicate refused, nothing created.
+        let stub = url("Dropbox/online-only.pdf")
+        let copied = await ops.transfer([stub], to: documents, mode: .copy)
+        await dismissAlert()
+        let duplicated = await ops.duplicate([stub])
+        await dismissAlert()
+        let dropboxNames = (try? manager.contentsOfDirectory(atPath: url("Dropbox").path)) ?? []
+        let stubOK = !copied.succeeded && copied.failures.first?.message.contains("Dropbox") == true
+            && !manager.fileExists(atPath: documents.appendingPathComponent("online-only.pdf").path)
+            && !duplicated.succeeded && dropboxNames.filter { $0.hasPrefix("online-only") }.count == 1
+        // 2. Package duplicate keeps the extension.
+        let package = documents.appendingPathComponent("Lecture.rtfd", isDirectory: true)
+        try? manager.createDirectory(at: package, withIntermediateDirectories: true)
+        manager.createFile(atPath: package.appendingPathComponent("TXT.rtf").path, contents: Data("{\\rtf1 hi}".utf8))
+        let packageCopy = await ops.duplicate([package]).produced.first
+        let packageOK = packageCopy?.pathExtension == "rtfd"
+            && (try? packageCopy?.resourceValues(forKeys: [.isPackageKey]).isPackage) == true
+        // 3. Locked file: duplicates, stays locked, no hidden staging leftovers.
+        let locked = documents.appendingPathComponent("locked.txt")
+        manager.createFile(atPath: locked.path, contents: Data("locked".utf8))
+        try? manager.setAttributes([.immutable: true], ofItemAtPath: locked.path)
+        let lockedResult = await ops.duplicate([locked])
+        await dismissAlert()
+        let lockedCopy = lockedResult.produced.first
+        let leftovers = ((try? manager.contentsOfDirectory(atPath: documents.path)) ?? []).filter { $0.hasPrefix(".folder-splitter") }
+        let lockedOK = lockedResult.succeeded && lockedCopy.map { manager.fileExists(atPath: $0.path) } == true
+            && (lockedCopy.flatMap { try? manager.attributesOfItem(atPath: $0.path)[.immutable] as? Bool }) == true && leftovers.isEmpty
+        for item in [locked] + (lockedCopy.map { [$0] } ?? []) { try? manager.setAttributes([.immutable: false], ofItemAtPath: item.path) }
+        // 4. Dropping onto a tab: another volume copies, the same volume moves (as in the list).
+        var dropDetail = "no tab"
+        var dropOK = false
+        if let tab = first.selectedTabID {
+            // qa.sh mounts a small hidden volume next to the fixture.
+            let foreign = output.appendingPathComponent("volume/from-other-volume.txt")
+            let other = FileManager.default.fileExists(atPath: foreign.path)
+                ? first.tabBar(TabBarView(frame: .zero), validateFiles: [foreign], onto: tab, operation: .every) : []
+            let same = first.tabBar(TabBarView(frame: .zero), validateFiles: [url("Documents/notes.txt")], onto: tab, operation: .every)
+            dropOK = other == .copy && same == .move
+            dropDetail = "otherVolume=\(other == .copy ? "copy" : "move:\(other.rawValue)") sameVolume=\(same == .move ? "move" : "copy:\(same.rawValue)")"
+        }
+        // 5. ":" on disk shows as "/".
+        manager.createFile(atPath: documents.appendingPathComponent("Meeting 3:15.txt").path, contents: Data())
+        front.open(documents, disposition: .current, from: first)
+        _ = await waitFor(4) { first.currentFolder == documents && (first.currentList?.visibleItemCount ?? 0) > 0 }
+        await settle(1.2)
+        var shownName = "?"
+        if let outline = first.currentList.flatMap({ findView(id: AccessibilityID.fileList(1), in: $0.view) }) as? NSOutlineView {
+            for row in 0..<outline.numberOfRows {
+                guard let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true) else { continue }
+                if let name = views(named: "NSTextField", in: cell).compactMap({ ($0 as? NSTextField)?.stringValue }).first(where: { $0.hasPrefix("Meeting 3") }) {
+                    shownName = name
+                }
+            }
+        }
+        let colonOK = shownName == "Meeting 3/15.txt"
+        await shot("26-file-safety")
+        record("file safety: online-only not copied, package keeps .rtfd, locked file copies clean, drop from other volume copies, “:” shows as “/”",
+               stubOK && packageOK && lockedOK && dropOK && colonOK,
+               "stub=\(stubOK) (copy: \(copied.failures.first?.message.prefix(60) ?? "no failure"); dup ok=\(duplicated.succeeded)) package=\(packageOK) (\(packageCopy?.lastPathComponent ?? "nil")) locked=\(lockedOK) (leftovers=\(leftovers)) drop=\(dropOK) (\(dropDetail)) colon=\(colonOK) (\(shownName))")
     }
 
     /// A fixture folder registered as a Dropbox root (qa.sh), with items marked the way Dropbox

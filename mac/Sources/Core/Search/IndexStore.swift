@@ -12,7 +12,11 @@ enum SearchStore {
     }
 
     static func volumeUUIDs(_ roots: [String]) -> [String] {
-        roots.map { (try? URL(fileURLWithPath: $0).resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString) ?? "" }
+        roots.map { root in
+            SearchFilesystem.perform {
+                (try? URL(fileURLWithPath: root).resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString) ?? ""
+            } ?? ""
+        }
     }
 
     static func save(_ snapshot: SearchSnapshot, scope: SearchScope, to url: URL) throws {

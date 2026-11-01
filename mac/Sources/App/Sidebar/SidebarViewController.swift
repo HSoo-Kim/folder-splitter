@@ -119,7 +119,14 @@ private final class SidebarHeader: NSView {
     private var sections: [SidebarNode] = []
     private var roots: [SidebarNode] = []
     private var activeFolder: URL?
-    private var refreshGeneration = 0
+    private static let volumeQueue = DispatchQueue(label: "FolderSplitter.sidebar-volumes", qos: .utility)
+    private static let folderQueue = DispatchQueue(label: "FolderSplitter.sidebar-folders", qos: .userInitiated, attributes: .concurrent)
+    private var favoriteGeneration = 0
+    private var volumeProbeRunning = false
+    private var volumeRefreshPending = false
+    private var favoriteEntries: [SidebarEntry] = []
+    private var locationEntries: [SidebarEntry] = []
+    private var entryCache: [URL: SidebarEntry] = [:]
     private var revealGeneration = 0
     private var observers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
@@ -154,17 +161,25 @@ private final class SidebarHeader: NSView {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    if notification.name == .settingsDidChange { self.showsFolderTree = SettingsStore.shared.settings.showFolderTree }
-                    self.reloadSources()
+                    switch notification.name {
+                    case .folderHistoryDidChange: self.refreshRecents()
+                    case .favoritesDidChange: self.refreshFavorites()
+                    default:
+                        self.showsFolderTree = SettingsStore.shared.settings.showFolderTree
+                        for root in self.roots { root.loaded = false; root.children = [] }
+                        self.tree.reloadData()
+                        self.reloadSources()
+                    }
                 }
             })
         }
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification] {
             workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.reloadSources() }
+                MainActor.assumeIsolated { self?.refreshVolumes() }
             })
         }
-        reloadSources(); updateTreeVisibility(animated: false)
+        roots = [makeNode(SidebarEntry.cached(FileManager.default.homeDirectoryForCurrentUser))]
+        refreshFavorites(); refreshVolumes(); updateTreeVisibility(animated: false)
     }
     deinit {
         for token in observers { NotificationCenter.default.removeObserver(token) }
@@ -246,31 +261,62 @@ private final class SidebarHeader: NSView {
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat { 110 }
     func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat { max(110, splitView.bounds.height - 120) }
 
-    private func reloadSources() {
-        refreshGeneration += 1; let generation = refreshGeneration
+    private func refreshFavorites() {
+        favoriteGeneration += 1; let generation = favoriteGeneration
         let favorites = AppServices.shared.favorites.favorites
-        let recents = Array(AppServices.shared.history.recentFolders.prefix(8))
-        Task {
-            let result = await Task.detached(priority: .userInitiated) { () -> ([SidebarEntry], [SidebarEntry], [SidebarEntry], [SidebarEntry]) in
-                let fm = FileManager.default
-                let volumes = fm.mountedVolumeURLs(includingResourceValuesForKeys: [.localizedNameKey, .volumeIsEjectableKey, .volumeIsRemovableKey, .volumeIsLocalKey], options: .skipHiddenVolumes) ?? []
-                var locations = volumes.map { SidebarEntry.read($0, isLocation: true) }
-                let cloud = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
-                if fm.fileExists(atPath: cloud.path) { var entry = SidebarEntry.read(cloud); entry.title = tr("iCloud Drive", "iCloud Drive"); entry.symbol = "icloud"; locations.insert(entry, at: 0) }
-                let roots = [SidebarEntry.read(fm.homeDirectoryForCurrentUser)] + volumes.filter { $0.path != fm.homeDirectoryForCurrentUser.path }.map { SidebarEntry.read($0) }
-                return (favorites.map { SidebarEntry.read($0) }, locations, recents.map { SidebarEntry.read($0) }, roots)
-            }.value
-            guard generation == refreshGeneration else { return }
-            let collapsed = Set(sections.filter { !sources.isItemExpanded($0) }.map(\.title))
-            let favoriteSection = SidebarNode(tr("Favorites", "즐겨찾기"), section: true); favoriteSection.children = result.0.map(makeNode)
-            let locationSection = SidebarNode(tr("Locations", "위치"), section: true); locationSection.children = result.1.map(makeNode)
-            let recentSection = SidebarNode(tr("Recent Folders", "최근 사용한 폴더"), section: true); recentSection.children = result.2.map(makeNode)
-            sections = [favoriteSection, locationSection, recentSection]
-            sources.reloadData()
-            for section in sections where !collapsed.contains(section.title) { sources.expandItem(section) }
-            roots = result.3.map(makeNode); tree.reloadData()
-            synchronizeSelection(); revealActiveFolder()
+        favoriteEntries = favorites.map { entryCache[$0] ?? SidebarEntry.cached($0) }
+        reloadSources()
+        Self.folderQueue.async { [weak self] in
+            let entries = favorites.map { SidebarEntry.read($0) }
+            DispatchQueue.main.async {
+                guard let self, generation == self.favoriteGeneration else { return }
+                self.favoriteEntries = entries
+                for entry in entries { self.entryCache[entry.url] = entry }
+                self.reloadSources()
+            }
         }
+    }
+    private func refreshVolumes() {
+        guard !volumeProbeRunning else { volumeRefreshPending = true; return }
+        volumeProbeRunning = true
+        // A stalled mount occupies only this dedicated GCD queue, never Swift's worker pool.
+        Self.volumeQueue.async { [weak self] in
+            let fm = FileManager.default
+            let volumes = fm.mountedVolumeURLs(includingResourceValuesForKeys: [.localizedNameKey, .volumeIsEjectableKey, .volumeIsRemovableKey, .volumeIsLocalKey], options: .skipHiddenVolumes) ?? []
+            var locations = volumes.map { SidebarEntry.read($0, isLocation: true) }
+            let cloud = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+            if fm.fileExists(atPath: cloud.path) { var entry = SidebarEntry.read(cloud); entry.title = tr("iCloud Drive", "iCloud Drive"); entry.symbol = "icloud"; locations.insert(entry, at: 0) }
+            let roots = [SidebarEntry.read(fm.homeDirectoryForCurrentUser)] + locations.filter { $0.url != cloud }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.volumeProbeRunning = false
+                self.locationEntries = locations
+                for entry in locations + roots { self.entryCache[entry.url] = entry }
+                self.roots = roots.map(self.makeNode); self.tree.reloadData()
+                self.reloadSources(); self.revealActiveFolder()
+                if self.volumeRefreshPending { self.volumeRefreshPending = false; self.refreshVolumes() }
+            }
+        }
+    }
+    private func refreshRecents() {
+        guard let recentSection = sections.last else { reloadSources(); return }
+        recentSection.children = AppServices.shared.history.recentFolders.prefix(8).map {
+            makeNode(entryCache[$0] ?? SidebarEntry.cached($0))
+        }
+        sources.reloadItem(recentSection, reloadChildren: true)
+        synchronizeSelection()
+    }
+    private func reloadSources() {
+        // Only explicit source/settings changes rebuild these sections; all entries are cached.
+        let recents = AppServices.shared.history.recentFolders.prefix(8).map { entryCache[$0] ?? SidebarEntry.cached($0) }
+        let collapsed = Set(sections.filter { !sources.isItemExpanded($0) }.map(\.title))
+        let favoriteSection = SidebarNode(tr("Favorites", "즐겨찾기"), section: true); favoriteSection.children = favoriteEntries.map(makeNode)
+        let locationSection = SidebarNode(tr("Locations", "위치"), section: true); locationSection.children = locationEntries.map(makeNode)
+        let recentSection = SidebarNode(tr("Recent Folders", "최근 사용한 폴더"), section: true); recentSection.children = recents.map(makeNode)
+        sections = [favoriteSection, locationSection, recentSection]
+        sources.reloadData()
+        for section in sections where !collapsed.contains(section.title) { sources.expandItem(section) }
+        synchronizeSelection()
     }
     private func makeNode(_ entry: SidebarEntry) -> SidebarNode {
         let node = SidebarNode(entry.title, url: entry.url); node.icon = entry.symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) } ?? entry.icon
@@ -321,12 +367,16 @@ private final class SidebarHeader: NSView {
     private func loadChildren(_ node: SidebarNode) async {
         guard !node.loaded, let url = node.url else { return }
         let hidden = SettingsStore.shared.settings.showHiddenFiles
-        let task = node.loadTask ?? Task.detached(priority: .userInitiated) { () -> ([SidebarEntry], String?) in
-            do {
-                let urls = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey, .localizedNameKey], options: hidden ? [] : [.skipsHiddenFiles])
-                let folders = urls.filter { let value = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]); return value?.isDirectory == true && value?.isPackage != true }
-                return (folders.map { SidebarEntry.read($0) }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }, nil)
-            } catch { return ([], error.localizedDescription) }
+        let task = node.loadTask ?? Task { () -> ([SidebarEntry], String?) in
+            await withCheckedContinuation { continuation in
+                Self.folderQueue.async {
+                    do {
+                        let urls = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey, .localizedNameKey], options: hidden ? [] : [.skipsHiddenFiles])
+                        let folders = urls.filter { let value = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]); return value?.isDirectory == true && value?.isPackage != true }
+                        continuation.resume(returning: (folders.map { SidebarEntry.read($0) }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }, nil))
+                    } catch { continuation.resume(returning: ([], error.localizedDescription)) }
+                }
+            }
         }
         node.loadTask = task
         let result = await task.value
@@ -482,6 +532,9 @@ private struct SidebarEntry: @unchecked Sendable {
     var symbol: String?
     let missing: Bool
     let ejectable: Bool
+    static func cached(_ url: URL) -> SidebarEntry {
+        SidebarEntry(url: url, title: FileName.display(PathText.nfc(url.lastPathComponent)), icon: NSImage(systemSymbolName: "folder", accessibilityDescription: nil) ?? NSImage(), symbol: nil, missing: false, ejectable: false)
+    }
     static func read(_ url: URL, isLocation: Bool = false) -> SidebarEntry {
         let values = try? url.resourceValues(forKeys: [.localizedNameKey, .volumeIsEjectableKey, .volumeIsRemovableKey, .volumeIsLocalKey])
         let home = FileManager.default.homeDirectoryForCurrentUser

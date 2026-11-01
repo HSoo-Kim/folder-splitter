@@ -24,7 +24,7 @@ import UniformTypeIdentifiers
         self.url = url
         let preview = PreviewPaneController(); preview.show([url])
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 620), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.contentViewController = preview; window.title = url.lastPathComponent; window.minSize = NSSize(width: 300, height: 300)
+        window.contentViewController = preview; window.title = FileName.display(url.lastPathComponent); window.minSize = NSSize(width: 300, height: 300)
         window.isReleasedWhenClosed = false
         super.init(window: window); window.delegate = self
         let key = NSWindow.FrameAutosaveName("FolderSplitter.Preview." + url.path)
@@ -78,6 +78,7 @@ import UniformTypeIdentifiers
     private var metadata: PreviewMetadata?
     private var metadataTask: Task<PreviewMetadata, Never>?
     private var folderTask: Task<PreviewMetadata.FolderSize, Never>?
+    private var folderSizePending = false
     private var watcher: PreviewFileWatcher?
     private var generation = 0
     private var closed = false
@@ -86,7 +87,7 @@ import UniformTypeIdentifiers
         self.url = url
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 370, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.minSize = NSSize(width: 340, height: 380)
-        window.title = tr("\(url.lastPathComponent) Info", "\(url.lastPathComponent) 정보")
+        window.title = tr("\(FileName.display(url.lastPathComponent)) Info", "\(FileName.display(url.lastPathComponent)) 정보")
         super.init(window: window); window.delegate = self
         buildView(); window.center(); reload()
     }
@@ -98,7 +99,7 @@ import UniformTypeIdentifiers
         stack.translatesAutoresizingMaskIntoConstraints = false; scroll.documentView = stack; window.contentView = scroll
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor), stack.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor), stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor)])
         icon.imageScaling = .scaleProportionallyDown; icon.widthAnchor.constraint(equalToConstant: 64).isActive = true; icon.heightAnchor.constraint(equalToConstant: 64).isActive = true
-        name.font = Typography.title(15); name.delegate = self; name.setAccessibilityLabel(tr("Name", "이름")); name.stringValue = url.lastPathComponent
+        name.font = Typography.title(15); name.delegate = self; name.setAccessibilityLabel(tr("Name", "이름")); name.stringValue = FileName.display(url.lastPathComponent)
         let header = NSStackView(views: [icon, name]); header.spacing = 12; header.alignment = .centerY
         header.heightAnchor.constraint(equalToConstant: 64).isActive = true
         stack.addView(header, in: .top); header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
@@ -121,14 +122,20 @@ import UniformTypeIdentifiers
     private func reload() {
         guard !closed else { return }
         generation += 1; let currentGeneration = generation
-        metadataTask?.cancel(); folderTask?.cancel(); watcher = nil
+        metadataTask?.cancel()
         let url = self.url
+        if watcher == nil {
+            watcher = PreviewFileWatcher(url) { [weak self] in
+                guard let self, self.url == url else { return }
+                self.reload()
+            }
+        }
         let task = Task.detached(priority: .userInitiated) { await PreviewMetadata.read(url, includeApplications: true) }; metadataTask = task
         Task { [weak self] in
             let value = await task.value
             guard let self, !self.closed, self.generation == currentGeneration, !task.isCancelled else { return }
             self.metadata = value; self.icon.image = value.icon
-            if self.window?.firstResponder !== self.name.currentEditor() { self.name.stringValue = url.lastPathComponent }
+            if self.window?.firstResponder !== self.name.currentEditor() { self.name.stringValue = FileName.display(url.lastPathComponent) }
             self.window?.title = tr("\(value.name) Info", "\(value.name) 정보")
             self.grid.setRows(value.detailRows.filter { $0.0 != tr("Size", "크기") && $0.0 != tr("Contains", "포함 항목") })
             self.hiddenExtension.state = value.hiddenExtension ? .on : .off; self.hiddenExtension.isEnabled = !value.isFolder
@@ -136,28 +143,37 @@ import UniformTypeIdentifiers
             let access = value.readable ? (value.writable ? tr("Read & Write", "읽기 및 쓰기") : tr("Read Only", "읽기 전용")) : (value.writable ? tr("Write Only", "쓰기 전용") : tr("No Access", "접근 불가"))
             self.permissions.stringValue = tr("Owner: \(value.owner)\nGroup: \(value.group)\nYou can: \(access)", "소유자: \(value.owner)\n그룹: \(value.group)\n사용자 권한: \(access)")
             self.populateApplications(value)
-            self.watcher = PreviewFileWatcher(url) { [weak self] in self?.reload() }
-            if value.isFolder { self.calculateFolderSize(url, generation: currentGeneration) }
-            else { self.size.stringValue = tr("Size: \(Format.bytes(value.size))", "크기: \(Format.bytes(value.size))") }
+            if value.isFolder {
+                if self.folderTask != nil { self.folderSizePending = true }
+                else { self.calculateFolderSize(url) }
+            } else {
+                self.folderTask?.cancel(); self.folderTask = nil; self.folderSizePending = false
+                self.size.stringValue = tr("Size: \(Format.bytes(value.size))", "크기: \(Format.bytes(value.size))")
+            }
         }
     }
-    private func calculateFolderSize(_ url: URL, generation: Int) {
-        size.stringValue = tr("Size: Calculating…", "크기: 계산 중…")
+    private func calculateFolderSize(_ url: URL) {
+        if size.stringValue.isEmpty { size.stringValue = tr("Size: Calculating…", "크기: 계산 중…") }
         let task = Task.detached(priority: .utility) { PreviewMetadata.recursiveSize(url) }; folderTask = task
         Task { [weak self] in
             let value = await task.value
-            guard let self, self.generation == generation, !self.closed, !task.isCancelled else { return }
+            guard let self, self.url == url, !self.closed, !task.isCancelled else { return }
+            self.folderTask = nil
             let result = "\(Format.bytes(value.bytes)) · \(Format.items(value.count))"
             self.size.stringValue = tr("Size: \(result)", "크기: \(result)") + (value.error.map { "\n" + tr("Some items could not be read: \($0)", "일부 항목을 읽을 수 없습니다: \($0)") } ?? "")
+            // Finish a size traversal before starting another; a busy folder cannot cancel
+            // every traversal from zero and leave Get Info calculating indefinitely.
+            if self.folderSizePending { self.folderSizePending = false; self.calculateFolderSize(url) }
         }
     }
     func controlTextDidEndEditing(_ notification: Notification) {
-        guard name.stringValue != url.lastPathComponent else { return }
+        guard name.stringValue != FileName.display(url.lastPathComponent) else { return }
         do {
             watcher = nil
-            url = try AppServices.shared.fileOperations.rename(url, to: name.stringValue)
+            folderTask?.cancel(); folderTask = nil; folderSizePending = false; size.stringValue = ""
+            url = try AppServices.shared.fileOperations.rename(url, to: FileName.disk(name.stringValue))
             reload()
-        } catch { name.stringValue = url.lastPathComponent; NSAlert(error: error).runModal(); reload() }
+        } catch { name.stringValue = FileName.display(url.lastPathComponent); NSAlert(error: error).runModal(); reload() }
     }
     @objc private func changeFlags(_ sender: NSButton) {
         let url = self.url; let state = sender.state == .on; let isHidden = sender === hiddenExtension

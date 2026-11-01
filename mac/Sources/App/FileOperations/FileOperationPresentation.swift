@@ -20,10 +20,10 @@ enum FileConflictPresentation {
         details.orientation = .vertical
         details.alignment = .leading
         details.spacing = Metrics.s
-        func row(_ title: String, bytes: Int64, modified: Date?) -> NSView {
+        func row(_ title: String, bytes: Int64, modified: Date?, onlineOnly: Bool) -> NSView {
             let heading = NSTextField(labelWithString: title)
             heading.font = Typography.sectionHeader
-            let size = Format.bytes(bytes)
+            let size = onlineOnly ? tr("Online-only", "온라인 전용") : Format.bytes(bytes)
             let date = modified?.formatted(.dateTime.year().month(.abbreviated).day().hour().minute().locale(Loc.locale)) ?? tr("Unknown date", "알 수 없는 날짜")
             let subtitle = NSTextField(labelWithString: "\(size) · \(date)")
             subtitle.font = Typography.listSecondary(.small)
@@ -32,8 +32,8 @@ enum FileConflictPresentation {
             stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = Metrics.xs
             return stack
         }
-        details.addArrangedSubview(row(tr("Incoming item", "새 항목"), bytes: conflict.sourceBytes, modified: conflict.sourceModified))
-        details.addArrangedSubview(row(tr("Existing item", "기존 항목"), bytes: conflict.destinationBytes, modified: conflict.destinationModified))
+        details.addArrangedSubview(row(tr("Incoming item", "새 항목"), bytes: conflict.sourceBytes, modified: conflict.sourceModified, onlineOnly: conflict.sourceOnlineOnly))
+        details.addArrangedSubview(row(tr("Existing item", "기존 항목"), bytes: conflict.destinationBytes, modified: conflict.destinationModified, onlineOnly: conflict.destinationOnlineOnly))
         details.setFrameSize(NSSize(width: 360, height: 100))
         alert.accessoryView = details
         return alert

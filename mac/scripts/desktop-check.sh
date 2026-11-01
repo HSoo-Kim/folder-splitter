@@ -141,13 +141,17 @@ try:
 except Exception:
     pass
 
-args = ["--arg=--offscreen", f"--arg=--capture-dir", f"--arg={out}/capture", "--arg=-AppleLanguages", f"--arg=({lang})", f"--arg=--session", f"--arg={out}/session.json",
-        "--arg=--dropbox-root", f"--arg={fixture}", "--arg=--index-root", f"--arg={os.path.dirname(fixture)}", f"--arg={fixture}"]
+# LaunchServices' background launch avoids agent-desktop's strict launch inventory check, which
+# can fail when an unrelated NSWorkspace record has pid -1. Observation and actions still use AX.
+args = ["--offscreen", "--capture-dir", f"{out}/capture", "-AppleLanguages", f"({lang})",
+        "--session", f"{out}/session.json", "--dropbox-root", fixture,
+        "--index-root", os.path.dirname(fixture), fixture]
 if real:
-    args.append(f"--arg={real}")
-launched = ad("launch", check_id, *args)
-if not launched.get("ok"):
-    print("launch failed:", launched.get("error")); sys.exit(1)
+    args.append(real)
+app_path = os.path.join(os.path.dirname(out), name + ".app")
+launched = subprocess.run(["open", "-g", "-n", app_path, "--args", *args], capture_output=True, text=True)
+if launched.returncode:
+    print("launch failed:", launched.stderr); sys.exit(1)
 
 frontmost_seen = set()
 try:

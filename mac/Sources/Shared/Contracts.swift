@@ -112,10 +112,13 @@ struct FileRename: Hashable, Sendable {
 protocol FileOperating: AnyObject {
     /// App-wide undo stack for file operations (Finder-style: Undo Move, Undo Trash …).
     var undoManager: UndoManager { get }
+    /// True while a copy, move, duplicate, compress or Move to Trash is in progress (quit and
+    /// update wait for it).
+    var hasRunningOperations: Bool { get }
     /// Copies or moves items into `folder`, asking about name conflicts and showing progress.
     func transfer(_ items: [URL], to folder: URL, mode: TransferMode) async -> FileOperationOutcome
     func moveToTrash(_ items: [URL]) async -> FileOperationOutcome
-    /// Throws a localized error for empty names, "/" or ":", or an existing item.
+    /// Throws a localized error for empty names, "/" (a ":" on disk is shown as "/"), or an existing item.
     func rename(_ item: URL, to newName: String) throws -> URL
     /// All-or-nothing; one undo reverts the batch. Handles swaps (a→b, b→a).
     func rename(_ renames: [FileRename]) throws -> [URL]
