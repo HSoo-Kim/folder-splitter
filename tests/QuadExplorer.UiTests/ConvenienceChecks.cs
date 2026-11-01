@@ -154,6 +154,94 @@ internal static partial class Program
                 await Transfer(move: true);
                 Check(File.Exists(Path.Combine(right, "move-me.txt")) && !File.Exists(moveMe), "move takes the item to the other pane's folder");
 
+                // A selected item can disappear before the Shell resolves it on the worker.
+                string missing = Path.Combine(left, "vanished.txt");
+                var copyError = new TaskCompletionSource<(bool, string?)>(TaskCreationOptions.RunContinuationsAsynchronously);
+                FileOperations.Start([missing], right, move: false, owner: 0,
+                    (done, error) => copyError.TrySetResult((done, error)));
+                var (copiedMissing, copyProblem) = await copyError.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                Check(!copiedMissing && !string.IsNullOrEmpty(copyProblem) && !File.Exists(Path.Combine(right, "vanished.txt")),
+                    "copy reports a disappeared source without exiting the application");
+                var renameError = new TaskCompletionSource<(bool, string?)>(TaskCreationOptions.RunContinuationsAsynchronously);
+                FileOperations.StartRename([(missing, "renamed.txt")], owner: 0,
+                    (done, error) => renameError.TrySetResult((done, error)));
+                var (renamedMissing, renameProblem) = await renameError.Task.WaitAsync(TimeSpan.FromSeconds(20));
+                Check(!renamedMissing && !string.IsNullOrEmpty(renameProblem) && !File.Exists(Path.Combine(left, "renamed.txt")),
+                    "bulk rename reports a disappeared source without exiting the application");
+
+                // The initiating window can close before a finished operation posts its result.
+                string lateSource = Path.Combine(left, "late-copy.txt");
+                File.WriteAllText(lateSource, "late copy");
+                using (var closedOwner = new Form())
+                {
+                    var releaseCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _ = closedOwner.Handle;
+                    var nativeFinished = new TaskCompletionSource<(bool, string?)>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var completionReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    bool callbackRan = false;
+                    FileOperations.Start([lateSource], right, move: false, owner: 0, (done, error) =>
+                    {
+                        nativeFinished.TrySetResult((done, error));
+                        releaseCompletion.Task.GetAwaiter().GetResult();
+                        FileOperations.PostCompletion(closedOwner, () => callbackRan = true);
+                        completionReturned.TrySetResult();
+                    });
+                    try
+                    {
+                        var (done, error) = await nativeFinished.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                        bool restartLaunched = false;
+                        form.RestartLauncher = _ => { restartLaunched = true; return false; };
+                        form.RestartApplication();
+                        Check(!restartLaunched && !form.IsDisposed,
+                            "memory cleanup does not restart while a file operation is still completing");
+
+                        bool warningSeen = false;
+                        using (var dismissWarning = new System.Windows.Forms.Timer { Interval = 25 })
+                        {
+                            dismissWarning.Tick += (_, _) =>
+                            {
+                                EnumThreadWindows(GetCurrentThreadId(), (window, _) =>
+                                {
+                                    var name = new System.Text.StringBuilder(32);
+                                    GetClassName(window, name, name.Capacity);
+                                    if (name.ToString() != "#32770" || GetWindowOwner(window, 4) != form.Handle) return true;
+                                    EnumChildWindows(window, (child, _) =>
+                                    {
+                                        var message = new System.Text.StringBuilder(512);
+                                        GetCloseWarningText(child, message, message.Capacity);
+                                        warningSeen |= message.ToString().Contains("file operation is still in progress", StringComparison.Ordinal);
+                                        return true;
+                                    }, 0);
+                                    EndCloseWarning(window, 1);
+                                    return false;
+                                }, 0);
+                            };
+                            dismissWarning.Start();
+                            form.ExitApplication();
+                            dismissWarning.Stop();
+                        }
+                        Check(warningSeen && !form.IsDisposed,
+                            "exit warns and keeps the application open while a file operation is still completing");
+                        form.SetCloseToTray(true);
+                        form.Close();
+                        Check(!form.IsDisposed && !form.Visible, "a blocked exit does not prevent closing the window to the tray");
+                        form.Show();
+                        form.SetCloseToTray(false);
+                        closedOwner.Dispose();
+                        releaseCompletion.TrySetResult();
+                        await completionReturned.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                        Check(done && error is null && File.ReadAllText(Path.Combine(right, "late-copy.txt")) == "late copy"
+                            && !callbackRan && !form.IsDisposed,
+                            "a completed native copy leaves the remaining window usable after its owner closes");
+                    }
+                    finally
+                    {
+                        releaseCompletion.TrySetResult();
+                        await completionReturned.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                        for (int i = 0; i < 100 && FileOperations.InProgress; i++) await Task.Delay(10);
+                    }
+                }
+
                 Check(MainForm.ShouldRestartForMemory(101L << 20, 100, TimeSpan.FromHours(1), unobtrusive: true)
                     && !MainForm.ShouldRestartForMemory(99L << 20, 100, TimeSpan.FromHours(1), unobtrusive: true)
                     && !MainForm.ShouldRestartForMemory(500L << 20, 100, TimeSpan.FromMinutes(10), unobtrusive: true)
@@ -195,6 +283,20 @@ internal static partial class Program
 
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
     private static extern nint HeaderItemRect(nint window, uint message, nint index, ref HeaderRect rect);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool EnumThreadWindows(uint thread, WindowCallback callback, nint parameter);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindow")]
+    private static extern nint GetWindowOwner(nint window, uint command);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowTextW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetCloseWarningText(nint window, System.Text.StringBuilder text, int maximum);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "EndDialog")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool EndCloseWarning(nint window, nint result);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool GetUpdateRect(nint window, nint rect, bool erase);

@@ -49,7 +49,7 @@ internal static partial class Program
             RunRecentForm(session, async (pane, host) =>
             {
                 await Navigate(host, () => pane.Navigate(recent));
-                await ItemCount(host, expected.Length);
+                await RecentSettled(host, expected.Length);
                 Check(ShellViewHost.IsRecent(pane.CurrentPath) && host.DisplayName == "Recent items",
                     "recent items keep the Recent folder as their location and title");
                 Check(ListedPaths(host).SequenceEqual(expected, StringComparer.OrdinalIgnoreCase),
@@ -82,14 +82,15 @@ internal static partial class Program
                 await Navigate(host, () => host.InvokeSelectionVerb("open"));
                 Check(pane.CurrentPath.Equals(folder, StringComparison.OrdinalIgnoreCase), "opening a recent folder shows it in the same pane");
                 await Navigate(host, () => host.Travel(0x4000));
-                await ItemCount(host, expected.Length + 2);
+                await RecentSettled(host, expected.Length + 2);
                 Check(ShellViewHost.IsRecent(pane.CurrentPath), "back returns to the recent list");
 
                 await Navigate(host, () => host.Travel(0x2000));
                 Check(pane.CurrentPath.Equals(root, StringComparison.OrdinalIgnoreCase), "up from the recent list opens the folder holding the Recent folder");
-                host.SelectPaths([recent]);
+                await ItemCountKnown(host);
+                Check(host.SelectPaths([recent]) == 1, "the Recent folder can be selected in the folder holding it");
                 await Navigate(host, () => host.InvokeSelectionVerb("open"));
-                await ItemCount(host, expected.Length + 2);
+                await RecentSettled(host, expected.Length + 2);
                 Check(ShellViewHost.IsRecent(pane.CurrentPath) && ListedPaths(host).First().Equals(latest, StringComparison.OrdinalIgnoreCase),
                     "opening the Recent folder inside a pane shows the recent list");
                 await Navigate(host, () => host.Travel(0x4000));
@@ -103,12 +104,12 @@ internal static partial class Program
                     "shell:recent opens the recent list");
                 ShellNative.Recent = recent;
                 await Navigate(host, () => pane.Navigate(recent));
-                await ItemCount(host, expected.Length + 2);
+                await RecentSettled(host, expected.Length + 2);
             });
             Check(ShellViewHost.IsRecent(SessionStore.Load(session).Panes[0].Tabs[0]), "a recent items tab is saved as recent items");
             RunRecentForm(session, async (pane, host) =>
             {
-                await ItemCount(host, expected.Length + 2);
+                await RecentSettled(host, expected.Length + 2);
                 Check(ListedPaths(host).First().Equals(latest, StringComparison.OrdinalIgnoreCase), "a restored recent items tab lists the targets");
             });
         }
@@ -131,6 +132,17 @@ internal static partial class Program
             finally { form.ExitApplication(); }
         };
         Application.Run(form);
+    }
+
+    // After navigating to the results folder, the view enumerates it on its own (within a few hundred
+    // milliseconds here) and can replace the rows when that finishes. The targets must still be listed afterwards.
+    private static async Task RecentSettled(ShellViewHost host, int count)
+    {
+        await ItemCount(host, count);
+        await Task.Delay(1000);
+        await ItemCount(host, count);
+        Check(FolderView(host).ItemCount(ShellNative.SvgioAllView, out int shown) >= 0 && shown == count,
+            "recent targets remain listed after the view finishes enumerating the results folder");
     }
 
     private static void Shortcut(string folder, string name, string target, DateTime opened)

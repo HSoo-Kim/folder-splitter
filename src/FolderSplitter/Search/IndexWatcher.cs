@@ -36,8 +36,16 @@ internal sealed class IndexWatcher : IDisposable
         foreach (var watcher in _watchers)
             watcher.Dispose();
         _watchers.Clear();
+        StartMissing();
+    }
+
+    internal string[] StartMissing()
+    {
+        List<string>? started = null;
         foreach (var root in _roots)
         {
+            if (_watchers.Any(watcher => watcher.Path.Equals(root, StringComparison.OrdinalIgnoreCase)))
+                continue;
             FileSystemWatcher? watcher = null;
             try
             {
@@ -46,24 +54,27 @@ internal sealed class IndexWatcher : IDisposable
                 watcher = new FileSystemWatcher(root)
                 {
                     IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Security,
                     InternalBufferSize = 65536
                 };
                 watcher.Created += OnPath;
                 watcher.Deleted += OnPath;
+                watcher.Changed += OnPath;
                 watcher.Renamed += OnRename;
                 watcher.Error += OnError;
                 watcher.EnableRaisingEvents = true;
                 _watchers.Add(watcher);
+                (started ??= []).Add(root);
             }
             catch (UnauthorizedAccessException) { watcher?.Dispose(); }
-            catch (DirectoryNotFoundException) { watcher?.Dispose(); }
+            catch (IOException) { watcher?.Dispose(); }
             catch
             {
                 watcher?.Dispose();
                 throw;
             }
         }
+        return started?.ToArray() ?? [];
     }
 
     internal ValueTask<bool> WaitAsync(CancellationToken cancellationToken) =>

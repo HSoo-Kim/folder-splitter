@@ -40,8 +40,8 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public ShellViewHost(string location, UiText? text = null)
     {
-        // The recent list is complete when its targets are added, not when the empty results folder enumerates.
-        enumerationDone = () => { if (!showingRecent) OnEnumerationDone(); };
+        // The recent list is complete when its targets are added, not when the results folder enumerates.
+        enumerationDone = () => { if (showingRecent) OnRecentEnumerationDone(); else OnEnumerationDone(); };
         selectionChanged = () => SelectionChanged?.Invoke(this, EventArgs.Empty);
         itemCountTimer.Tick += OnItemCountTick;
         selectionTimer.Tick += OnSelectionTick;
@@ -132,6 +132,9 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
     // Recent items: a results folder filled with the targets of Windows' recent shortcuts (see RecentItems).
     private bool showingRecent;
     private int recentLoads;
+    // Rows the latest load has put into the view: -1 until it replaces the old ones, then the count so far.
+    private int recentRows = -1;
+    private bool recentRowsComplete;
 
     // ExplorerBrowser creates a results folder only through FillFromObject, which a browser that has shown a
     // folder refuses. A throwaway browser creates one once; its ID list then opens an empty results folder in
@@ -185,6 +188,8 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
     {
         int load = ++recentLoads;
         recentStale = false;
+        recentRows = -1;
+        recentRowsComplete = false;
         var shown = view;
         enumerationReady = false;
         SetItemCount(null);
@@ -202,20 +207,34 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
             try
             {
                 results.RemoveAll();
+                recentRows = 0;
                 // The view lays out each added row at once (about 1.4 ms per row), so a long list is added a
                 // slice at a time, letting input and painting through in between; the newest rows show first.
                 for (int i = 0; i < items.Count; i++)
                 {
                     results.AddIDList(items[i], 0);
+                    recentRows++;
                     if (i % 32 != 31) continue;
                     await Task.Delay(1);
                     if (!Current()) return;
                 }
             }
             finally { Marshal.ReleaseComObject(results); }
+            recentRowsComplete = true;
             OnEnumerationDone();
         }
         finally { foreach (nint item in items) ShellNative.ILFree(item); }
+    }
+
+    // After navigating to the results folder, the view enumerates it on its own and reports it like a folder
+    // listing. When that finishes after targets were added, it drops the rows added so far, so the list is
+    // filled again. A list the view kept is left alone; adding targets has not been seen to start another enumeration.
+    private void OnRecentEnumerationDone()
+    {
+        if (recentRows < 0) return; // The running load has not replaced the rows yet.
+        if (recentRowsComplete && view is IFolderView folderView
+            && folderView.ItemCount(ShellNative.SvgioAllView, out int count) >= 0 && count == recentRows) return;
+        LoadRecentItems();
     }
 
     // The results folder keeps the order items were added in while it is sorted by search rank, which none of

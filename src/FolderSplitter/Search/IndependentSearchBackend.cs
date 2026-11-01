@@ -12,6 +12,7 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
     private readonly object _gate = new();
     private readonly string[] _roots;
     private readonly string _storePath;
+    private readonly TimeSpan _deniedRetryInterval;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly TaskCompletionSource _initial = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly HashSet<Task> _queries = [];
@@ -26,12 +27,16 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
     private string? _lastError;
 
     public IndependentSearchBackend(IEnumerable<string> roots, string storePath)
+        : this(roots, storePath, TimeSpan.FromMinutes(1)) { }
+
+    internal IndependentSearchBackend(IEnumerable<string> roots, string storePath, TimeSpan deniedRetryInterval)
     {
         var normalized = roots.Select(root => Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)))
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(root => root.Length).ToArray();
         _roots = normalized.Where((root, index) =>
             !normalized.Take(index).Any(parent => IndexBuilder.IsWithin(root, parent))).ToArray();
         _storePath = Path.GetFullPath(storePath);
+        _deniedRetryInterval = deniedRetryInterval;
     }
 
     public static string DefaultStorePath { get; } = Path.Combine(
@@ -104,10 +109,10 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
         try
         {
             token.ThrowIfCancellationRequested();
-            var builder = new IndexBuilder(_roots, _storePath);
+            var saved = IndexStore.Load(_storePath, _roots, token);
+            var builder = new IndexBuilder(_roots, _storePath, snapshot: saved);
             var watcher = new IndexWatcher(_roots, builder.IsExcluded);
             _watcher = watcher;
-            var saved = IndexStore.Load(_storePath, _roots, token);
             if (saved is not null)
             {
                 _snapshotLoaded = true;
@@ -171,16 +176,38 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
             {
                 index = builder.Reconcile(pending, token);
             }
-            IndexStore.Save(_storePath, _roots, index, token);
             _ready = true;
             Publish(index);
+            TrySave(index, token);
             Notify(RescanCompleted);
             _initial.TrySetResult();
             ReleaseBuildGarbage();
             var lastSaved = Stopwatch.GetTimestamp();
             Task<bool>? next = null;
-            while (await (next ??= watcher.WaitAsync(token).AsTask()).ConfigureAwait(false))
+            var retry = Task.Delay(_deniedRetryInterval, token);
+            while (true)
             {
+                next ??= watcher.WaitAsync(token).AsTask();
+                if (await Task.WhenAny(retry, next).ConfigureAwait(false) == retry)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var resumedRoots = watcher.StartMissing();
+                    if (index.DeniedPaths.Length > 0 || resumedRoots.Length > 0)
+                    {
+                        // A newly armed watcher may have missed changes before it started.
+                        index = builder.Reconcile(index.DeniedPaths.Concat(resumedRoots), token);
+                        Publish(index);
+                        if (Stopwatch.GetElapsedTime(lastSaved) >= TimeSpan.FromSeconds(30))
+                        {
+                            TrySave(index, token);
+                            lastSaved = Stopwatch.GetTimestamp();
+                        }
+                    }
+                    retry = Task.Delay(_deniedRetryInterval, token);
+                    continue;
+                }
+                if (!await next.ConfigureAwait(false))
+                    break;
                 token.ThrowIfCancellationRequested();
                 next = null;
                 // Busy folders change many times a second. Collect changes until they pause for
@@ -223,7 +250,7 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
                 // Startup always reconciles the snapshot. Bound write amplification on busy volumes.
                 if (Stopwatch.GetElapsedTime(lastSaved) >= TimeSpan.FromSeconds(30))
                 {
-                    IndexStore.Save(_storePath, _roots, index, token);
+                    TrySave(index, token);
                     lastSaved = Stopwatch.GetTimestamp();
                 }
             }
@@ -243,6 +270,20 @@ public sealed class IndependentSearchBackend : IPathSearchBackend
             _watcher = null;
             _ready = false;
             Notify(IndexChanged);
+        }
+    }
+
+    private void TrySave(FileIndex index, CancellationToken token)
+    {
+        try
+        {
+            IndexStore.Save(_storePath, _roots, index, token);
+            Volatile.Write(ref _lastError, null);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // A cache write failure must not stop an otherwise usable live index.
+            Volatile.Write(ref _lastError, error.Message);
         }
     }
 

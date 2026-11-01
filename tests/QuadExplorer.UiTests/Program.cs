@@ -101,6 +101,18 @@ internal static partial class Program
                 Console.WriteLine($"UPDATE_NOTICE_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--update-install"])
+            {
+                Task.Run(RunUpdateInstallScenario).GetAwaiter().GetResult();
+                Console.WriteLine($"UPDATE_INSTALL_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--convenience"])
+            {
+                RunConvenienceScenario(root);
+                Console.WriteLine($"CONVENIENCE_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--explorer-parity"])
             {
                 RunExplorerParityScenario(root);
@@ -1259,43 +1271,58 @@ internal static partial class Program
                 Check(UpdateChecker.Parse(json.RootElement)!.PackageUrl is null, "packages outside github.com are not installed");
 
             string exe = Path.Combine(root, "FolderSplitter.exe");
-            byte[] Package(string? entryName, string content)
+            byte[] Package(string? entryName, byte[] content, bool duplicate = false)
             {
                 using var memory = new MemoryStream();
                 using (var zip = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, true))
                 {
                     if (entryName is not null)
-                        using (var writer = new StreamWriter(zip.CreateEntry(entryName).Open())) writer.Write(content);
+                    {
+                        using (var target = zip.CreateEntry(entryName).Open()) target.Write(content);
+                        if (duplicate)
+                            using (var target = zip.CreateEntry("foldersplitter.exe").Open()) target.Write(content);
+                    }
                     using (var writer = new StreamWriter(zip.CreateEntry("README.md").Open())) writer.Write("readme");
                 }
                 return memory.ToArray();
             }
-            ReleaseInfo Release(byte[] package, string? sha = null) => new(new Version(9, 9, 9), "v9.9.9", "https://github.com/x",
+            ReleaseInfo Release(byte[] package, Version version, string? sha = null) => new(version, "v" + version, "https://github.com/x",
                 new Uri("https://github.com/x/folder-splitter-win-x64.zip"), sha ?? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(package)));
             Func<Uri, CancellationToken, Task<Stream>> Serve(byte[] package) => (_, _) => Task.FromResult<Stream>(new MemoryStream(package));
             bool Leftovers() => File.Exists(exe + ".new") || File.Exists(exe + ".download");
 
+            byte[] application = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "FolderSplitter.exe"));
+            Version current = UpdateChecker.Current;
+            var good = Package("FolderSplitter.exe", application);
             File.WriteAllText(exe, "old");
-            var good = Package("FolderSplitter.exe", "new");
-            await UpdateInstaller.InstallAsync(Release(good), exe, Serve(good), CancellationToken.None);
-            Check(File.ReadAllText(exe) == "new" && File.ReadAllText(exe + ".old") == "old" && !Leftovers(),
-                "update replaces the executable and keeps the previous one aside");
+            await UpdateInstaller.InstallAsync(Release(good, current), exe, Serve(good), CancellationToken.None);
+            Check(File.ReadAllBytes(exe).SequenceEqual(application) && File.ReadAllText(exe + ".old") == "old" && !Leftovers(),
+                "a matching Windows package replaces the executable and keeps the previous one aside");
             UpdateInstaller.RemovePrevious(exe);
             Check(!File.Exists(exe + ".old"), "the previous executable is removed on the next start");
 
             File.WriteAllText(exe, "old");
-            bool rejected = false;
-            try { await UpdateInstaller.InstallAsync(Release(good, new string('0', 64)), exe, Serve(good), CancellationToken.None); }
-            catch (InvalidDataException) { rejected = true; }
-            Check(rejected && File.ReadAllText(exe) == "old" && !File.Exists(exe + ".old") && !Leftovers(),
-                "a package with the wrong SHA-256 is rejected and nothing changes");
+            async Task Reject(byte[] package, Version version, string message, string? sha = null)
+            {
+                bool rejected = false;
+                try { await UpdateInstaller.InstallAsync(Release(package, version, sha), exe, Serve(package), CancellationToken.None); }
+                catch (InvalidDataException) { rejected = true; }
+                Check(rejected && File.ReadAllText(exe) == "old" && !File.Exists(exe + ".old") && !Leftovers(), message);
+            }
 
-            var empty = Package(null, "");
-            rejected = false;
-            try { await UpdateInstaller.InstallAsync(Release(empty), exe, Serve(empty), CancellationToken.None); }
-            catch (InvalidDataException) { rejected = true; }
-            Check(rejected && File.ReadAllText(exe) == "old" && !File.Exists(exe + ".old") && !Leftovers(),
-                "a package without FolderSplitter.exe is rejected and nothing changes");
+            await Reject(good, current, "a package with the wrong SHA-256 is rejected and nothing changes", new string('0', 64));
+            await Reject(Package(null, []), current, "a package without FolderSplitter.exe is rejected and nothing changes");
+            await Reject(Package("FolderSplitter.exe", "not an executable"u8.ToArray()), current,
+                "a checksum-valid package containing a non-executable leaves the installed app untouched");
+            await Reject(good, new Version(current.Major, current.Minor, current.Build + 1),
+                "an executable whose version does not match the release leaves the installed app untouched");
+            string otherApp = Path.Combine(AppContext.BaseDirectory, "QuadExplorer.UiTests.exe");
+            var otherInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(otherApp);
+            var otherVersion = new Version(otherInfo.FileMajorPart, otherInfo.FileMinorPart, otherInfo.FileBuildPart);
+            await Reject(Package("FolderSplitter.exe", File.ReadAllBytes(otherApp)), otherVersion,
+                "an executable for a different product leaves the installed app untouched");
+            await Reject(Package("FolderSplitter.exe", application, duplicate: true), current,
+                "a package with ambiguous executable entries leaves the installed app untouched");
         }
         finally { Directory.Delete(root, true); }
     }

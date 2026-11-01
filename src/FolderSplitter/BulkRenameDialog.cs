@@ -155,8 +155,7 @@ internal sealed class BulkRenameDialog : Form
         apply.Enabled = false;
         FileOperations.StartRename(changes, Handle, (done, error) =>
         {
-            if (IsDisposed) return;
-            BeginInvoke(() =>
+            FileOperations.PostCompletion(this, () =>
             {
                 Completed?.Invoke(done, error);
                 if (error is null) Close();

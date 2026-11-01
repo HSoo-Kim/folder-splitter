@@ -9,21 +9,50 @@ internal static class FileOperations
     private const uint AllowUndo = 0x40, NoConfirmMakeDirectory = 0x200, AddUndoRecord = 0x20000000;
     private const int Cancelled = unchecked((int)0x800704C7);
 
+    // Exit and restart must wait until every native operation and its completion callback have returned.
+    private static int activeOperations;
+    internal static bool InProgress => Volatile.Read(ref activeOperations) != 0;
+
+    private static void StartThread(Thread thread)
+    {
+        thread.SetApartmentState(ApartmentState.STA);
+        Interlocked.Increment(ref activeOperations);
+        try { thread.Start(); }
+        catch { Interlocked.Decrement(ref activeOperations); throw; }
+    }
+
+    // The window may close between the worker checking its lifetime and posting the result.
+    internal static void PostCompletion(Control owner, Action callback)
+    {
+        if (owner.IsDisposed || owner.Disposing || !owner.IsHandleCreated) return;
+        try
+        {
+            owner.BeginInvoke(() =>
+            {
+                if (!owner.IsDisposed && !owner.Disposing && owner.IsHandleCreated) callback();
+            });
+        }
+        catch (InvalidOperationException) when (owner.IsDisposed || owner.Disposing || !owner.IsHandleCreated) { }
+    }
+
     internal static void Start(IReadOnlyList<string> sources, string destination, bool move, nint owner,
         Action<bool, string?> completed)
     {
         var thread = new Thread(() =>
         {
-            bool done = false;
-            string? error = null;
-            try { done = Run(sources, destination, move, owner); }
-            catch (COMException exception) when (exception.HResult == Cancelled) { }
-            catch (Exception exception) when (exception is COMException or InvalidCastException or ArgumentException
-                or UnauthorizedAccessException) { error = exception.Message; }
-            completed(done, error);
+            try
+            {
+                bool done = false;
+                string? error = null;
+                try { done = Run(sources, destination, move, owner); }
+                catch (COMException exception) when (exception.HResult == Cancelled) { }
+                catch (Exception exception) when (exception is COMException or IOException or InvalidCastException
+                    or ArgumentException or UnauthorizedAccessException) { error = exception.Message; }
+                completed(done, error);
+            }
+            finally { Interlocked.Decrement(ref activeOperations); }
         }) { IsBackground = true, Name = "File operation" };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
+        StartThread(thread);
     }
 
     private static bool Run(IReadOnlyList<string> sources, string destination, bool move, nint owner)
@@ -59,16 +88,19 @@ internal static class FileOperations
     {
         var thread = new Thread(() =>
         {
-            bool done = false;
-            string? error = null;
-            try { done = RunRename(renames, owner); }
-            catch (COMException exception) when (exception.HResult == Cancelled) { }
-            catch (Exception exception) when (exception is COMException or InvalidCastException or ArgumentException
-                or UnauthorizedAccessException) { error = exception.Message; }
-            completed(done, error);
+            try
+            {
+                bool done = false;
+                string? error = null;
+                try { done = RunRename(renames, owner); }
+                catch (COMException exception) when (exception.HResult == Cancelled) { }
+                catch (Exception exception) when (exception is COMException or IOException or InvalidCastException
+                    or ArgumentException or UnauthorizedAccessException) { error = exception.Message; }
+                completed(done, error);
+            }
+            finally { Interlocked.Decrement(ref activeOperations); }
         }) { IsBackground = true, Name = "Rename operation" };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
+        StartThread(thread);
     }
 
     private static bool RunRename(IReadOnlyList<(string Path, string Name)> renames, nint owner)

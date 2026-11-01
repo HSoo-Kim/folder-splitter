@@ -21,6 +21,9 @@ internal static class Program
             Ranking();
             await CompactIndex();
             ScopeExclusions(root);
+            await DeniedReconciliation(root);
+            await DeniedRootRecoveryKeepsHealthyWatcher(root);
+            await UnwritableStore(root);
             await RealIndex(root);
             Console.WriteLine($"PASS: {_assertions} assertions; elapsed_ms={elapsed.Elapsed.TotalMilliseconds:F1}");
             return 0;
@@ -293,6 +296,151 @@ internal static class Program
             deniedInfo.SetAccessControl(restoredAcl);
             Directory.Delete(junction);
         }
+    }
+
+    private static async Task DeniedReconciliation(string workspace)
+    {
+        var root = Path.Combine(workspace, "denied-reconcile");
+        var denied = Path.Combine(root, "restricted");
+        var oldFile = Path.Combine(denied, "nested", "preserved-needle.txt");
+        var store = Path.Combine(workspace, "denied-reconcile.index");
+        Write(oldFile);
+        var builder = new IndexBuilder([root], store);
+        var original = builder.Build(CancellationToken.None);
+        IndexStore.Save(store, [root], original, CancellationToken.None);
+        var info = new DirectoryInfo(denied);
+        var originalAcl = info.GetAccessControl().GetSecurityDescriptorBinaryForm();
+        var restrictedAcl = info.GetAccessControl();
+        using var identity = WindowsIdentity.GetCurrent();
+        restrictedAcl.AddAccessRule(new FileSystemAccessRule(
+            identity.User!, FileSystemRights.ListDirectory, AccessControlType.Deny));
+        using var backend = new IndependentSearchBackend([root], store, TimeSpan.FromMilliseconds(500));
+        using var initial = new Observation(backend, () => backend.IsReady, true);
+        await backend.BuildOrLoadAsync().WaitAsync(Deadline);
+        await initial.Completion.Task.WaitAsync(Deadline);
+        Check(Has(backend, "preserved-needle"), "Initially accessible descendant is searchable");
+        try
+        {
+            using (var revoked = new Observation(backend, () => !Has(backend, "preserved-needle")
+                && backend.DeniedPaths.Contains(denied, StringComparer.OrdinalIgnoreCase)))
+            {
+                info.SetAccessControl(restrictedAcl);
+                await revoked.Completion.Task.WaitAsync(Deadline);
+            }
+            Throws<UnauthorizedAccessException>(() => Directory.GetFileSystemEntries(denied),
+                "Reconciliation fixture denies enumeration");
+            Check(!Has(backend, "preserved-needle"), "Permission change removes inaccessible descendants");
+            bool HasIn(FileIndex index, string text) =>
+                index.Search(SearchQuery.Parse(text), [], 10, true, CancellationToken.None).Count > 0;
+            var reconciled = builder.Reconcile([denied], CancellationToken.None);
+            Check(!HasIn(reconciled, "preserved-needle") && reconciled.DeniedPaths.Contains(denied, StringComparer.OrdinalIgnoreCase),
+                "Denied subtree refresh removes previously searchable descendants");
+            var rebuilt = new IndexBuilder([root], store, snapshot: original).Build(CancellationToken.None);
+            Check(!HasIn(rebuilt, "preserved-needle") && rebuilt.DeniedPaths.Contains(denied, StringComparer.OrdinalIgnoreCase),
+                "Full rebuild removes cached inaccessible descendants");
+            using (var cached = new IndependentSearchBackend([root], store))
+            using (var rescan = new Observation(cached, () => cached.IsReady, true))
+            {
+                await cached.BuildOrLoadAsync().WaitAsync(Deadline);
+                await rescan.Completion.Task.WaitAsync(Deadline);
+                Check(cached.Stats.SnapshotLoaded && !Has(cached, "preserved-needle")
+                    && cached.DeniedPaths.Contains(denied, StringComparer.OrdinalIgnoreCase),
+                    "Startup reconciliation removes cached descendants when access is denied");
+            }
+
+            var watcher = (IndexWatcher)typeof(IndependentSearchBackend)
+                .GetField("_watcher", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+            var native = (List<FileSystemWatcher>)typeof(IndexWatcher)
+                .GetField("_watchers", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(watcher)!;
+            foreach (var item in native)
+                item.EnableRaisingEvents = false;
+            using var recovered = new Observation(backend, () => Has(backend, "preserved-needle")
+                && !backend.DeniedPaths.Contains(denied, StringComparer.OrdinalIgnoreCase));
+            var restoredAcl = info.GetAccessControl();
+            restoredAcl.SetSecurityDescriptorBinaryForm(originalAcl, AccessControlSections.Access);
+            info.SetAccessControl(restoredAcl);
+            await recovered.Completion.Task.WaitAsync(Deadline);
+            Check(Has(backend, "preserved-needle"),
+                "Denied subtree is retried after access returns without a watcher event or file change");
+        }
+        finally
+        {
+            var restoredAcl = info.GetAccessControl();
+            restoredAcl.SetSecurityDescriptorBinaryForm(originalAcl, AccessControlSections.Access);
+            info.SetAccessControl(restoredAcl);
+        }
+    }
+
+    private static async Task DeniedRootRecoveryKeepsHealthyWatcher(string workspace)
+    {
+        var healthy = Path.Combine(workspace, "healthy-watch-root");
+        var denied = Path.Combine(workspace, "denied-watch-root");
+        Write(Path.Combine(healthy, "healthy-before.txt"));
+        Write(Path.Combine(denied, "recovered-root-file.txt"));
+        var info = new DirectoryInfo(denied);
+        var originalAcl = info.GetAccessControl().GetSecurityDescriptorBinaryForm();
+        var restrictedAcl = info.GetAccessControl();
+        using var identity = WindowsIdentity.GetCurrent();
+        restrictedAcl.AddAccessRule(new FileSystemAccessRule(
+            identity.User!, FileSystemRights.ListDirectory, AccessControlType.Deny));
+        info.SetAccessControl(restrictedAcl);
+        try
+        {
+            using var backend = new IndependentSearchBackend([healthy, denied],
+                Path.Combine(workspace, "root-recovery.index"), TimeSpan.FromSeconds(3));
+            await backend.BuildOrLoadAsync().WaitAsync(Deadline);
+            Check(backend.DeniedPaths.Contains(denied, StringComparer.OrdinalIgnoreCase),
+                "Inaccessible root is queued for recovery");
+            var watcher = (IndexWatcher)typeof(IndependentSearchBackend)
+                .GetField("_watcher", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(backend)!;
+            var native = (List<FileSystemWatcher>)typeof(IndexWatcher)
+                .GetField("_watchers", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(watcher)!;
+            // Model a root whose native watcher could not be opened while access was denied.
+            var unavailable = native.FirstOrDefault(item => item.Path.Equals(denied, StringComparison.OrdinalIgnoreCase));
+            if (unavailable is not null)
+            {
+                native.Remove(unavailable);
+                unavailable.Dispose();
+            }
+            using var recovered = new Observation(backend, () => Has(backend, "recovered-root-file")
+                && Has(backend, "healthy-during-recovery")
+                && !backend.DeniedPaths.Contains(denied, StringComparer.OrdinalIgnoreCase));
+            var restoredAcl = info.GetAccessControl();
+            restoredAcl.SetSecurityDescriptorBinaryForm(originalAcl, AccessControlSections.Access);
+            info.SetAccessControl(restoredAcl);
+            Write(Path.Combine(healthy, "healthy-during-recovery.txt"));
+            await recovered.Completion.Task.WaitAsync(Deadline);
+            Check(Has(backend, "healthy-during-recovery"), "Healthy root change remains searchable during root recovery");
+            using var later = new Observation(backend, () => Has(backend, "healthy-after-recovery")
+                && Has(backend, "denied-after-recovery"));
+            Write(Path.Combine(healthy, "healthy-after-recovery.txt"));
+            Write(Path.Combine(denied, "denied-after-recovery.txt"));
+            await later.Completion.Task.WaitAsync(Deadline);
+            Check(Has(backend, "healthy-after-recovery") && Has(backend, "denied-after-recovery"),
+                "Both roots continue to detect new files after access is restored");
+        }
+        finally
+        {
+            var restoredAcl = info.GetAccessControl();
+            restoredAcl.SetSecurityDescriptorBinaryForm(originalAcl, AccessControlSections.Access);
+            info.SetAccessControl(restoredAcl);
+        }
+    }
+
+    private static async Task UnwritableStore(string workspace)
+    {
+        var root = Path.Combine(workspace, "unwritable-store-root");
+        Write(Path.Combine(root, "store-failure-initial.txt"));
+        var store = Directory.CreateDirectory(Path.Combine(workspace, "store-is-directory")).FullName;
+        using var backend = new IndependentSearchBackend([root], store);
+        await backend.BuildOrLoadAsync().WaitAsync(Deadline);
+        Check(backend.IsReady && backend.LastError is not null && Has(backend, "store-failure-initial"),
+            "Cache write failure leaves the in-memory index available");
+        using var observed = new Observation(backend, () => Has(backend, "store-failure-later"));
+        Write(Path.Combine(root, "store-failure-later.txt"));
+        await observed.Completion.Task.WaitAsync(Deadline);
+        Check(backend.IsReady && Has(backend, "store-failure-later"),
+            "Watcher continues updating after a cache write failure");
     }
 
     private static void StoreRoundTrip(string store, string root, FileIndex index)

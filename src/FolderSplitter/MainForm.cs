@@ -1177,8 +1177,7 @@ public sealed class MainForm : Form, IMessageFilter
         int number = target.PaneNumber, items = paths.Count;
         FileOperations.Start(paths, destination, move, Handle, (done, error) =>
         {
-            if (IsDisposed || !IsHandleCreated) return;
-            BeginInvoke(() =>
+            FileOperations.PostCompletion(this, () =>
             {
                 if (error is not null) source.SetLocalizedStatus("Could not copy or move: {0}", error);
                 else if (!done) source.SetLocalizedStatus("Copy or move was cancelled.");
@@ -1550,6 +1549,11 @@ public sealed class MainForm : Form, IMessageFilter
     // The new process waits for this one to exit before it takes the single-instance lock and the search index.
     private async Task InstallUpdateAsync(ReleaseInfo update, string exe)
     {
+        if (FileOperations.InProgress)
+        {
+            Active.SetLocalizedStatus("Wait for the file operation to finish or cancel it before restarting or updating.");
+            return;
+        }
         updating = true;
         UpdateVersionText();
         try { await UpdateInstaller.InstallAsync(update, exe, UpdateInstaller.DownloadAsync, updateCancellation.Token); }
@@ -1560,6 +1564,16 @@ public sealed class MainForm : Form, IMessageFilter
             UpdateVersionText();
             Active.SetLocalizedStatus("Automatic update failed: {0}", error.Message);
             OpenReleasePage(update);
+            return;
+        }
+        // An operation may have started while the package was downloading. The new executable is already in
+        // place, but this process must stay alive until its native file operations have finished.
+        if (FileOperations.InProgress)
+        {
+            updating = false;
+            availableUpdate = null;
+            UpdateVersionText();
+            Active.SetLocalizedStatus("Updated. Wait for the file operation to finish, then restart Folder Splitter.");
             return;
         }
         saveTimer.Stop();
@@ -2427,6 +2441,12 @@ public sealed class MainForm : Form, IMessageFilter
     internal void RestartApplication()
     {
         if (restarting || updating) return;
+        if (FileOperations.InProgress)
+        {
+            if (Visible && WindowState != FormWindowState.Minimized)
+                Active.SetLocalizedStatus("Wait for the file operation to finish or cancel it before restarting or updating.");
+            return;
+        }
         var arguments = new List<string> { "--wait-pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) };
         if (!sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase)) arguments.AddRange(["--session", sessionPath]);
         if (!Visible) arguments.Add("--hidden");
@@ -2660,6 +2680,16 @@ public sealed class MainForm : Form, IMessageFilter
                 trayIcon.ShowBalloonTip(8000, "Folder Splitter", text.T("Folder Splitter keeps running in the notification area. Press Win+Alt+E or click its icon to reopen it; right-click the icon and choose Exit to quit. You can turn this off in Settings."), ToolTipIcon.Info);
                 SaveSession();
             }
+            base.OnFormClosing(e);
+            return;
+        }
+        if (e.CloseReason == CloseReason.UserClosing && FileOperations.InProgress)
+        {
+            e.Cancel = true;
+            exiting = false;
+            if (!Visible || WindowState == FormWindowState.Minimized) Summon();
+            MessageBox.Show(this, text.T("A file operation is still in progress. Wait for it to finish or cancel it before exiting."),
+                "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             base.OnFormClosing(e);
             return;
         }

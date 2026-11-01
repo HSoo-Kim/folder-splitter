@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -113,10 +115,19 @@ internal static class UpdateInstaller
                 throw new InvalidDataException("The downloaded package failed its SHA-256 check.");
             using (var zip = ZipFile.OpenRead(package))
             {
-                var entry = zip.GetEntry("FolderSplitter.exe")
-                    ?? throw new InvalidDataException("The package does not contain FolderSplitter.exe.");
-                entry.ExtractToFile(staged, overwrite: true);
+                ZipArchiveEntry? executable = null;
+                foreach (var entry in zip.Entries)
+                {
+                    if (!entry.FullName.Equals("FolderSplitter.exe", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (executable is not null)
+                        throw new InvalidDataException("The package contains more than one FolderSplitter.exe.");
+                    executable = entry;
+                }
+                if (executable is null)
+                    throw new InvalidDataException("The package does not contain FolderSplitter.exe.");
+                executable.ExtractToFile(staged, overwrite: true);
             }
+            ValidateExecutable(staged, release.Version);
             File.Move(exe, previous, overwrite: true);
             try { File.Move(staged, exe); }
             catch
@@ -130,6 +141,30 @@ internal static class UpdateInstaller
             TryDelete(package);
             TryDelete(staged);
         }
+    }
+
+    private static void ValidateExecutable(string path, Version expected)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var reader = new PEReader(stream);
+            var headers = reader.PEHeaders;
+            if (headers.CoffHeader.Machine != Machine.Amd64
+                || (headers.CoffHeader.Characteristics & Characteristics.Dll) != 0
+                || headers.PEHeader is not { AddressOfEntryPoint: > 0 })
+                throw new InvalidDataException("The package does not contain a valid Windows x64 application.");
+        }
+        catch (BadImageFormatException error)
+        {
+            throw new InvalidDataException("The package does not contain a valid Windows x64 application.", error);
+        }
+
+        var info = FileVersionInfo.GetVersionInfo(path);
+        if (!string.Equals(info.ProductName, "Folder Splitter", StringComparison.Ordinal)
+            || info.FileMajorPart != expected.Major || info.FileMinorPart != expected.Minor
+            || info.FileBuildPart != expected.Build)
+            throw new InvalidDataException("The application's identity or version does not match the release.");
     }
 
     private static void TryDelete(string path)
