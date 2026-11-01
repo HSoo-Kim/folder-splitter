@@ -19,6 +19,7 @@ A native macOS (Swift + AppKit) version of [Folder Splitter](../README.md) built
 | **Four panes, independent tabs** | 1–4 panes (⌥⌘1–⌥⌘4, plus stacked and three-column layouts). Every pane has its own tabs and history. Drag a tab to another pane, or to a pane's edge to split it. Hidden panes keep their tabs when you switch to fewer panes. |
 | **The address bar is a search box** | Type part of a name (`report 2026`) or a path fragment (`15min_rain/rn_15m`) and matching files and folders appear as you type, ranked by nearness to what you have open. The app keeps its own file-name index (no file contents are read) and updates it with FSEvents. Korean names match regardless of how macOS stored them (NFC/NFD). |
 | **Finder-grade file list** | List view with expandable folders, icon view with thumbnails, per-folder view and sort memory, Quick Look (Space), inline rename, tags, Open With, Share, Services, drag and drop with Finder's copy/move rules, spring-loaded folders. |
+| **Cloud sync status** | Like Finder, a status icon by each name: Dropbox items up to date, online-only (size shows —) or ignored, and iCloud Drive / cloud-storage items not downloaded, downloading, uploading or in conflict, with Download Now and Remove Download. Online-only Dropbox files open through Dropbox, which downloads them first. |
 | **File operations you can undo** | Copy/move with progress and name-conflict choices (Keep Both, Replace — the replaced item goes to the Trash, Skip, Stop, apply to all). ⌘Z undoes moves, copies, renames, new folders, duplicates and Move to Trash. |
 | **Between panes** | Copy or move the selection to the other pane (⌃⌥C / ⌃⌥X), open this folder in the other pane (⌃⌥O), compare the two folders and select what differs. |
 | **Preview and Get Info** | Inline Quick Look preview with details (dimensions, duration, pages), pin, detached preview windows, and a Get Info window with folder sizes, default app and flags. |
@@ -112,10 +113,17 @@ SwiftPM isn't used: some Command Line Tools installs ship mismatched `PackageDes
 scripts/build.sh [--debug]     # build/Folder Splitter.app (release builds are universal)
 scripts/test.sh                # unit tests (search, models, file operations, preview metadata)
 scripts/package.sh             # build/folder-splitter-mac.zip (universal) for other Macs and releases
-scripts/qa.sh [--lang en|ko] [--arch x86_64]   # end-to-end QA: drives the real app with keyboard and mouse
+scripts/qa.sh [--lang en|ko] [--arch x86_64] [--onscreen]
+                               # end-to-end QA: drives the real app with keyboard and mouse
                                # events, Apple Events and window captures, as a separate
-                               # bundle ID so an installed copy is never touched;
+                               # bundle ID so an installed copy is never touched. Windows stay
+                               # off screen and the app never takes focus (--onscreen to watch,
+                               # and to check table double-clicks, which need an active app);
                                # report and screenshots in build/qa/<lang>/
+scripts/desktop-check.sh [--lang ko|en]
+                               # the same hands-off way, driven from outside through
+                               # accessibility with agent-desktop (npm i -g agent-desktop):
+                               # Dropbox status on a fixture and, read-only, on ~/Dropbox
 ```
 
 ## License

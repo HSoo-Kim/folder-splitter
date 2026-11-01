@@ -17,7 +17,7 @@ final class FileListViewController: NSViewController {
     var visibleItemCount: Int { roots.count }
     var totalItemCount: Int { snapshots[folder ?? URL(fileURLWithPath: "/")]?.count ?? 0 }
     var selectionByteCount: Int64? {
-        let sizes = selectedItems.compactMap(\.size)
+        let sizes = selectedItems.lazy.filter { $0.cloud != .dropboxOnlineOnly }.compactMap(\.size)
         guard !sizes.isEmpty else { return nil }
         return sizes.reduce(0) { total, size in
             let (sum, overflow) = total.addingReportingOverflow(size)
@@ -25,6 +25,7 @@ final class FileListViewController: NSViewController {
         }
     }
     private(set) var folderFileBytes: Int64 = 0
+    private(set) var ubiquitousDownloads: [URL: Bool] = [:]
     var selectedItems: [FileItem] { selectedURLs.compactMap { nodes[$0]?.item } }
     var allDisplayedItems: [FileItem] { isIconView ? roots.map(\.item) : (0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FileNode)?.item } }
     var isIconView: Bool { viewSettings.viewMode == .icons }
@@ -246,11 +247,13 @@ final class FileListViewController: NSViewController {
             case .success(let (snapshot, children)):
                 self.snapshots = [folder: snapshot.items]
                 self.directoryLocations = [folder: FileListDirectoryLocation(snapshot)]
+                self.ubiquitousDownloads = snapshot.ubiquitousDownloads
                 var identities = snapshot.identities
                 for (url, listing) in children {
                     self.snapshots[url] = listing.items
                     self.directoryLocations[url] = FileListDirectoryLocation(listing)
                     identities.merge(listing.identities, uniquingKeysWith: { _, new in new })
+                    self.ubiquitousDownloads.merge(listing.ubiquitousDownloads, uniquingKeysWith: { _, new in new })
                 }
                 let locations = Dictionary(identities.map { ($0.value, $0.key) }, uniquingKeysWith: { first, second in
                     previousIdentities[first] != nil && previousIdentities[second] == nil ? second : first
@@ -278,6 +281,7 @@ final class FileListViewController: NSViewController {
                 self.snapshots.removeAll()
                 self.directoryLocations.removeAll()
                 self.itemIdentities.removeAll()
+                self.ubiquitousDownloads.removeAll()
                 self.pendingSelection = nil
                 self.selectionRemapping.removeAll()
                 self.folderFileBytes = 0
@@ -691,6 +695,7 @@ final class FileListViewController: NSViewController {
                 self.snapshots[url] = source.items
                 self.directoryLocations[url] = FileListDirectoryLocation(source)
                 self.itemIdentities.merge(source.identities, uniquingKeysWith: { _, new in new })
+                self.ubiquitousDownloads.merge(source.ubiquitousDownloads, uniquingKeysWith: { _, new in new })
                 node.children = listing.displayed.map {
                     let child = FileNode($0)
                     child.parent = node

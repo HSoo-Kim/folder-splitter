@@ -35,7 +35,7 @@ final class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSW
         window?.title = tr("Settings", "설정")
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

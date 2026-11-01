@@ -267,7 +267,8 @@ extension FileListViewController: FileCommands, NSMenuItemValidation, @preconcur
                  #selector(newFolder(_:)), #selector(newFolderWithSelection(_:)),
                  #selector(copyToOtherPane(_:)), #selector(moveToOtherPane(_:)),
                  #selector(copy(_:)), #selector(cut(_:)), #selector(paste(_:)), #selector(pasteAsMove(_:)),
-                 #selector(selectAll(_:)), #selector(deselectAll(_:)):
+                 #selector(selectAll(_:)), #selector(deselectAll(_:)),
+                 #selector(downloadCloudSelection(_:)), #selector(removeCloudDownload(_:)):
                 return false
             default:
                 break
@@ -276,6 +277,10 @@ extension FileListViewController: FileCommands, NSMenuItemValidation, @preconcur
         let hasSelection = !selectedURLs.isEmpty
         let count = selectedURLs.count
         switch menuItem.action {
+        case #selector(downloadCloudSelection(_:)):
+            return selectedURLs.contains { ubiquitousDownloads[$0] == false }
+        case #selector(removeCloudDownload(_:)):
+            return selectedURLs.contains { ubiquitousDownloads[$0] == true }
         case #selector(setViewModeIcons(_:)):
             menuItem.state = viewSettings.viewMode == .icons ? .on : .off
             return folder != nil

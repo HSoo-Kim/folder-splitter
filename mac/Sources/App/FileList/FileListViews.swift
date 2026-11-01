@@ -77,10 +77,81 @@ final class FileCollectionView: NSCollectionView {
 }
 
 @MainActor
+final class FileCloudBadgeView: NSImageView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        imageScaling = .scaleProportionallyUpOrDown
+        imageAlignment = .alignCenter
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 14),
+            heightAnchor.constraint(equalToConstant: 14)
+        ])
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setAccessibilityIdentifier("fs.cloudBadge")
+        setAccessibilityRole(.image)
+        configure(.none)
+    }
+    required init?(coder: NSCoder) { fatalError("init(frame:) required") }
+
+    func configure(_ status: CloudStatus) {
+        let symbol: String
+        let label: String
+        let tint: NSColor
+        switch status {
+        case .none:
+            isHidden = true
+            image = nil
+            contentTintColor = nil
+            toolTip = nil
+            setAccessibilityLabel(nil)
+            setAccessibilityElement(false)
+            return
+        case .dropboxSynced:
+            symbol = "checkmark.circle.fill"
+            label = tr("Up to date", "최신 상태")
+            tint = .systemGreen
+        case .dropboxOnlineOnly:
+            symbol = "icloud"
+            label = tr("Online-only", "온라인 전용")
+            tint = .secondaryLabelColor
+        case .dropboxIgnored:
+            symbol = "minus.circle.fill"
+            label = tr("Ignored by Dropbox", "Dropbox에서 무시됨")
+            tint = .tertiaryLabelColor
+        case .cloudNotDownloaded:
+            symbol = "icloud.and.arrow.down"
+            label = tr("Not downloaded", "다운로드되지 않음")
+            tint = .secondaryLabelColor
+        case .cloudDownloading:
+            symbol = "arrow.down.circle"
+            label = tr("Downloading", "다운로드 중")
+            tint = .controlAccentColor
+        case .cloudUploading:
+            symbol = "icloud.and.arrow.up"
+            label = tr("Uploading", "업로드 중")
+            tint = .controlAccentColor
+        case .cloudConflict:
+            symbol = "exclamationmark.triangle.fill"
+            label = tr("Conflict", "충돌")
+            tint = .systemOrange
+        }
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        contentTintColor = tint
+        toolTip = label
+        setAccessibilityLabel(label)
+        setAccessibilityElement(true)
+        isHidden = false
+    }
+}
+
+@MainActor
 final class FileNameCell: NSTableCellView {
     let icon = NSImageView()
     let name = NSTextField(labelWithString: "")
     let tags = NSStackView()
+    let cloudBadge = FileCloudBadgeView()
     var representedURL: URL?
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -89,7 +160,8 @@ final class FileNameCell: NSTableCellView {
         name.isSelectable = false
         tags.orientation = .horizontal
         tags.spacing = 3
-        let stack = NSStackView(views: [icon, name, tags])
+        let stack = NSStackView(views: [icon, name, tags, cloudBadge])
+        stack.detachesHiddenViews = true
         stack.spacing = Metrics.s
         stack.alignment = .centerY
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -108,6 +180,7 @@ final class FileNameCell: NSTableCellView {
         name.isSelectable = false
         name.delegate = owner
         setAccessibilityLabel(name.stringValue)
+        cloudBadge.configure(item.cloud)
         tags.arrangedSubviews.forEach { tags.removeArrangedSubview($0); $0.removeFromSuperview() }
         for tag in item.tags.prefix(7) {
             let dot = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: tag.components(separatedBy: "\n").first)!)
@@ -130,6 +203,7 @@ final class FileIconItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("FileIconItem")
     let icon = NSImageView()
     let name = NSTextField(wrappingLabelWithString: "")
+    let cloudBadge = FileCloudBadgeView()
     weak var owner: FileListViewController?
     var representedURL: URL?
     private var iconWidth: NSLayoutConstraint?
@@ -149,6 +223,7 @@ final class FileIconItem: NSCollectionViewItem {
         name.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(icon)
         view.addSubview(name)
+        view.addSubview(cloudBadge)
         let width = icon.widthAnchor.constraint(equalToConstant: 72)
         let height = icon.heightAnchor.constraint(equalToConstant: 72)
         iconWidth = width
@@ -157,6 +232,8 @@ final class FileIconItem: NSCollectionViewItem {
             icon.topAnchor.constraint(equalTo: view.topAnchor, constant: Metrics.xs),
             icon.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             width, height,
+            cloudBadge.leadingAnchor.constraint(equalTo: icon.leadingAnchor),
+            cloudBadge.bottomAnchor.constraint(equalTo: icon.bottomAnchor),
             name.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: Metrics.xs),
             name.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Metrics.xs),
             name.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Metrics.xs),
@@ -176,6 +253,7 @@ final class FileIconItem: NSCollectionViewItem {
         name.isEditable = false
         name.isSelectable = false
         name.delegate = owner
+        cloudBadge.configure(item.cloud)
         icon.image = NSImage(systemSymbolName: item.isDirectory ? "folder" : "doc", accessibilityDescription: nil)
         let scale = view.window?.backingScaleFactor ?? owner.view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         let cached = FileListIconCache.shared.image(for: item, size: CGFloat(owner.viewSettings.iconSize), thumbnail: true, scale: scale) { [weak self] image in
@@ -285,7 +363,7 @@ final class FileSelectionRow: NSTableRowView {
         case .modified: label.stringValue = node.item.modified.map(Format.date) ?? "—"
         case .created: label.stringValue = node.item.created.map(Format.date) ?? "—"
         case .added: label.stringValue = node.item.added.map(Format.date) ?? "—"
-        case .size: label.stringValue = node.item.size.map(Format.bytes) ?? "—"
+        case .size: label.stringValue = node.item.cloud == .dropboxOnlineOnly ? "—" : (node.item.size.map(Format.bytes) ?? "—")
         case .kind: label.stringValue = node.item.kind
         case .name: break
         }

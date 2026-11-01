@@ -11,6 +11,12 @@ struct LaunchOptions {
     var language: AppLanguage?
     /// QA: read releases from this feed (a file:// URL) instead of GitHub.
     var updateFeed: URL?
+    /// QA: treat this folder as a Dropbox root as well as the real ones.
+    var dropboxRoot: URL?
+    /// UI checks: keep windows outside every display (see OffscreenWindows).
+    var offscreen = false
+    /// With --offscreen: where `kill -USR1` writes window images (see OffscreenCapture).
+    var captureDirectory: URL?
     var folders: [URL] = []
 
     static func parse(_ arguments: [String]) -> LaunchOptions {
@@ -30,6 +36,9 @@ struct LaunchOptions {
             case "--qa": options.qaOutput = value().map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
             case "--language": options.language = value().flatMap(AppLanguage.init(rawValue:))
             case "--update-feed": options.updateFeed = value().flatMap { URL(string: $0) }
+            case "--offscreen": options.offscreen = true
+            case "--capture-dir": options.captureDirectory = value().map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+            case "--dropbox-root": options.dropboxRoot = value().map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
             default:
                 if argument.hasPrefix("-psn_") { break }
                 if argument.hasPrefix("-") { index += 1; break }   // -NSSomething YES
@@ -75,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         options = LaunchOptions.parse(CommandLine.arguments)
+        if options.offscreen { OffscreenWindows.install(captureDirectory: options.captureDirectory) }
+        if let root = options.dropboxRoot {
+            CloudStatusReader.dropboxRootsOverride = [root] + CloudStatusReader.configuredDropboxRoots()
+        }
         session = SessionCoordinator(url: options.sessionURL ?? SessionStore.defaultURL)
         SessionCoordinator.shared = session
         if let language = options.language {
@@ -107,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
         }
         launched = true
         if !options.folders.isEmpty { pending.append((options.folders, false)) }
-        flushPending()
+        flushPending(activate: false)   // launched with folders: LaunchServices decides activation
         for controller in windowControllers { controller.showWindow(nil) }
         if let warning = session.loadWarning { frontController?.showNotice(warning) }
 
@@ -137,7 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
         } else {
             startIndexIfEnabled()
         }
-        NSApp.activate()
     }
 
     private func installHooks(_ search: PathSearchService) {
@@ -307,7 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
             default: disposition = .newTab(activate: true)
             }
             for url in urls { front.open(url, disposition: disposition, from: nil) }
-            NSApp.activate()
+            NSApp.bringForward()
         default:
             break
         }
@@ -322,7 +334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
         flushPending()
     }
 
-    private func flushPending() {
+    /// `activate`: requests from other apps (reveal, open) bring Folder Splitter forward.
+    private func flushPending(activate: Bool = true) {
         guard launched, !pending.isEmpty else { return }
         let requests = pending
         pending = []
@@ -336,7 +349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
             }
         }
         front.showWindow(nil)
-        NSApp.activate()
+        if activate { NSApp.bringForward() }
     }
 
     private static func fileURLs(in event: NSAppleEventDescriptor) -> [URL] {
@@ -360,7 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
             return
         }
         NSApp.unhide(nil)
-        NSApp.activate()
+        NSApp.bringForward()
         if windowControllers.isEmpty { reopenLastWindow() }
         else { frontController?.window?.makeKeyAndOrderFront(nil) }
     }
@@ -381,7 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AppCommands, NSMenuIte
         centered.alignment = .center
         credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
         NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
-        NSApp.activate()
+        NSApp.bringForward()
     }
 
     @objc func checkForUpdates(_ sender: Any?) {

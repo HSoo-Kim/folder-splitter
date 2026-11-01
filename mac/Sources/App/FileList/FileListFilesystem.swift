@@ -10,6 +10,8 @@ struct FileListSnapshot: Sendable {
     /// Actual directory and stable identity after resolving navigation aliases and symlinks.
     let directory: URL
     let directoryIdentity: String?
+    /// Known ubiquitous download state only; ordinary local and legacy Dropbox items are absent.
+    let ubiquitousDownloads: [URL: Bool]
 }
 
 /// Synchronous disk work intended for the list controller's background loading task.
@@ -25,6 +27,11 @@ enum FileListReader {
         .localizedTypeDescriptionKey, .typeIdentifierKey, .tagNamesKey,
         .fileResourceIdentifierKey, .volumeIdentifierKey
     ]
+    private static let cloudKeys: Set<URLResourceKey> = [
+        .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
+        .ubiquitousItemIsDownloadingKey, .ubiquitousItemIsUploadingKey,
+        .ubiquitousItemHasUnresolvedConflictsKey
+    ]
 
     static func read(_ folder: URL, showHidden: Bool) throws -> FileListSnapshot {
         try Task.checkCancellation()
@@ -33,21 +40,28 @@ enum FileListReader {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOTDIR),
                           userInfo: [NSURLErrorKey: folder])
         }
+        // One folder-level membership check gates every per-item ubiquitous resource request.
+        let ubiquitousFolder = FileManager.default.isUbiquitousItem(at: directory)
+        let keys = ubiquitousFolder ? itemKeys.union(cloudKeys) : itemKeys
+        let dropboxRoots = CloudStatusReader.dropboxRoots()
+        let insideDropbox = dropboxRoots.contains { PathText.isWithin(directory, $0) }
+        let directDropboxRoots = Set(dropboxRoots.filter { $0.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL })
         let options: FileManager.DirectoryEnumerationOptions = showHidden ? [] : [.skipsHiddenFiles]
         try Task.checkCancellation()
         let children = try FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: Array(itemKeys), options: options
+            at: directory, includingPropertiesForKeys: Array(keys), options: options
         )
         var items: [FileItem] = []
         items.reserveCapacity(children.count)
         var fileBytes: Int64 = 0
         var identities: [URL: String] = [:]
         identities.reserveCapacity(children.count)
+        var ubiquitousDownloads: [URL: Bool] = [:]
         for url in children {
             try Task.checkCancellation()
             let values: URLResourceValues
             do {
-                values = try url.resourceValues(forKeys: itemKeys)
+                values = try url.resourceValues(forKeys: keys)
             } catch {
                 // A rename or deletion between enumeration and metadata retrieval is normal.
                 if isMissing(error) { continue }
@@ -77,6 +91,15 @@ enum FileListReader {
             try Task.checkCancellation()
             let tags = ((try? FinderTags.read(url)) ?? values.tagNames ?? []).map { PathText.nfc($0) }
             try Task.checkCancellation()
+            let inDropbox = insideDropbox || (!directDropboxRoots.isEmpty && directDropboxRoots.contains(url.standardizedFileURL))
+            let cloud = CloudStatusReader.status(for: url, values: ubiquitousFolder ? values : nil, insideDropbox: inDropbox)
+            if ubiquitousFolder, values.isUbiquitousItem == true {
+                switch values.ubiquitousItemDownloadingStatus {
+                case .notDownloaded: ubiquitousDownloads[url] = false
+                case .downloaded, .current: ubiquitousDownloads[url] = true
+                default: break
+                }
+            }
             items.append(FileItem(
                 url: url, name: name, isDirectory: isDirectory, isPackage: isPackage,
                 isHidden: hidden, isSymbolicLink: isSymbolicLink, isAlias: isAlias,
@@ -85,17 +108,18 @@ enum FileListReader {
                 kind: PathText.nfc(values.localizedTypeDescription
                     ?? (isDirectory ? tr("Folder", "폴더") : tr("File", "파일"))),
                 typeIdentifier: values.typeIdentifier,
-                tags: tags
+                tags: tags, cloud: cloud
             ))
             identities[url] = identity(values)
-            if let size, size > 0 {
+            if cloud != .dropboxOnlineOnly, let size, size > 0 {
                 let (sum, overflow) = fileBytes.addingReportingOverflow(size)
                 fileBytes = overflow ? Int64.max : sum
             }
         }
         try Task.checkCancellation()
         return FileListSnapshot(items: items, fileBytes: fileBytes, identities: identities,
-                                directory: directory, directoryIdentity: identity(directoryValues))
+                                directory: directory, directoryIdentity: identity(directoryValues),
+                                ubiquitousDownloads: ubiquitousDownloads)
     }
 
     static func identity(_ values: URLResourceValues) -> String? {

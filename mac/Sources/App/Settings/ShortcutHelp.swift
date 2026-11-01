@@ -186,6 +186,6 @@ final class ShortcutHelpWindowController: NSWindowController {
         window?.title = tr("Keyboard Shortcuts", "키보드 단축키")
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
     }
 }

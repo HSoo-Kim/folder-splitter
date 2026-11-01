@@ -6,6 +6,12 @@ import Foundation
 
 // MARK: - Files
 
+/// Available sync metadata only; legacy Finder Sync extension state is not publicly queryable.
+enum CloudStatus: Hashable, Sendable {
+    case none, dropboxSynced, dropboxOnlineOnly, dropboxIgnored
+    case cloudNotDownloaded, cloudDownloading, cloudUploading, cloudConflict
+}
+
 /// One row of a folder listing. Names are NFC so Korean text compares and filters correctly
 /// regardless of how the file system stored it.
 struct FileItem: Hashable, Sendable, Identifiable {
@@ -27,6 +33,7 @@ struct FileItem: Hashable, Sendable, Identifiable {
     let kind: String
     let typeIdentifier: String?
     let tags: [String]
+    let cloud: CloudStatus
 
     /// Name with the extension removed when extensions are hidden (folders keep their name).
     func displayName(showExtension: Bool) -> String {

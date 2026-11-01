@@ -28,11 +28,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
     private var paneMRU: [UUID] = []
     private var closeHistory = CloseHistory()
     private var layoutSegments: NSToolbarItemGroup?
+    private var lastOpen: Task<Void, Never>?
 
     var onChange: (() -> Void)?
 
     init(snapshot: WindowSnapshot?, initialFolder: URL? = nil) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
+        let window = MainWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.minSize = NSSize(width: 640, height: 420)
@@ -75,6 +76,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
             window.setContentSize(NSSize(width: min(1280, visible.width - 80), height: min(820, visible.height - 60)))
             window.center()
         }
+        if OffscreenWindows.enabled { window.setFrameOrigin(OffscreenWindows.origin) }
         // First window ever: give the sidebar Finder's comfortable width instead of its minimum;
         // after that the split view's autosave remembers what the user chose.
         if UserDefaults.standard.object(forKey: "NSSplitView Subview Frames FolderSplitter.MainSplit") == nil,
@@ -335,8 +337,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
 
     func open(_ url: URL, disposition: OpenDisposition, from pane: PaneController?) {
         let source = pane ?? activePane
-        Task { @MainActor in
+        // Resolve concurrently, apply in request order: opening several folders at once must give
+        // the same tab order (and frontmost tab) every time.
+        let previous = lastOpen
+        lastOpen = Task { @MainActor in
             let target = await LocationResolver.resolve(url)
+            await previous?.value
             switch disposition {
             case .current:
                 activatePane(source)

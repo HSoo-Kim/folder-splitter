@@ -97,6 +97,12 @@ extension FileListViewController: NSMenuDelegate {
                 let openWith = addCommand(tr("Open With", "다음으로 열기"), nil, to: menu)
                 openWith.submenu = openWithMenu()
             }
+            if selectedURLs.contains(where: { ubiquitousDownloads[$0] == false }) {
+                addCommand(tr("Download Now", "지금 다운로드"), #selector(downloadCloudSelection(_:)), to: menu)
+            }
+            if selectedURLs.contains(where: { ubiquitousDownloads[$0] == true }) {
+                addCommand(tr("Remove Download", "다운로드 제거"), #selector(removeCloudDownload(_:)), to: menu)
+            }
             menu.addItem(.separator())
             addCommand(tr("Move to Trash", "휴지통으로 이동"), #selector(moveToTrash(_:)), to: menu)
             menu.addItem(.separator())
@@ -158,6 +164,29 @@ extension FileListViewController: NSMenuDelegate {
         }
         return menu
     }
+    @objc func downloadCloudSelection(_ sender: Any?) { changeCloudDownload(remove: false) }
+    @objc func removeCloudDownload(_ sender: Any?) { changeCloudDownload(remove: true) }
+
+    private func changeCloudDownload(remove: Bool) {
+        guard !isTextEditing else { return }
+        let urls = selectedURLs.filter { ubiquitousDownloads[$0] == remove }
+        guard !urls.isEmpty else { return }
+        Task { [weak self] in
+            let failures = await Task.detached(priority: .userInitiated) {
+                urls.compactMap { url -> FileOperationFailure? in
+                    do {
+                        if remove { try FileManager.default.evictUbiquitousItem(at: url) }
+                        else { try FileManager.default.startDownloadingUbiquitousItem(at: url) }
+                        return nil
+                    } catch { return FileOperationFailure(url: url, message: error.localizedDescription) }
+                }
+            }.value
+            guard let self else { return }
+            self.reloadPreservingState()
+            if !failures.isEmpty { self.presentError(failures.map { "\($0.url.lastPathComponent): \($0.message)" }.joined(separator: "\n")) }
+        }
+    }
+
 
     @discardableResult
     private func addCommand(_ title: String, _ action: Selector?, to menu: NSMenu) -> NSMenuItem {

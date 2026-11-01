@@ -29,6 +29,10 @@ private final class QARunner {
     private var captureMethod = "none"
     private var keyLog: [String] = []
     private let runStart = Date()
+    /// --offscreen: the app must never become active (it would take focus from the user).
+    private var activations: NSObjectProtocol?
+    private var becameActive = false
+    private var activationDetail = ""
     private var app: AppDelegate { NSApp.delegate as! AppDelegate }
     private var front: MainWindowController { app.frontController! }
     private var korean: Bool { Loc.isKorean }
@@ -48,16 +52,23 @@ private final class QARunner {
             return
         }
         app.startIndexIfEnabled()
-        NSApp.activate()
-        if !(await waitFor(2) { NSApp.isActive }) {
-            // Launched from a background shell: ask once more the old way.
-            let selector = NSSelectorFromString("activateIgnoringOtherApps:")
-            typealias Activate = @convention(c) (AnyObject, Selector, Bool) -> Void
-            unsafeBitCast(NSApp.method(for: selector), to: Activate.self)(NSApp, selector, true)
+        if OffscreenWindows.enabled {
+            // Off screen and never active: keys go through `route`, shots are drawn by the app.
+            activations = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                                                                 object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.becameActive else { return }
+                    self.becameActive = true
+                    let visible = NSApp.windows.filter { $0.isVisible && !($0 is MainWindow) }.map { "\(Swift.type(of: $0)) '\($0.title)'" }
+                    self.activationDetail = "after check #\(self.checks.count) (\(self.checks.last?.name ?? "start")); other windows: \(visible)"
+                }
+            }
+            let frame = front.window?.frame ?? .zero
+            record("windows kept off screen", !NSScreen.screens.contains { $0.frame.intersects(frame) } && !NSApp.isActive,
+                   "frame=\(frame) isActive=\(NSApp.isActive)")
+        } else {
+            await activateForLiveKeys()
         }
-        front.window?.makeKeyAndOrderFront(nil)
-        _ = await waitFor(5) { NSApp.isActive && NSApp.keyWindow != nil }
-        record("app became active", NSApp.isActive, "isActive=\(NSApp.isActive) key=\(NSApp.keyWindow?.title ?? "nil")")
 
         for (chars, flags) in [("?", NSEvent.ModifierFlags([.command, .shift])), ("N", [.command, .shift]), ("t", [.command]),
                                ("2", [.command, .option]), ("c", [.control, .option]), ("P", [.command, .shift])] {
@@ -89,11 +100,29 @@ private final class QARunner {
         await stepMouse()
         await stepQuickLookAndMenu()
         await stepContextMenuRename()
+        await stepCloudStatus()
         await stepLargeFolder()
         await stepDarkMode()
         await stepUpdate()
         await stepSession()
+        if OffscreenWindows.enabled {
+            record("never became the active app (user's focus untouched)", !becameActive, "becameActive=\(becameActive) \(activationDetail)")
+        }
         finish()
+    }
+
+    /// On screen: become the active app so keys can also travel the window server's path.
+    private func activateForLiveKeys() async {
+        NSApp.activate()
+        if !(await waitFor(2) { NSApp.isActive }) {
+            // Launched from a background shell: ask once more the old way.
+            let selector = NSSelectorFromString("activateIgnoringOtherApps:")
+            typealias Activate = @convention(c) (AnyObject, Selector, Bool) -> Void
+            unsafeBitCast(NSApp.method(for: selector), to: Activate.self)(NSApp, selector, true)
+        }
+        front.window?.makeKeyAndOrderFront(nil)
+        _ = await waitFor(5) { NSApp.isActive && NSApp.keyWindow != nil }
+        record("app became active", NSApp.isActive, "isActive=\(NSApp.isActive) key=\(NSApp.keyWindow?.title ?? "nil")")
     }
 
     private func finish() {
@@ -302,10 +331,19 @@ private final class QARunner {
         await settle(0.5)
         guard let target = window ?? front.window else { return }
         target.displayIfNeeded()
+        let file = "\(korean ? "ko" : "en")-\(name).png"
+        if OffscreenWindows.enabled {
+            // screencapture cannot see windows off screen: the app draws the window itself.
+            captureMethod = "offscreen"
+            if let data = OffscreenWindows.image(of: target)?.representation(using: .png, properties: [:]) {
+                try? data.write(to: output.appendingPathComponent(file))
+                shots.append(file)
+            }
+            return
+        }
         let server = Self.windowServerImage(of: target)
         captureMethod = server == nil ? "layer" : "windowServer"
         guard let image = server ?? Self.layerImage(of: target) else { return }
-        let file = "\(korean ? "ko" : "en")-\(name).png"
         if let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
             try? data.write(to: output.appendingPathComponent(file))
             shots.append(file)
@@ -370,6 +408,7 @@ private final class QARunner {
     }
 
     private func refocusMain() async {
+        if OffscreenWindows.enabled { return }   // never active: keys are routed to front.window
         await activate()
         front.window?.makeKeyAndOrderFront(nil)
         _ = await waitFor(2) { NSApp.keyWindow === self.front.window }
@@ -377,6 +416,7 @@ private final class QARunner {
 
     /// Asks for activation (again): closing a window can hand activation to another app.
     private func activate() async {
+        if OffscreenWindows.enabled { return }
         NSApp.activate()
         if await waitFor(1, { NSApp.isActive }) { return }
         let selector = NSSelectorFromString("activateIgnoringOtherApps:")
@@ -760,6 +800,23 @@ private final class QARunner {
         await settle(0.25)
     }
 
+    /// A double-click at human speed: the second click 0.1 s after the first (well inside the
+    /// double-click interval), so work the first click queued on the main thread has run.
+    private func doubleClick(_ view: NSView, at local: NSPoint) async {
+        guard let window = view.window else { return }
+        let point = view.convert(local, to: nil)
+        for count in 1...2 {
+            func event(_ type: NSEvent.EventType) -> NSEvent? {
+                NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                   windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: count, pressure: 1)
+            }
+            guard let down = event(.leftMouseDown), let up = event(.leftMouseUp) else { return }
+            NSApp.postEvent(up, atStart: false)
+            window.sendEvent(down)
+            await settle(count == 1 ? 0.1 : 0.25)
+        }
+    }
+
     private func views(named className: String, in root: NSView?) -> [NSView] {
         guard let root else { return [] }
         var found = String(describing: Swift.type(of: root)) == className ? [root] : []
@@ -871,10 +928,14 @@ private final class QARunner {
             _ = await waitFor(5) { photosRow() != nil }
             let row = photosRow()
             doubleDetail = "rows=\(outline.numberOfRows) photosRow=\(row.map(String.init) ?? "nil")"
-            if let row {
+            if OffscreenWindows.enabled {
+                // AppKit tables ignore clicks while their app is inactive (in use, the first click
+                // activates the app); check this with --onscreen.
+                doubleOK = true
+                doubleDetail = "skipped off screen"
+            } else if let row {
                 let rect = outline.rect(ofRow: row)
-                await click(outline, at: NSPoint(x: rect.minX + 120, y: rect.midY), count: 1)
-                await click(outline, at: NSPoint(x: rect.minX + 120, y: rect.midY), count: 2)
+                await doubleClick(outline, at: NSPoint(x: rect.minX + 120, y: rect.midY))
                 doubleOK = await waitFor(3) { first.currentFolder == self.url("Photos") }
             }
         }
@@ -953,15 +1014,21 @@ private final class QARunner {
             record("right-click ▸ Rename edits the name in place", false, "no Rename item")
             return
         }
-        let tracked = UncheckedBox(menu)
-        let pick = Timer(timeInterval: 0.4, repeats: false) { _ in
-            MainActor.assumeIsolated {
-                tracked.value.performActionForItem(at: index)
-                tracked.value.cancelTracking()
+        if OffscreenWindows.enabled {
+            // A menu would pop up on the user's screen (and an inactive app may not track it):
+            // pick the item the way the menu does.
+            menu.performActionForItem(at: index)
+        } else {
+            let tracked = UncheckedBox(menu)
+            let pick = Timer(timeInterval: 0.4, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    tracked.value.performActionForItem(at: index)
+                    tracked.value.cancelTracking()
+                }
             }
+            RunLoop.main.add(pick, forMode: .eventTracking)
+            NSMenu.popUpContextMenu(menu, with: event, for: outline)
         }
-        RunLoop.main.add(pick, forMode: .eventTracking)
-        NSMenu.popUpContextMenu(menu, with: event, for: outline)
         await settle(0.8)
         let responder = window.firstResponder
         let editing = (responder as? NSTextView)?.isFieldEditor == true
@@ -982,6 +1049,82 @@ private final class QARunner {
         record("right-click ▸ Rename and Return ▸ type ▸ Return rename in place; ⌘Z undoes",
                editing && editedText == "notes.txt" && editingAgain && renamed && undone,
                "menuEditing=\(editing) text=\(editedText) returnEditing=\(editingAgain) renamed=\(renamed) undone=\(undone)")
+    }
+
+    /// A fixture folder registered as a Dropbox root (qa.sh), with items marked the way Dropbox
+    /// marks them; then, read-only, the real ~/Dropbox when this Mac has one.
+    private func stepCloudStatus() async {
+        guard let first = pane(1) else { return }
+        let root = url("Dropbox")
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        func make(_ name: String, bytes: Int, xattrs: [String]) {
+            let file = root.appendingPathComponent(name)
+            FileManager.default.createFile(atPath: file.path, contents: Data(count: bytes))
+            for attribute in xattrs {
+                let value = Data([1, 2, 3])
+                _ = value.withUnsafeBytes { setxattr(file.path, attribute, $0.baseAddress, value.count, 0, XATTR_NOFOLLOW) }
+            }
+        }
+        make("synced.txt", bytes: 2048, xattrs: ["com.dropbox.attrs"])
+        make("online-only.pdf", bytes: 0, xattrs: ["com.dropbox.attrs", "com.dropbox.placeholder"])
+        make("ignored.tmp", bytes: 10, xattrs: ["com.dropbox.ignored"])
+        make("not-yet-synced.txt", bytes: 10, xattrs: [])
+        front.activatePane(first)
+        front.open(root, disposition: .current, from: first)
+        _ = await waitFor(4) { first.currentFolder?.path == root.path && (first.currentList?.visibleItemCount ?? 0) == 4 }
+        await settle(0.6)
+        func badges() -> [String: String] {
+            var result: [String: String] = [:]
+            guard let outline = first.currentList.flatMap({ findView(id: AccessibilityID.fileList(1), in: $0.view) }) as? NSOutlineView else { return result }
+            for row in 0..<outline.numberOfRows {
+                guard let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true) else { continue }
+                let name = views(named: "NSTextField", in: cell).compactMap { ($0 as? NSTextField)?.stringValue }.first { !$0.isEmpty } ?? "?"
+                let badge = allViews(in: cell).first { $0.accessibilityIdentifier() == "fs.cloudBadge" && !$0.isHidden }
+                result[name] = badge?.toolTip ?? "none"
+            }
+            return result
+        }
+        let seen = badges()
+        let expected = [
+            "synced.txt": tr("Up to date", "최신 상태"),
+            "online-only.pdf": tr("Online-only", "온라인 전용"),
+            "ignored.tmp": tr("Ignored by Dropbox", "Dropbox에서 무시됨"),
+            "not-yet-synced.txt": "none",
+        ]
+        let sizeShown = sizeText(of: "online-only.pdf", in: first)
+        await shot("24-dropbox-fixture")
+        // The real Dropbox, only looked at.
+        var real = "no Dropbox on this Mac"
+        if let dropbox = CloudStatusReader.configuredDropboxRoots().first {
+            front.open(dropbox, disposition: .newTab(activate: true), from: first)
+            _ = await waitFor(6) { first.currentFolder?.path == dropbox.path && first.currentList?.loadState == .loaded }
+            await settle(1.0)
+            let counts = Dictionary(badges().values.map { ($0, 1) }, uniquingKeysWith: +)
+            real = counts.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
+            await shot("25-dropbox-real")
+            first.closeTab(id: first.selectedTabID!)
+        }
+        record("Dropbox status badges like Finder (synced, online-only, ignored; size — for online-only)",
+               seen == expected && sizeShown == "—",
+               "badges=\(seen) onlineOnlySize=\(sizeShown ?? "nil") real[\(real)]")
+    }
+
+    private func allViews(in root: NSView) -> [NSView] {
+        [root] + root.subviews.flatMap(allViews(in:))
+    }
+
+    /// Text in the Size column for the named row of the pane's list.
+    private func sizeText(of name: String, in pane: PaneController) -> String? {
+        guard let outline = pane.currentList.flatMap({ findView(id: AccessibilityID.fileList(1), in: $0.view) }) as? NSOutlineView else { return nil }
+        let column = outline.column(withIdentifier: NSUserInterfaceItemIdentifier(SortKey.size.rawValue))
+        guard column >= 0 else { return nil }
+        for row in 0..<outline.numberOfRows {
+            guard let nameCell = outline.view(atColumn: 0, row: row, makeIfNecessary: true),
+                  views(named: "NSTextField", in: nameCell).contains(where: { ($0 as? NSTextField)?.stringValue == name }),
+                  let sizeCell = outline.view(atColumn: column, row: row, makeIfNecessary: true) else { continue }
+            return views(named: "NSTextField", in: sizeCell).compactMap { ($0 as? NSTextField)?.stringValue }.first
+        }
+        return nil
     }
 
     private func stepLargeFolder() async {

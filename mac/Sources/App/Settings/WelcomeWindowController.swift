@@ -117,7 +117,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         active = controller
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
     }
 
     func windowDidBecomeKey(_ notification: Notification) { model.refreshSystemState() }

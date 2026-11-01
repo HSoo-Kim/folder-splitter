@@ -4,16 +4,21 @@
 #   scripts/qa.sh                       # build, then run English and Korean
 #   scripts/qa.sh --no-build --lang ko  # reuse build/Folder Splitter.app, Korean only
 #   scripts/qa.sh --arch x86_64         # run the Intel slice of a universal build (Rosetta)
+#   scripts/qa.sh --onscreen            # windows on screen and the app activated (takes focus)
+# By default the app's windows stay outside every display and it never becomes active, so the run
+# leaves the user's screen and keyboard focus alone (separate windows such as Settings may flash).
 source "$(dirname "$0")/env.sh"
 
 build=1
 languages=( en ko )
 arch=""
+placement=( --offscreen )
 while (( $# )); do
     case "$1" in
         --no-build) build=0 ;;
         --lang) shift; languages=( "$1" ) ;;
         --arch) shift; arch="$1" ;;
+        --onscreen) placement=() ;;
     esac
     shift
 done
@@ -67,11 +72,12 @@ for lang in "${languages[@]}"; do
 JSON
     # A separate instance (-n) so an installed, running copy is left alone; -W waits for it to quit.
     qa_args=( -AppleLanguages "($lang)" --qa "$out" --language "$lang" --session "$out/session.json" --index-root "$out/fixture"
-              --update-feed "file://$out/update/releases.json" )
+              --update-feed "file://$out/update/releases.json" --dropbox-root "$out/fixture/Dropbox" ${placement[@]+"${placement[@]}"} )
     if [[ -n "$arch" ]]; then
         arch "-$arch" "$app/Contents/MacOS/FolderSplitter" "${qa_args[@]}" >"$out/stdout.log" 2>"$out/stderr.log" &
     else
-        open -n -W "$app" --args "${qa_args[@]}" &
+        # -g: launch in the background (off screen runs never take focus).
+        open -n -W ${placement[@]+-g} "$app" --args "${qa_args[@]}" &
     fi
     opener=$!
     for _ in $(seq 1 480); do kill -0 "$opener" 2>/dev/null || break; sleep 0.5; done
