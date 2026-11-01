@@ -197,7 +197,6 @@ final class FileOperationCenter: FileOperating {
         Task { _ = await present(alert) }
     }
     private func present(_ alert: NSAlert) async -> NSApplication.ModalResponse {
-        if OffscreenWindows.enabled { alert.window.styleMask.insert(.nonactivatingPanel) }
         // Only a browser window can host these sheets: the key window may be a progress panel
         // or an earlier alert, especially while the app is inactive.
         let host = (NSApp.mainWindow as? MainWindow) ?? (NSApp.keyWindow as? MainWindow)
