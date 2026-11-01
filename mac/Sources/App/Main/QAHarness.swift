@@ -1075,10 +1075,21 @@ private final class QARunner {
         func dismissAlert() async { await settle(0.8) }
         // 1. Online-only stub: copy and duplicate refused, nothing created.
         let stub = url("Dropbox/online-only.pdf")
-        let copied = await ops.transfer([stub], to: documents, mode: .copy)
-        await dismissAlert()
-        let duplicated = await ops.duplicate([stub])
-        await dismissAlert()
+        let copied: FileOperationOutcome
+        let duplicated: FileOperationOutcome
+        if OffscreenWindows.enabled {
+            // Native error sheets activate the app even when their parent is off screen.
+            // Exercise the real engine here; --onscreen also exercises its AppKit error UI.
+            let engine = FileOperationEngine(dropboxRoots: CloudStatusReader.dropboxRoots())
+            copied = await engine.transfer([stub], to: documents, mode: .copy,
+                                            conflict: { _ in .init(choice: .stop) }).outcome
+            duplicated = await Task.detached { engine.duplicate([stub]).outcome }.value
+        } else {
+            copied = await ops.transfer([stub], to: documents, mode: .copy)
+            await dismissAlert()
+            duplicated = await ops.duplicate([stub])
+            await dismissAlert()
+        }
         let dropboxNames = (try? manager.contentsOfDirectory(atPath: url("Dropbox").path)) ?? []
         let stubOK = !copied.succeeded && copied.failures.first?.message.contains("Dropbox") == true
             && !manager.fileExists(atPath: documents.appendingPathComponent("online-only.pdf").path)
@@ -1131,7 +1142,7 @@ private final class QARunner {
         await shot("26-file-safety")
         record("file safety: online-only not copied, package keeps .rtfd, locked file copies clean, drop from other volume copies, “:” shows as “/”",
                stubOK && packageOK && lockedOK && dropOK && colonOK,
-               "stub=\(stubOK) (copy: \(copied.failures.first?.message.prefix(60) ?? "no failure"); dup ok=\(duplicated.succeeded)) package=\(packageOK) (\(packageCopy?.lastPathComponent ?? "nil")) locked=\(lockedOK) (leftovers=\(leftovers)) drop=\(dropOK) (\(dropDetail)) colon=\(colonOK) (\(shownName))")
+               "stub=\(stubOK) (copy: \(copied.failures.first?.message.prefix(60) ?? "no failure"); dup ok=\(duplicated.succeeded); native alert UI=\(OffscreenWindows.enabled ? "skipped off screen; use --onscreen" : "exercised")) package=\(packageOK) (\(packageCopy?.lastPathComponent ?? "nil")) locked=\(lockedOK) (leftovers=\(leftovers)) drop=\(dropOK) (\(dropDetail)) colon=\(colonOK) (\(shownName))")
     }
 
     /// A fixture folder registered as a Dropbox root (qa.sh), with items marked the way Dropbox

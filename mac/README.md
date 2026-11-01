@@ -125,7 +125,7 @@ scripts/qa.sh [--lang en|ko] [--arch x86_64] [--onscreen]
                                # events, Apple Events and window captures, as a separate
                                # bundle ID so an installed copy is never touched. Windows stay
                                # off screen and the app never takes focus (--onscreen to watch,
-                               # and to check table double-clicks, which need an active app);
+                               # table double-clicks and native error-alert UI need --onscreen);
                                # report and screenshots in build/qa/<lang>/
 scripts/desktop-check.sh [--lang ko|en]
                                # the same hands-off way, driven from outside through

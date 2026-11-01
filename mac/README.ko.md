@@ -124,7 +124,7 @@ scripts/qa.sh [--lang en|ko] [--arch x86_64] [--onscreen]
                                # 실제 앱을 키보드·마우스 이벤트, Apple Event, 윈도우 캡처로
                                # 끝까지 검증. 별도 번들 ID로 실행해 설치된 앱에 영향을 주지 않음.
                                # 윈도우는 화면 밖에 두고 앱은 포커스를 가져가지 않음(--onscreen:
-                               # 화면에서 보기, 활성 앱이 필요한 표 더블클릭 확인).
+                               # 화면에서 보기, 표 더블클릭과 macOS 오류 알림 UI 확인).
                                # 결과와 스크린숏은 build/qa/<언어>/
 scripts/desktop-check.sh [--lang ko|en]
                                # 같은 방식으로, 밖에서 agent-desktop(npm i -g agent-desktop)이

@@ -7,6 +7,8 @@
 #   scripts/qa.sh --onscreen            # windows on screen and the app activated (takes focus)
 # By default the app's windows stay outside every display and it never becomes active, so the run
 # leaves the user's screen and keyboard focus alone (separate windows such as Settings may flash).
+# Native error-alert UI and table double-clicks require --onscreen; off screen the refusal checks
+# use the file engine directly and report that the native alert UI was skipped.
 source "$(dirname "$0")/env.sh"
 
 build=1
