@@ -11,7 +11,9 @@ internal static class Program
         {
             ("default session and storage path", Defaults),
             ("supported languages normalize with Korean default", LanguageNormalization),
+            ("startup defaults on for legacy sessions and explicit off persists", StartupPreferences),
             ("theme and tree preferences normalize and persist", AppearancePreferences),
+            ("custom color seeds normalize and persist independently of presets", CustomColors),
             ("all selected languages persist without altering session data", LanguageRetention),
             ("Unicode session roundtrip and atomic replacement", Roundtrip),
             ("invalid and null JSON normalization", InvalidJsonData),
@@ -28,7 +30,7 @@ internal static class Program
             ("normalization does not mutate caller lists", DoesNotMutate),
             ("split tree sessions preserve sparse pane IDs and ratios", SplitTreeRoundtrip),
             ("legacy and malformed layouts normalize safely", LegacyLayouts)
-        }.Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases).ToArray();
+        }.Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases).Concat(PaletteGeneratorTests.Cases).ToArray();
 
         var failures = 0;
         Directory.CreateDirectory(TestDirectory);
@@ -63,6 +65,7 @@ internal static class Program
         Equal("ko", state.Language);
         Equal("light", state.ColorTheme);
         Equal(true, state.ShowFolderTree);
+        Equal(true, state.StartWithWindows);
         Equal(false, state.HighlightSortedColumn);
         Equal(1, state.Layout);
         Equal(PaneLayout.Leaf(0), state.LayoutTree);
@@ -97,6 +100,18 @@ internal static class Program
         Equal("ko", SessionStore.Load(path).Language);
         File.WriteAllText(path, "{}");
         Equal("ko", SessionStore.Load(path).Language);
+    }
+
+    private static void StartupPreferences()
+    {
+        var path = FilePath("startup", "session.json");
+        File.WriteAllText(path, """{"GlobalHotkey":false}""");
+        var legacy = SessionStore.Load(path);
+        Equal(true, legacy.StartWithWindows);
+        SessionStore.Save(path, legacy with { StartWithWindows = false });
+        Equal(false, SessionStore.Load(path).StartWithWindows);
+        SessionStore.Save(path, legacy with { StartWithWindows = true });
+        Equal(true, SessionStore.Load(path).StartWithWindows);
     }
 
     private static void AppearancePreferences()
@@ -145,6 +160,34 @@ internal static class Program
         Equal(false, disabled.ComfortableRows);
         Sequence(restored.Panes[0].Tabs, disabled.Panes[0].Tabs);
         Sequence(restored.Workspaces[0].Panes[0].Tabs, disabled.Workspaces[0].Panes[0].Tabs);
+    }
+
+    private static void CustomColors()
+    {
+        Equal("#ABCDEF", SessionStore.NormalizeColor("#abcdef"));
+        Equal("#0123AB", SessionStore.NormalizeColor(" #0123ab "));
+        foreach (string? invalid in new string?[] { null, "", "abcdef", "#ABC", "#1234567", "#GG1234", "#12 456", "#+12345" })
+            Equal<string?>(null, SessionStore.NormalizeColor(invalid));
+        Equal("#ABCDEF", SessionStore.FormatColor(SessionStore.ParseColor("#abcdef")));
+        Equal("light", SessionStore.NormalizeColorTheme(SessionStore.CustomTheme));
+        Equal("light", SessionStore.Normalize(new SessionState { ColorTheme = "custom" }).ColorTheme);
+        Equal("light", SessionStore.Normalize(new SessionState { ColorTheme = "custom", CustomAccent = "#112233", CustomBackground = "invalid" }).ColorTheme);
+        var custom = new SessionState { ColorTheme = " CUSTOM ", CustomAccent = "#abcdef", CustomBackground = "#f7f3e8" };
+        var path = FilePath("custom-colors", "session.json");
+        SessionStore.Save(path, custom);
+        var restored = SessionStore.Load(path, out var warning);
+        Equal<string?>(null, warning);
+        Equal("custom", restored.ColorTheme);
+        Equal("#ABCDEF", restored.CustomAccent);
+        Equal("#F7F3E8", restored.CustomBackground);
+        SessionStore.Save(path, restored with { ColorTheme = "dark" });
+        var preset = SessionStore.Load(path);
+        Equal("dark", preset.ColorTheme);
+        Equal(restored.CustomAccent, preset.CustomAccent);
+        Equal(restored.CustomBackground, preset.CustomBackground);
+        var invalidSeeds = SessionStore.Normalize(preset with { CustomAccent = "#xyzxyz" });
+        Equal<string?>(null, invalidSeeds.CustomAccent);
+        Equal("#F7F3E8", invalidSeeds.CustomBackground);
     }
 
     private static void LanguageRetention()

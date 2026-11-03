@@ -107,6 +107,12 @@ internal static partial class Program
                 Console.WriteLine($"UPDATE_INSTALL_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--custom-colors"])
+            {
+                RunCustomColorsScenario(root);
+                Console.WriteLine($"CUSTOM_COLORS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--convenience"])
             {
                 RunConvenienceScenario(root);
@@ -311,6 +317,7 @@ internal static partial class Program
             RunPdfScenario(root);
             RunTabStripScenario(root);
             RunConvenienceScenario(root);
+            RunCustomColorsScenario(root);
             RunBreadcrumbDpiScenario(root, null);
             RunExplorerParityScenario(root);
             RunResizeMetric(root);
@@ -792,6 +799,7 @@ internal static partial class Program
         Check(Math.Abs(restored.FolderTreeHeight - 200) <= 1, "resized folder tree height persists");
         Check(!restored.GlobalHotkey, "Win+Alt+E setting persists");
         RunWinEScenario();
+        RunStartupScenario(root);
         Task.Run(RunUpdateInstallScenario).GetAwaiter().GetResult();
     }
 
@@ -1354,6 +1362,124 @@ internal static partial class Program
             shortcut.Disable();
             using (var icon = root.OpenSubKey(WinEShortcut.ClassKey + @"\DefaultIcon"))
                 Check(icon?.GetValue("") as string == "kept" && !shortcut.IsEnabled, "turning Win+E off keeps other per-user CLSID settings");
+        }
+        finally
+        {
+            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(rootPath, throwOnMissingSubKey: false);
+            using var parent = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\FolderSplitterTests");
+            if (parent is { SubKeyCount: 0 }) Microsoft.Win32.Registry.CurrentUser.DeleteSubKey(@"Software\FolderSplitterTests", false);
+        }
+    }
+
+    // All startup writes stay under a throwaway root, never the user's real Run key.
+    private static void RunStartupScenario(string scratch)
+    {
+        string rootPath = @"Software\FolderSplitterTests\" + Guid.NewGuid().ToString("N");
+        const string executable = @"C:\Apps\Folder Splitter\FolderSplitter.exe";
+        const string command = "\"C:\\Apps\\Folder Splitter\\FolderSplitter.exe\" --hidden";
+        try
+        {
+            using var root = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(rootPath);
+            var startup = new StartupRegistration(root, executable, SessionStore.DefaultPath);
+            Check(startup.IsSupported && !startup.IsEnabled, "startup registration is supported but off when missing");
+            startup.Enable();
+            using (var run = root.OpenSubKey(StartupRegistration.RunKey))
+                Check(startup.IsEnabled && run?.GetValue(StartupRegistration.ValueName) as string == command,
+                    "startup registration quotes the executable and starts hidden with the default session omitted");
+
+            using (var approval = root.CreateSubKey(StartupRegistration.ApprovalKey))
+                approval.SetValue(StartupRegistration.ValueName, new byte[] { 0x03, 0, 0, 0 }, Microsoft.Win32.RegistryValueKind.Binary);
+            Check(!startup.IsEnabled, "Task Manager can turn startup off");
+            startup.EnsureRegistered();
+            using (var approval = root.OpenSubKey(StartupRegistration.ApprovalKey))
+                Check(!startup.IsEnabled && approval?.GetValue(StartupRegistration.ValueName) is byte[] { Length: > 0 } state && state[0] == 0x03,
+                    "automatic registration preserves Task Manager's disabled state");
+            startup.Enable();
+            using (var approval = root.OpenSubKey(StartupRegistration.ApprovalKey))
+                Check(startup.IsEnabled && approval?.GetValue(StartupRegistration.ValueName) is null,
+                    "explicitly enabling startup clears Task Manager's disabled state");
+
+            using (var run = root.CreateSubKey(StartupRegistration.RunKey))
+                run.SetValue(StartupRegistration.ValueName, "\"C:\\Old Folder\\FolderSplitter.exe\" --hidden");
+            startup.EnsureRegistered();
+            using (var run = root.OpenSubKey(StartupRegistration.RunKey))
+                Check(startup.IsEnabled && run?.GetValue(StartupRegistration.ValueName) as string == command,
+                    "automatic registration updates a moved executable");
+
+            // Another copy that still exists keeps the registration, as when the app is opened from inside a ZIP.
+            string otherCopy = $"\"{Environment.ProcessPath}\" --hidden";
+            using (var run = root.CreateSubKey(StartupRegistration.RunKey))
+                run.SetValue(StartupRegistration.ValueName, otherCopy);
+            startup.EnsureRegistered();
+            using (var run = root.OpenSubKey(StartupRegistration.RunKey))
+                Check(run?.GetValue(StartupRegistration.ValueName) as string == otherCopy,
+                    "launching does not take the registration from another copy that still exists");
+            startup.Enable();
+
+            var custom = new StartupRegistration(root, executable, @"C:\Session Files\custom session.json");
+            custom.Enable();
+            using (var run = root.OpenSubKey(StartupRegistration.RunKey))
+                Check(custom.IsEnabled && run?.GetValue(StartupRegistration.ValueName) as string
+                    == command + " --session \"C:\\Session Files\\custom session.json\"",
+                    "startup registration quotes custom session paths containing spaces");
+
+            using (var run = root.CreateSubKey(StartupRegistration.RunKey))
+                run.SetValue("Unrelated application", "kept");
+            using (var approval = root.CreateSubKey(StartupRegistration.ApprovalKey))
+            {
+                approval.SetValue(StartupRegistration.ValueName, new byte[] { 0x02, 0, 0, 0 });
+                approval.SetValue("Unrelated application", new byte[] { 0x03 });
+            }
+            custom.Disable();
+            using (var run = root.OpenSubKey(StartupRegistration.RunKey))
+            using (var approval = root.OpenSubKey(StartupRegistration.ApprovalKey))
+                Check(!custom.IsEnabled && run?.GetValue(StartupRegistration.ValueName) is null
+                    && run?.GetValue("Unrelated application") as string == "kept"
+                    && approval?.GetValue(StartupRegistration.ValueName) is null
+                    && approval?.GetValue("Unrelated application") is byte[] { Length: 1 },
+                    "disabling startup removes only our Run and approval values, leaving unrelated entries and keys");
+            Check(!new StartupRegistration(root, @"C:\Program Files\dotnet\dotnet.exe", null).IsSupported,
+                "dotnet-hosted applications do not support startup registration");
+            Check(!new StartupRegistration(root, @"C:\Apps\FolderSplitter.dll", null).IsSupported,
+                "startup registration requires an executable");
+
+            // The window registers itself when shown, and turning the option off is saved with the session.
+            string folder = Directory.CreateDirectory(Path.Combine(scratch, "Startup")).FullName;
+            string session = Path.Combine(scratch, "startup.json");
+            SessionStore.Save(session, new SessionState
+            {
+                Language = "en", GlobalHotkey = false, KeepInTray = false, CheckUpdates = false, AutoUpdate = false,
+                ExplorerFavoritesImported = true, Panes = [new PaneState { Tabs = [folder] }]
+            });
+            var windowStartup = new StartupRegistration(root, executable, session);
+            string windowCommand = $"{command} --session \"{session}\"";
+            LaunchStartupForm(form =>
+            {
+                using (var run = root.OpenSubKey(StartupRegistration.RunKey))
+                    Check(run?.GetValue(StartupRegistration.ValueName) as string == windowCommand,
+                        "a window allowed to register at launch writes its command when shown");
+                form.SetStartWithWindows(false);
+                using (var run = root.OpenSubKey(StartupRegistration.RunKey))
+                    Check(run?.GetValue(StartupRegistration.ValueName) is null, "turning the setting off removes the registration");
+            });
+            Check(!SessionStore.Load(session).StartWithWindows, "turning startup off is saved with the session");
+            LaunchStartupForm(_ =>
+            {
+                using var run = root.OpenSubKey(StartupRegistration.RunKey);
+                Check(run?.GetValue(StartupRegistration.ValueName) is null, "a session with startup off does not register at launch");
+            });
+
+            void LaunchStartupForm(Action<MainForm> steps)
+            {
+                using var form = new MainForm(session, [], null, [folder]) { RegisterStartupOnLaunch = true, Startup = windowStartup };
+                form.Shown += (_, _) =>
+                {
+                    try { steps(form); }
+                    catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
+                    finally { form.ExitApplication(); }
+                };
+                Application.Run(form);
+            }
         }
         finally
         {

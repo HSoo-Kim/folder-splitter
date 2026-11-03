@@ -57,9 +57,12 @@ internal static class Program
         var search = new IndependentSearchBackend(roots, storePath);
         _ = search.BuildOrLoadAsync().ContinueWith(task => System.Diagnostics.Debug.WriteLine(task.Exception),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        // Only the default session registers itself at launch: a work or test session started with --session
+        // must not take over the one Run value. Any session can still turn the option on in Settings.
+        bool registerStartup = sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase);
         Application.Run(new MainForm(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync)
         {
-            StartMinimized = hidden || minimized, StartHidden = hidden
+            StartMinimized = hidden || minimized, StartHidden = hidden, RegisterStartupOnLaunch = registerStartup
         });
     }
 

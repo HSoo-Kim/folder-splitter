@@ -107,6 +107,8 @@ internal static class Theme
         ["latte"] = Latte, ["everforest-dark"] = EverforestDark, ["nord"] = Nord, ["mocha"] = Mocha
     };
     private static Palette current = Light;
+    private static Palette previous = Light;
+    private static readonly List<Palette> CustomPalettes = [];
     private static readonly FlatRenderer Renderer = new();
     private const int CornerRadius = 7;
     private const int PaintInset = 2;
@@ -145,9 +147,26 @@ internal static class Theme
 
     public static void Set(string mode)
     {
-        current = Palettes.TryGetValue(mode?.Trim().ToLowerInvariant() ?? "", out var palette) ? palette
+        var next = Palettes.TryGetValue(mode?.Trim().ToLowerInvariant() ?? "", out var palette) ? palette
             : throw new ArgumentException("Unknown color theme.", nameof(mode));
+        previous = current;
+        current = next;
     }
+
+    public static void SetCustom(Color accent, Color background)
+    {
+        var colors = PaletteGenerator.Generate(accent, background);
+        var next = new Palette(colors.Canvas, colors.Surface, colors.Border, colors.Text, colors.Muted,
+            colors.Accent, colors.Selected, colors.ErrorText, colors.Hover, colors.Pressed, colors.Dark);
+        previous = current;
+        current = next;
+        if (!CustomPalettes.Contains(next)) CustomPalettes.Add(next);
+    }
+
+    // Recolor looks up the previous palette first so a switch maps every role correctly. Once the whole
+    // window has been recolored that lookup must stop: two palettes can share an RGB value for different
+    // roles, and a later Apply (a layout or font change) would otherwise map the shared color to the old role.
+    public static void EndTransition() => previous = current;
 
     // Does not create handles, activate a control, or change any system theme setting.
     public static void Apply(Control root)
@@ -180,7 +199,9 @@ internal static class Theme
             menu.Opening -= MenuOpening;
             menu.Opening += MenuOpening;
         }
-        foreach (Control child in control.Controls) ApplyControl(child);
+        // A strip's child controls are the ones its items host; ApplyStrip has already recolored them once.
+        if (control is not ToolStrip)
+            foreach (Control child in control.Controls) ApplyControl(child);
         control.Invalidate();
     }
 
@@ -209,9 +230,19 @@ internal static class Theme
         foreach (ToolStripItem item in strip.Items)
         {
             if (item is ToolStripSeparator && ReferenceEquals(strip.Tag, OutlineItems)) item.Margin = new Padding(3, 0, 3, 0);
-            item.BackColor = strip.BackColor;
-            item.ForeColor = Recolor(item.ForeColor, true, Text);
-            if (item is ToolStripControlHost host) ApplyControl(host.Control);
+            if (item is ToolStripControlHost host)
+            {
+                // The hosted control shares the item's colors. Recolor them once, from the control's own
+                // colors: recoloring the strip's already-current color again could read it as another role
+                // of the previous palette when the two palettes share that RGB value.
+                ApplyControl(host.Control);
+                host.BackColor = strip.BackColor;
+            }
+            else
+            {
+                item.BackColor = strip.BackColor;
+                item.ForeColor = Recolor(item.ForeColor, true, Text);
+            }
             if (item is ToolStripDropDownItem { HasDropDownItems: true } dropDown)
                 ApplyStrip(dropDown.DropDown);
             item.Invalidate();
@@ -221,7 +252,15 @@ internal static class Theme
 
     private static Color Recolor(Color value, bool foreground, Color fallback)
     {
+        if (Match(previous) is { } old) return old;
+        if (Match(current) is { } active) return active;
         foreach (Palette palette in Palettes.Values)
+            if (Match(palette) is { } preset) return preset;
+        foreach (Palette palette in CustomPalettes)
+            if (Match(palette) is { } custom) return custom;
+        return value.IsSystemColor || value.IsEmpty ? fallback : value;
+
+        Color? Match(Palette palette)
         {
             int argb = value.ToArgb();
             if (foreground)
@@ -238,9 +277,14 @@ internal static class Theme
                 if (argb == palette.Border.ToArgb()) return Border;
                 if (argb == palette.Accent.ToArgb()) return Accent;
                 if (argb == palette.Selected.ToArgb()) return Selected;
+                if (argb == palette.Hover.ToArgb()) return Hover;
+                if (argb == palette.Pressed.ToArgb()) return current.Pressed;
+                if (argb == (palette.SidebarColor ?? palette.Canvas).ToArgb()) return Sidebar;
+                if (argb == (palette.ListColor ?? palette.Surface).ToArgb()) return ListBack;
+                if (argb == (palette.SortColor ?? palette.Canvas).ToArgb()) return SortColumn;
             }
+            return null;
         }
-        return value.IsSystemColor || value.IsEmpty ? fallback : value;
     }
 
     // Only this process's supplied HWND and its children are touched. ExplorerBrowser

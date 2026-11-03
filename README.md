@@ -38,7 +38,7 @@ A Windows file manager built on the native Shell file list (`IExplorerBrowser`).
 | **Preview in place** | View images and multi-page PDFs beside the list. Pin a file, or open previews in separate windows to compare. |
 | **Compare and organize** | Find files that exist on one side only, are newer or differ in size, then copy or move them to the other pane. Batch renames show every new name first. |
 | **Pick up where you left off** | Tabs and layout restore on launch. Save named workspaces, and bring the app back from anywhere with `Win+Alt+E`. |
-| **Native, and yours to adjust** | Windows context menus, drag and drop and copy dialogs stay native. Choose from 15 themes, fonts, row spacing and an optional command bar. |
+| **Native, and yours to adjust** | Windows context menus, drag and drop and copy dialogs stay native. Choose from 15 themes or your own colors, fonts, row spacing and an optional command bar. |
 
 [Full feature list](#features)
 
@@ -159,6 +159,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **Top toolbar**: The pin immediately left of `Sidebar` keeps the global toolbar visible. Unpin it to hide the bar; rest the pointer on the draggable title bar for about 0.35 seconds to reveal it over the workspace. Pin it again or press `Ctrl+Shift+F11` to toggle the saved preference.
 - **Color themes**: Choose from 15 in the menu at the top right: the standard `Light` and `Dark`, the easier-on-the-eyes `Beige`, `Soft green`, `Sky blue`, `Pastel blue` and `Soft dark`, and eight mixed palettes based on well-known design palettes (Solarized, Everforest, Gruvbox, Rosé Pine, Catppuccin, Nord) that give the top bar, sidebar, file list and sorted column their own colors.
   ![The 15 Folder Splitter color theme palettes](docs/images/folder-splitter-themes-v0.7.29.png)
+- **Custom colors**: `Custom colors…` at the bottom of the same menu builds a matching theme from an accent and a background color, picked from the swatches or any color. The chosen colors are adjusted where needed so text stays easy to read.
 - **Font and text size**: In `Settings` → `Font and text size`, pick an installed font (Malgun Gothic, Pretendard, NanumGothic and others) and small, normal or large text; the file lists change too.
 - **Active pane outline**: A thicker outline identifies the active pane. In `View` → `Active pane color`, choose the theme default, blue, green or amber. The choice applies to every pane and is saved across restarts.
 - **List appearance**: Each pane's `View` menu groups its options by scope: this pane only, all panes, and Windows-wide settings. For all panes you can hide the command bar (the filter is still on `Ctrl+F` and the other commands are in the pane options), toggle vertical separators and sorted-column highlighting (both off by default), and choose `Compact` or `Comfortable` row spacing (default). Comfortable spacing only adds room between rows; icons and text keep their size.
@@ -179,11 +180,12 @@ File lists are native Windows lists, so column sorting and right-click menus are
 | Closing the window (X) | The app keeps running among the hidden icons in the notification area. A one-time notice explains this. |
 | `Win+E` | Opens Folder Splitter only if turned on in `Settings`; otherwise File Explorer opens. Pressing it again while the app is in front hides it, like Win+Alt+E. |
 | Launching it again | Brings the existing window back instead of opening another. |
+| Signing in to Windows | Folder Splitter starts in the notification area (minimized when that option is off). On by default; turn it off in `Settings` or in Task Manager's Startup apps. |
 
 - **Quit completely**: Right-click the notification-area icon → `Exit`.
-- **In `Settings`**: Win+Alt+E, keeping running in the notification area, Win+E replacement, update checks and automatic update install.
+- **In `Settings`**: starting with Windows, Win+Alt+E, keeping running in the notification area, Win+E replacement, update checks and automatic update install.
 - With the notification-area option off, X quits and a second Win+Alt+E minimizes.
-- The Win+E setting only creates and removes one entry in your user registry (HKCU) and needs no administrator rights.
+- The Win+E and start-with-Windows settings only create and remove Folder Splitter's own entries in your user registry (HKCU) and need no administrator rights.
 
 ## Compared with Q-Dir
 
@@ -265,7 +267,7 @@ You can point to a different settings path for a separate work session or for te
 .\FolderSplitter.exe --session C:\Work\folder-session.json C:\Projects D:\Research
 ```
 
-Extra folder arguments open as new tabs in the active pane.
+Extra folder arguments open as new tabs in the active pane. A separate session starts with Windows only if you turn that on in its `Settings`; it never replaces the default session's startup entry on its own.
 
 ## Building from source
 

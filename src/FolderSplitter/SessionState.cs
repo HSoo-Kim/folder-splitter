@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Security;
 using System.Text.Json;
@@ -25,6 +27,8 @@ public sealed record SessionState
 {
     public string Language { get; init; } = "ko";
     public string ColorTheme { get; init; } = "light";
+    public string? CustomAccent { get; init; }
+    public string? CustomBackground { get; init; }
     // Application-wide active pane outline; default follows the selected palette.
     public string ActivePaneColor { get; init; } = "default";
     // Null keeps the standard font; TextSize is small, normal or large.
@@ -39,6 +43,7 @@ public sealed record SessionState
     public bool HighlightSortedColumn { get; init; }
     public int FolderTreeHeight { get; init; }
     public bool GlobalHotkey { get; init; } = true;
+    public bool StartWithWindows { get; init; } = true;
     // Replaces 0.7.5's CloseToTray (stored off by default) so everyone starts with the new default.
     public bool KeepInTray { get; init; } = true;
     public bool TrayNoticeShown { get; init; }
@@ -72,6 +77,7 @@ public sealed record SessionState
 
 public static class SessionStore
 {
+    public const string CustomTheme = "custom";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public static string DefaultPath => Path.Combine(
@@ -180,10 +186,13 @@ public static class SessionStore
         int active = hasTree
             ? visible.Contains(state.ActivePane) ? state.ActivePane : visible[0]
             : Math.Clamp(state.ActivePane, 0, layout - 1);
+        string? accent = NormalizeColor(state.CustomAccent), background = NormalizeColor(state.CustomBackground);
         return state with
         {
             Language = NormalizeLanguage(state.Language),
-            ColorTheme = NormalizeColorTheme(state.ColorTheme),
+            ColorTheme = string.Equals(state.ColorTheme?.Trim(), CustomTheme, StringComparison.OrdinalIgnoreCase)
+                && accent is not null && background is not null ? CustomTheme : NormalizeColorTheme(state.ColorTheme),
+            CustomAccent = accent, CustomBackground = background,
             ActivePaneColor = NormalizeActivePaneColor(state.ActivePaneColor),
             FontFamily = string.IsNullOrWhiteSpace(state.FontFamily) || state.FontFamily.Trim().Length > 64 ? null : state.FontFamily.Trim(),
             TextSize = state.TextSize is "small" or "large" ? state.TextSize : "normal",
@@ -246,6 +255,23 @@ public static class SessionStore
 
     public static readonly string[] ColorThemes = ["light", "dark", "beige", "green", "sky", "pastel", "dim",
         "solarized", "everforest", "gruvbox", "rosepine", "latte", "everforest-dark", "nord", "mocha"];
+
+    public static string? NormalizeColor(string? color)
+    {
+        string? hex = color?.Trim();
+        return hex is { Length: 7 } && hex[0] == '#'
+            && int.TryParse(hex.AsSpan(1), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out _)
+            ? hex.ToUpperInvariant() : null;
+    }
+
+    public static Color ParseColor(string hex)
+    {
+        string normalized = NormalizeColor(hex) ?? throw new ArgumentException("Expected #RRGGBB.", nameof(hex));
+        int rgb = int.Parse(normalized.AsSpan(1), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
+        return Color.FromArgb(255, (rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+    }
+
+    public static string FormatColor(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
 
     public static string NormalizeActivePaneColor(string? color) => color?.Trim().ToLowerInvariant() switch
     {

@@ -38,6 +38,8 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly uint activationMessage;
     private readonly ToolStripMenuItem hotkeyItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem winEItem = new() { CheckOnClick = true };
+    private readonly ToolStripMenuItem startupItem = new() { CheckOnClick = true };
+    private bool startWithWindows;
     private readonly WinEShortcut winE = WinEShortcut.ForCurrentUser();
     private bool globalHotkey;
     private readonly NotifyIcon trayIcon = new() { Text = "Folder Splitter" };
@@ -47,6 +49,7 @@ public sealed class MainForm : Form, IMessageFilter
     private bool trayNoticeShown;
     private readonly ToolStripDropDownButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
+    private string? customAccent, customBackground;
     private string activePaneColor;
     private bool showFolderTree;
     private readonly List<Action> languageBindings = [];
@@ -141,6 +144,8 @@ public sealed class MainForm : Form, IMessageFilter
     private (nint Header, nint List, int Column, int StartX, int StartWidth)? columnDrag;
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartMinimized { get; init; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartHidden { get; init; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool RegisterStartupOnLaunch { get; init; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal StartupRegistration Startup { get; set; }
     // Tests replace the process launch; it receives the arguments and reports whether a new instance started.
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal Func<IReadOnlyList<string>, bool>? RestartLauncher { get; set; }
     private readonly List<Workspace> workspaces;
@@ -162,8 +167,11 @@ public sealed class MainForm : Form, IMessageFilter
         this.search = search;
         this.latestRelease = latestRelease;
         this.sessionPath = sessionPath;
+        Startup = StartupRegistration.ForCurrentUser(sessionPath);
         initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
         colorTheme = initialState.ColorTheme;
+        customAccent = initialState.CustomAccent;
+        customBackground = initialState.CustomBackground;
         activePaneColor = initialState.ActivePaneColor;
         fontFamily = initialState.FontFamily is { } face && FontInstalled(face) ? face : null;
         textSize = initialState.TextSize;
@@ -171,12 +179,13 @@ public sealed class MainForm : Form, IMessageFilter
         showFolderTree = initialState.ShowFolderTree;
         folderTreeHeight = initialState.FolderTreeHeight;
         globalHotkey = initialState.GlobalHotkey;
+        startWithWindows = initialState.StartWithWindows;
         closeToTray = initialState.KeepInTray;
         trayNoticeShown = initialState.TrayNoticeShown;
         checkUpdates = initialState.CheckUpdates;
         autoUpdate = initialState.AutoUpdate;
         activationMessage = Program.ActivationMessage(sessionPath);
-        Theme.Set(colorTheme);
+        ApplyColorTheme();
         text = new UiText(initialState.Language);
         layoutTree = initialState.LayoutTree!;
         visiblePanes = layoutTree.GetPanes().Order().ToArray();
@@ -520,6 +529,11 @@ public sealed class MainForm : Form, IMessageFilter
         Shown += (_, _) =>
         {
             if (StartHidden && closeToTray) BeginInvoke(Hide);
+            if (RegisterStartupOnLaunch && startWithWindows && Startup.IsSupported)
+            {
+                try { Startup.EnsureRegistered(); }
+                catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
+            }
             memoryTimer.Start();
             if (initialState.Maximized && !StartMinimized) WindowState = FormWindowState.Maximized;
             UpdateMinimumSize();
@@ -732,6 +746,13 @@ public sealed class MainForm : Form, IMessageFilter
                 item.Click += (_, _) => SetColorTheme(mode);
                 themeButton.DropDownItems.Add(item);
             }
+            themeButton.DropDownItems.Add(new ToolStripSeparator());
+            var custom = new ToolStripMenuItem(text.T("Custom colors…"))
+            {
+                AccessibleName = "Custom colors", Checked = colorTheme == SessionStore.CustomTheme
+            };
+            custom.Click += (_, _) => ShowCustomColors();
+            themeButton.DropDownItems.Add(custom);
             Theme.Apply(toolbar);
         };
         themeButton.Alignment = ToolStripItemAlignment.Right;
@@ -789,14 +810,22 @@ public sealed class MainForm : Form, IMessageFilter
         BindIcon(settings, "\uE713", "Shortcuts and Windows integration");
         BindText(hotkeyItem, "Win+Alt+E brings Folder Splitter to the front");
         BindText(winEItem, "Open Folder Splitter with Win+E instead of File Explorer");
+        BindText(startupItem, "Start Folder Splitter with Windows");
         hotkeyItem.Checked = globalHotkey;
         hotkeyItem.CheckedChanged += (_, _) => SetGlobalHotkey(hotkeyItem.Checked);
         winEItem.Click += (_, _) => SetWinEShortcut(winEItem.Checked);
-        settings.DropDownOpening += (_, _) => winEItem.Checked = winE.IsEnabled;
+        startupItem.Click += (_, _) => SetStartWithWindows(startupItem.Checked);
+        settings.DropDownOpening += (_, _) =>
+        {
+            winEItem.Checked = winE.IsEnabled;
+            startupItem.Checked = Startup.IsEnabled;
+            startupItem.Enabled = Startup.IsSupported;
+        };
         try { winE.UpgradeLegacy(); }
         catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
         settings.DropDownItems.Add(hotkeyItem);
         settings.DropDownItems.Add(winEItem);
+        settings.DropDownItems.Add(startupItem);
         BindText(trayItem, "Keep running in the notification area when closed");
         trayItem.Checked = closeToTray;
         trayItem.CheckedChanged += (_, _) => SetCloseToTray(trayItem.Checked);
@@ -1019,10 +1048,37 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetColorTheme(string mode)
     {
-        colorTheme = SessionStore.NormalizeColorTheme(mode);
-        Theme.Set(colorTheme);
+        colorTheme = string.Equals(mode?.Trim(), SessionStore.CustomTheme, StringComparison.OrdinalIgnoreCase)
+            && customAccent is not null && customBackground is not null
+            ? SessionStore.CustomTheme : SessionStore.NormalizeColorTheme(mode);
+        ApplyColorTheme();
         ApplyAppearance();
         ScheduleSave();
+    }
+
+    private void ApplyColorTheme()
+    {
+        if (colorTheme == SessionStore.CustomTheme && customAccent is not null && customBackground is not null)
+            Theme.SetCustom(SessionStore.ParseColor(customAccent), SessionStore.ParseColor(customBackground));
+        else Theme.Set(colorTheme);
+    }
+
+    internal void SetCustomColors(Color accent, Color background)
+    {
+        customAccent = SessionStore.FormatColor(accent);
+        customBackground = SessionStore.FormatColor(background);
+        colorTheme = SessionStore.CustomTheme;
+        ApplyColorTheme();
+        ApplyAppearance();
+        ScheduleSave();
+    }
+
+    private void ShowCustomColors()
+    {
+        using var dialog = new CustomColorsDialog(text,
+            customAccent is null ? Theme.Accent : SessionStore.ParseColor(customAccent),
+            customBackground is null ? Theme.Canvas : SessionStore.ParseColor(customBackground), this);
+        if (dialog.ShowDialog(this) == DialogResult.OK) SetCustomColors(dialog.Accent, dialog.Background);
     }
 
     internal void SetActivePaneColor(string color)
@@ -1041,6 +1097,7 @@ public sealed class MainForm : Form, IMessageFilter
     // Palettes named after their design source keep that name in every language.
     private string ThemeLabel(string mode) => mode switch
     {
+        SessionStore.CustomTheme => text.T("Custom colors"),
         "dark" => text.T("Dark mode"), "beige" => text.T("Beige"), "green" => text.T("Soft green"), "sky" => text.T("Sky blue"), "pastel" => text.T("Pastel blue"), "dim" => text.T("Soft dark"),
         "solarized" => "Solarized Light", "everforest" => "Everforest Light", "gruvbox" => "Gruvbox Light",
         "rosepine" => "Rosé Pine Dawn", "latte" => "Catppuccin Latte", "everforest-dark" => "Everforest Dark",
@@ -1140,6 +1197,7 @@ public sealed class MainForm : Form, IMessageFilter
         previewSplitter.BackColor = Theme.Border;
         RefreshThemeButton();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
+        Theme.EndTransition();
     }
 
     // The other pane is the one used just before the active pane, or else the first other visible pane (lowest number).
@@ -1704,6 +1762,25 @@ public sealed class MainForm : Form, IMessageFilter
             Active.SetLocalizedStatus("Could not change the Win+E setting: {0}", error.Message);
         }
         winEItem.Checked = winE.IsEnabled;
+    }
+
+    internal void SetStartWithWindows(bool enabled)
+    {
+        startWithWindows = enabled;
+        try
+        {
+            try
+            {
+                if (enabled) Startup.Enable();
+                else Startup.Disable();
+            }
+            finally { startupItem.Checked = Startup.IsEnabled; }
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            Active.SetLocalizedStatus("Could not change the startup setting: {0}", error.Message);
+        }
+        ScheduleSave();
     }
 
     // Win+Alt+E and Win+E bring this window forward and put it away when it is already in front.
@@ -2639,9 +2716,11 @@ public sealed class MainForm : Form, IMessageFilter
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowDetails = showDetails, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
+                CustomAccent = customAccent, CustomBackground = customBackground,
                 ActivePaneColor = activePaneColor,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate, ShowCommandBar = showCommandBar,
+                StartWithWindows = startWithWindows,
                 GlobalToolbarPinned = globalToolbarPinned,
                 ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows, HighlightSortedColumn = highlightSortedColumn,
                 ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
