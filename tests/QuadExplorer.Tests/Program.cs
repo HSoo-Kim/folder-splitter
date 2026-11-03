@@ -14,6 +14,11 @@ internal static class Program
             ("startup defaults on for legacy sessions and explicit off persists", StartupPreferences),
             ("theme and tree preferences normalize and persist", AppearancePreferences),
             ("custom color seeds normalize and persist independently of presets", CustomColors),
+            ("recent custom colors remember newest first without mutating input", RememberCustomColors),
+            ("recent custom colors normalize, deduplicate and seed legacy colors", NormalizeRecentCustomColors),
+            ("recent custom colors persist and legacy sessions seed the list", RecentCustomColorsRoundtrip),
+            ("picker colors normalize in slot order without deduplicating or mutating input", NormalizePickerColors),
+            ("picker colors roundtrip and legacy sessions start empty", PickerColorsRoundtrip),
             ("all selected languages persist without altering session data", LanguageRetention),
             ("Unicode session roundtrip and atomic replacement", Roundtrip),
             ("invalid and null JSON normalization", InvalidJsonData),
@@ -188,6 +193,144 @@ internal static class Program
         var invalidSeeds = SessionStore.Normalize(preset with { CustomAccent = "#xyzxyz" });
         Equal<string?>(null, invalidSeeds.CustomAccent);
         Equal("#F7F3E8", invalidSeeds.CustomBackground);
+    }
+
+    private static void RememberCustomColors()
+    {
+        var pairs = Enumerable.Range(0, 8).Select(index => new CustomColorPair
+        {
+            Background = $"#0000{index:X2}", Accent = $"#AABB{index:X2}"
+        }).ToList();
+        var recent = new List<CustomColorPair>();
+        foreach (var pair in pairs)
+            recent = SessionStore.RememberCustomColors(recent,
+                SessionStore.ParseColor(pair.Background!), SessionStore.ParseColor(pair.Accent!));
+        Equal(6, SessionStore.RecentCustomColorLimit);
+        Sequence(pairs.Skip(2).Reverse(), recent);
+
+        var before = recent.ToArray();
+        var chosen = pairs[4];
+        var reordered = SessionStore.RememberCustomColors(recent,
+            SessionStore.ParseColor(chosen.Background!), SessionStore.ParseColor(chosen.Accent!));
+        Sequence(new[] { chosen }.Concat(before.Where(pair => pair != chosen)), reordered);
+        Sequence(before, recent);
+        Equal(false, ReferenceEquals(recent, reordered));
+
+        var duplicateInput = new List<CustomColorPair>
+        {
+            chosen with { Accent = chosen.Accent!.ToLowerInvariant() },
+            pairs[7], chosen, pairs[7], pairs[6], pairs[5], pairs[3], pairs[2]
+        };
+        var duplicateBefore = duplicateInput.ToArray();
+        var deduplicated = SessionStore.RememberCustomColors(duplicateInput,
+            SessionStore.ParseColor(chosen.Background!), SessionStore.ParseColor(chosen.Accent!));
+        Sequence(new[] { chosen, pairs[7], pairs[6], pairs[5], pairs[3], pairs[2] }, deduplicated);
+        Sequence(duplicateBefore, duplicateInput);
+    }
+
+    private static void NormalizeRecentCustomColors()
+    {
+        var first = new CustomColorPair { Background = "#abcdef", Accent = " #123abc " };
+        var extra = Enumerable.Range(0, 8).Select(index => new CustomColorPair
+        {
+            Background = $"#1122{index:X2}", Accent = $"#3344{index:X2}"
+        }).ToList();
+        var source = new List<CustomColorPair>
+        {
+            null!, new(), new() { Background = "#FFFFFF" }, new() { Accent = "#FFFFFF" },
+            new() { Background = "invalid", Accent = "#FFFFFF" },
+            new() { Background = "#FFFFFF", Accent = "#GG1234" },
+            first, new() { Background = "#ABCDEF", Accent = "#123ABC" }
+        };
+        source.AddRange(extra);
+        var before = source.ToArray();
+        var normalized = SessionStore.Normalize(new SessionState
+        {
+            CustomBackground = "#998877", CustomAccent = "#665544", RecentCustomColors = source
+        });
+        Sequence(new[] { new CustomColorPair { Background = "#ABCDEF", Accent = "#123ABC" } }
+            .Concat(extra.Take(5)), normalized.RecentCustomColors);
+        Equal(6, normalized.RecentCustomColors.Count);
+        Sequence(before, source);
+        normalized.RecentCustomColors.Clear();
+        Sequence(before, source);
+
+        var expectedSeed = new CustomColorPair { Background = "#ABCDEF", Accent = "#123ABC" };
+        var seedState = new SessionState { CustomBackground = " #abcdef ", CustomAccent = "#123abc" };
+        Sequence(new[] { expectedSeed }, SessionStore.Normalize(seedState).RecentCustomColors);
+        Sequence(new[] { expectedSeed }, SessionStore.Normalize(seedState with
+        {
+            RecentCustomColors = [new() { Background = "#123456", Accent = "invalid" }]
+        }).RecentCustomColors);
+        Sequence(new[] { expectedSeed }, SessionStore.Normalize(seedState with
+        {
+            RecentCustomColors = null!
+        }).RecentCustomColors);
+        Equal(0, SessionStore.Normalize(new SessionState()).RecentCustomColors.Count);
+        Equal(0, SessionStore.Normalize(seedState with { CustomAccent = null }).RecentCustomColors.Count);
+        Equal(0, SessionStore.Normalize(seedState with { CustomBackground = "invalid" }).RecentCustomColors.Count);
+        Sequence(new[] { extra[0] }, SessionStore.Normalize(seedState with
+        {
+            RecentCustomColors = [extra[0]]
+        }).RecentCustomColors);
+    }
+
+    private static void RecentCustomColorsRoundtrip()
+    {
+        var pairs = new List<CustomColorPair>
+        {
+            new() { Background = "#112233", Accent = "#ABCDEF" },
+            new() { Background = "#FFFFFF", Accent = "#445566" }
+        };
+        var path = FilePath("recent-custom-colors", "session.json");
+        SessionStore.Save(path, new SessionState
+        {
+            ColorTheme = "custom", CustomBackground = pairs[0].Background, CustomAccent = pairs[0].Accent,
+            RecentCustomColors = pairs
+        });
+        var restored = SessionStore.Load(path, out var warning);
+        Equal<string?>(null, warning);
+        Sequence(pairs, restored.RecentCustomColors);
+        Equal("custom", restored.ColorTheme);
+
+        File.WriteAllText(path, """{"ColorTheme":"dark","CustomBackground":"#aabbcc","CustomAccent":"#123abc"}""");
+        var legacy = SessionStore.Load(path, out warning);
+        Equal<string?>(null, warning);
+        Equal("dark", legacy.ColorTheme);
+        Sequence(new[] { new CustomColorPair { Background = "#AABBCC", Accent = "#123ABC" } },
+            legacy.RecentCustomColors);
+    }
+
+    private static void NormalizePickerColors()
+    {
+        var source = new List<string> { null!, "", "invalid", "#ABC", " #abcdef ", "#FFFFFF", "#abcdef" };
+        source.AddRange(Enumerable.Range(0, 20).Select(index => $"#1234{index:X2}"));
+        var before = source.ToArray();
+        var normalized = SessionStore.Normalize(new SessionState { PickerColors = source });
+        Sequence(new[] { "#ABCDEF", "#FFFFFF", "#ABCDEF" }
+            .Concat(Enumerable.Range(0, 13).Select(index => $"#1234{index:X2}")), normalized.PickerColors);
+        Equal(16, normalized.PickerColors.Count);
+        Sequence(before, source);
+        normalized.PickerColors.Clear();
+        Sequence(before, source);
+        Equal(0, SessionStore.Normalize(new SessionState { PickerColors = null! }).PickerColors.Count);
+        Equal(0, SessionStore.Normalize(new SessionState()).PickerColors.Count);
+    }
+
+    private static void PickerColorsRoundtrip()
+    {
+        var colors = new List<string> { "#123456", "#FFFFFF", "#123456", "#ABCDEF", "#FFFFFF" };
+        var path = FilePath("picker-colors", "session.json");
+        SessionStore.Save(path, new SessionState { PickerColors = colors });
+        var restored = SessionStore.Load(path, out var warning);
+        Equal<string?>(null, warning);
+        Sequence(colors, restored.PickerColors);
+        File.WriteAllText(path, """{"PickerColors":["#abcdef",null,"bad","#FFFFFF"]}""");
+        Sequence(new[] { "#ABCDEF", "#FFFFFF" }, SessionStore.Load(path).PickerColors);
+        File.WriteAllText(path, """{"PickerColors":null}""");
+        Equal(0, SessionStore.Load(path).PickerColors.Count);
+        File.WriteAllText(path, """{"CustomAccent":"#123456","CustomBackground":"#FFFFFF"}""");
+        Equal(0, SessionStore.Load(path).PickerColors.Count);
     }
 
     private static void LanguageRetention()

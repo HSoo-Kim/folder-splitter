@@ -8,7 +8,10 @@ internal static class PaletteGeneratorTests
         ("generated palettes keep quantized text and semantic colors readable", Readability),
         ("generated palettes separate interaction states and text hierarchy", Hierarchy),
         ("generated palettes preserve chromatic accent hues", AccentHue),
-        ("generated palettes are deterministic and choose readable light or dark mode", DeterminismAndMode)
+        ("generated palettes are deterministic and choose readable light or dark mode", DeterminismAndMode),
+        ("generated palettes reproduce readable background and accent seeds exactly", ReadableSeeds),
+        ("generated palettes keep distinct background choices distinct", DistinctBackgrounds),
+        ("generated palettes retain background hue and chroma on calmer content", BackgroundFidelity)
     ];
 
     private static readonly Lazy<(Color Accent, Color Background, PaletteGenerator.ThemeColors Theme)[]> Sweep = new(() =>
@@ -39,9 +42,15 @@ internal static class PaletteGeneratorTests
     {
         foreach (var (accent, background, theme) in Sweep.Value)
         {
+            // White cannot have a lighter content surface; do not darken the chosen canvas to fake a gap.
             Color[] states = [theme.Canvas, theme.Surface, theme.Hover, theme.Selected, theme.Pressed];
-            Require(states.Select(color => color.ToArgb()).Distinct().Count() == states.Length,
-                "Canvas, surface and interaction states must be distinct", accent, background);
+            int expected = theme.Canvas.ToArgb() == Color.White.ToArgb() ? 4 : 5;
+            Require(states.Select(color => color.ToArgb()).Distinct().Count() == expected,
+                "Interaction states must be distinct, with separate content except on white", accent, background);
+            double direction = theme.Dark ? 1 : -1;
+            Require(direction * (Lightness(theme.Selected) - Lightness(theme.Hover)) > 0.015
+                && direction * (Lightness(theme.Pressed) - Lightness(theme.Selected)) > 0.025,
+                "Hover, selection and pressed must have visibly ordered lightness", accent, background);
             Require(Contrast(theme.Text, theme.Surface) > Contrast(theme.Muted, theme.Surface),
                 "Primary text must have stronger contrast than muted text", accent, background);
         }
@@ -73,6 +82,79 @@ internal static class PaletteGeneratorTests
         }
     }
 
+    private static void ReadableSeeds()
+    {
+        var accent = Hex("626525");
+        foreach (var hex in new[]
+        {
+            "87CEFA", "FFFFFF", "FEFEFE", "FFFFFE", "F6F7F9", "F7F3E8", "E6E5E1", "E6F2EA", "E8F1F8",
+            "EEEAF7", "F8E9ED", "EEDFC4", "25282D", "182638", "1D3028", "302336", "000000"
+        })
+        {
+            var background = Hex(hex);
+            var theme = PaletteGenerator.Generate(accent, background);
+            Require(theme.Canvas.ToArgb() == background.ToArgb(),
+                "A background with room for readable states must survive exactly", accent, background);
+        }
+        foreach (var (seed, background, theme) in Sweep.Value)
+        {
+            Color[] backs = [theme.Canvas, theme.Surface, theme.Hover, theme.Selected];
+            if (backs.All(back => Contrast(seed, back) >= PaletteGenerator.AccentContrast))
+                Require(theme.Accent.ToArgb() == seed.ToArgb(),
+                    "An already-readable accent must survive exactly", seed, background);
+        }
+        var light = Hex("F6F7F9");
+        Require(PaletteGenerator.Generate(accent, light).Accent.ToArgb() == accent.ToArgb(),
+            "The owner's readable olive accent must survive exactly", accent, light);
+        foreach (var seed in new[] { Color.Black, Hex("000080") })
+            Require(PaletteGenerator.Generate(seed, light).Accent.ToArgb() == seed.ToArgb(),
+                "Dark readable accents must not be brightened to a preset clamp", seed, light);
+    }
+
+    private static void DistinctBackgrounds()
+    {
+        var seeds = new[] { "FFFFFF", "F6F7F9", "E6E5E1", "D0D0D0", "C0C0C0", "B0B0B0", "25282D", "182638" };
+        var accent = Hex("7C8530");
+        var canvases = seeds.Select(hex => PaletteGenerator.Generate(accent, Hex(hex)).Canvas.ToArgb()).ToArray();
+        Require(canvases.Distinct().Count() == seeds.Length,
+            "White, the default, Stone, greys and dark choices must not collapse to one canvas", accent, Hex(seeds[0]));
+        var background = Hex("E6E5E1");
+        Require(PaletteGenerator.Generate(Color.Blue, background).Canvas.ToArgb()
+            == PaletteGenerator.Generate(Color.Red, background).Canvas.ToArgb(),
+            "A readable neutral canvas must not take its color from the accent", accent, background);
+    }
+
+    private static void BackgroundFidelity()
+    {
+        var accent = Hex("0078D4");
+        foreach (var hex in new[] { "87CEFA", "98FB98", "FFB6C1", "D8BFD8", "FFDAB9", "00FF00", "FFFF00", "00FFFF", "182638", "1D3028", "302336" })
+        {
+            var seed = Hex(hex);
+            var theme = PaletteGenerator.Generate(accent, seed);
+            var original = HueChroma(seed);
+            var canvas = HueChroma(theme.Canvas);
+            var surface = HueChroma(theme.Surface);
+            double canvasHue = Math.Abs(original.Hue - canvas.Hue);
+            double surfaceHue = Math.Abs(original.Hue - surface.Hue);
+            Require(Math.Min(canvasHue, 360 - canvasHue) < 5 && canvas.Chroma >= original.Chroma * 0.95,
+                "A readable chromatic canvas must retain its hue and nearly all its chroma", accent, seed);
+            Require(Math.Min(surfaceHue, 360 - surfaceHue) < 5 && surface.Chroma >= original.Chroma * 0.35
+                && surface.Chroma < canvas.Chroma && Lightness(theme.Surface) > Lightness(theme.Canvas),
+                "Content must be lighter and calmer without losing the background hue", accent, seed);
+        }
+    }
+
+    private static Color Hex(string hex) =>
+        Color.FromArgb(Convert.ToInt32(hex, 16) | unchecked((int)0xFF000000));
+
+    private static double Lightness(Color color)
+    {
+        double r = Linear(color.R), g = Linear(color.G), b = Linear(color.B);
+        return 0.2104542553 * Math.Cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+            + 0.7936177850 * Math.Cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+            - 0.0040720468 * Math.Cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    }
+
     private static IEnumerable<Color> Seeds()
     {
         // Sweep 24 hues at three independent lightness/chroma levels, then include neutral,
@@ -85,7 +167,7 @@ internal static class PaletteGeneratorTests
         }
         foreach (var hex in new[]
         {
-            "000000", "FFFFFF", "808080", "757575", "767676", "FFFF00", "FF0000", "00FF00", "0000FF",
+            "000000", "FFFFFF", "FEFEFE", "FFFFFE", "F6F7F9", "626525", "87CEFA", "808080", "757575", "767676", "FFFF00", "FF0000", "00FF00", "0000FF",
             "0078D4", "008B8B", "278349", "7C8530", "D97818", "CC4545", "CA4D8C", "8F57B5", "5966C7", "64748B",
             "F7F3E8", "E6E5E1", "E6F2EA", "E8F1F8", "EEEAF7", "F8E9ED", "EEDFC4", "25282D", "182638", "1D3028", "302336"
         })

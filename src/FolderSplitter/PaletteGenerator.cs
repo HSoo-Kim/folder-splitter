@@ -4,8 +4,8 @@ namespace QuadExplorer;
 
 // Builds a whole color theme from two chosen colors. Lightness, chroma and hue are worked in OKLCH, where equal
 // steps look equally large; contrast is checked on the final 8-bit colors with the WCAG ratio. The chosen colors
-// are moved as needed: backgrounds stay calm and light or dark enough for text, and text, secondary text and the
-// accent are darkened or lightened until they are readable on every background they are drawn on.
+// are moved only as needed for readability. Backgrounds retain their own hue and chroma; text and accents
+// move in lightness until their final, quantized colors are readable on every background they are drawn on.
 internal static class PaletteGenerator
 {
     internal sealed record ThemeColors(Color Canvas, Color Surface, Color Border, Color Text, Color Muted, Color Accent,
@@ -16,45 +16,96 @@ internal static class PaletteGenerator
 
     private readonly record struct Lch(double L, double C, double H);
 
+    // Mixing 45% white gives light content a quieter, visibly lighter version of its canvas.
+    // A 0.004 L minimum avoids rounding near-white content back to the unchanged canvas.
+    // Dark content rises by 0.045 L; the floor keeps a black canvas's content visibly separate.
+    private const double LightSurfaceMix = 0.45, LightSurfaceStep = 0.004, DarkSurfaceStep = 0.045, DarkSurfaceFloor = 0.12;
+    // Equal ordering in lightness makes the three states legible even with a neutral accent.
+    // Increasing accent mixes preserve the underlying background rather than replacing it with a preset tint.
+    private const double HoverStep = 0.025, SelectedStep = 0.055, PressedStep = 0.095;
+    private const double HoverMix = 0.10, SelectedMix = 0.22, PressedMix = 0.34;
+
+    private readonly record struct Backgrounds(Color Canvas, Color Surface, Color Hover, Color Selected, Color Pressed);
+
     public static ThemeColors Generate(Color accentSeed, Color backgroundSeed)
     {
         accentSeed = Color.FromArgb(accentSeed.R, accentSeed.G, accentSeed.B);
         backgroundSeed = Color.FromArgb(backgroundSeed.R, backgroundSeed.G, backgroundSeed.B);
         // Dark when white text would read better on the chosen background than black text.
         bool dark = Luminance(backgroundSeed) < Math.Sqrt(0.05 * 1.05) - 0.05;
-        var background = ToLch(backgroundSeed);
         var accent = ToLch(accentSeed);
-        // A grey background takes a faint tint of the accent so the two belong together.
-        bool grey = background.C < 0.012;
-        double hue = grey ? accent.H : background.H;
-        // The preset-like lightness range and chroma ceiling keep even neon seeds out of large, vivid surfaces.
-        double tint = grey ? Math.Min(accent.C, 0.15) * 0.06 : Math.Min(background.C, 0.03);
-        double canvasL = dark ? Math.Clamp(background.L, 0.23, 0.32) : Math.Clamp(background.L, 0.925, 0.975);
-        double surfaceL = dark ? canvasL + 0.035 : Math.Min(canvasL + 0.03, 1);
-        var canvas = ToColor(new Lch(canvasL, tint, hue));
-        var surface = ToColor(new Lch(surfaceL, tint * (dark ? 0.9 : 0.4), hue));
-        var border = ToColor(new Lch(dark ? surfaceL + 0.12 : canvasL - 0.075, tint * 1.2, hue));
-        // Hover, selection and pressed washes carry the accent's hue over the nearer background.
-        double wash = Math.Min(accent.C, 0.14), baseL = dark ? surfaceL : Math.Min(canvasL, surfaceL), away = dark ? 1 : -1;
-        var hover = ToColor(new Lch(baseL + away * 0.025, wash * 0.18, accent.H));
-        var selected = ToColor(new Lch(baseL + away * (dark ? 0.09 : 0.045), wash * 0.32, accent.H));
-        var pressed = ToColor(new Lch(baseL + away * (dark ? 0.14 : 0.085), wash * 0.42, accent.H));
-        var text = Readable(new Lch(dark ? 0.93 : 0.27, Math.Min(tint * 2 + 0.01, 0.03), hue), dark,
+        var backgrounds = BackgroundsFor(backgroundSeed, accent, dark);
+        if (!HasTextRoom(backgrounds, dark))
+        {
+            // Search only toward the readable extreme. Keeping the passing endpoint makes this a
+            // minimum lightness projection on final RGB colors, not a preset-like L/C clamp.
+            var seed = ToLch(backgroundSeed);
+            double failing = seed.L, passing = dark ? 0 : 1;
+            backgrounds = BackgroundsFor(dark ? Color.Black : Color.White, accent, dark);
+            for (int i = 0; i < 28; i++)
+            {
+                double middle = (failing + passing) / 2;
+                var candidate = BackgroundsFor(ToColor(seed with { L = middle }), accent, dark);
+                if (HasTextRoom(candidate, dark))
+                {
+                    passing = middle;
+                    backgrounds = candidate;
+                }
+                else failing = middle;
+            }
+        }
+        var (canvas, surface, hover, selected, pressed) = backgrounds;
+        var background = ToLch(canvas);
+        var border = ToColor(background with { L = background.L + (dark ? 0.09 : -0.075) });
+        var text = Readable(ToColor(new Lch(dark ? 0.93 : 0.27, 0, background.H)), dark,
             [(canvas, TextContrast), (surface, TextContrast), (hover, TextContrast), (selected, TextContrast), (pressed, PressedContrast)]);
-        var muted = Readable(new Lch(dark ? 0.74 : 0.52, Math.Min(tint * 2 + 0.01, 0.03), hue), dark,
+        var muted = Readable(ToColor(new Lch(dark ? 0.74 : 0.52, Math.Min(background.C, 0.025), background.H)), dark,
             [(canvas, MutedContrast), (surface, MutedContrast), (hover, MutedContrast), (selected, MutedContrast)]);
-        // Mid-lightness accents retain their hue without becoming a neon link or a near-black/white spot.
-        var accentColor = Readable(accent with { L = Math.Clamp(accent.L, dark ? 0.72 : 0.42, dark ? 0.82 : 0.58),
-            C = Math.Min(accent.C, 0.18) }, dark,
+        var accentColor = Readable(accentSeed, dark,
             [(canvas, AccentContrast), (surface, AccentContrast), (hover, AccentContrast), (selected, AccentContrast)]);
-        var error = Readable(new Lch(dark ? 0.75 : 0.52, dark ? 0.13 : 0.17, 27), dark,
+        var error = Readable(ToColor(new Lch(dark ? 0.75 : 0.52, dark ? 0.13 : 0.17, 27)), dark,
             [(canvas, ErrorContrast), (surface, ErrorContrast)]);
         return new ThemeColors(canvas, surface, border, text, muted, accentColor, selected, error, hover, pressed, dark);
     }
 
-    // Moves the color's lightness away from the backgrounds until it reaches every required contrast.
-    // Black and white always qualify, because the generated backgrounds stay light or dark enough.
-    private static Color Readable(Lch color, bool dark, ReadOnlySpan<(Color Back, double Ratio)> needs)
+    private static Backgrounds BackgroundsFor(Color canvas, Lch accent, bool dark)
+    {
+        var background = ToLch(canvas);
+        double mix = Math.Min(1, Math.Max(LightSurfaceMix, LightSurfaceStep / (1 - background.L)));
+        var surface = ToColor(dark
+            ? background with { L = Math.Max(background.L + DarkSurfaceStep, DarkSurfaceFloor), C = background.C * 0.9 }
+            : background with { L = background.L + (1 - background.L) * mix, C = background.C * (1 - mix) });
+        // States sit beyond the nearer background: canvas in light mode, content in dark mode.
+        var nearer = dark ? ToLch(surface) : background;
+        return new(canvas, surface,
+            Wash(nearer, accent, dark, HoverStep, HoverMix),
+            Wash(nearer, accent, dark, SelectedStep, SelectedMix),
+            Wash(nearer, accent, dark, PressedStep, PressedMix));
+    }
+
+    private static Color Wash(Lch background, Lch accent, bool dark, double step, double mix)
+    {
+        double a = background.C * Math.Cos(background.H * Math.PI / 180) * (1 - mix)
+            + accent.C * Math.Cos(accent.H * Math.PI / 180) * mix;
+        double b = background.C * Math.Sin(background.H * Math.PI / 180) * (1 - mix)
+            + accent.C * Math.Sin(accent.H * Math.PI / 180) * mix;
+        return ToColor(new Lch(background.L + (dark ? step : -step), Math.Sqrt(a * a + b * b),
+            Math.Atan2(b, a) * 180 / Math.PI));
+    }
+
+    private static bool HasTextRoom(Backgrounds backgrounds, bool dark)
+    {
+        var text = dark ? Color.White : Color.Black;
+        return Contrast(text, backgrounds.Canvas) >= TextContrast
+            && Contrast(text, backgrounds.Surface) >= TextContrast
+            && Contrast(text, backgrounds.Hover) >= TextContrast
+            && Contrast(text, backgrounds.Selected) >= TextContrast
+            && Contrast(text, backgrounds.Pressed) >= PressedContrast;
+    }
+
+    // Preserve an already-readable seed exactly; otherwise retain its hue and as much chroma as fits.
+    // Search the final 8-bit colors rather than stopping short of the contrast boundary in fixed L steps.
+    private static Color Readable(Color seed, bool dark, ReadOnlySpan<(Color Back, double Ratio)> needs)
     {
         double limit = dark ? 0 : 1;
         foreach (var need in needs)
@@ -63,14 +114,24 @@ internal static class PaletteGenerator
             double required = dark ? need.Ratio * (back + 0.05) - 0.05 : (back + 0.05) / need.Ratio - 0.05;
             limit = dark ? Math.Max(limit, required) : Math.Min(limit, required);
         }
-        for (double l = color.L; ; l += dark ? 0.005 : -0.005)
+        double luminance = Luminance(seed);
+        if (dark ? luminance >= limit : luminance <= limit) return seed;
+        var color = ToLch(seed);
+        double failing = color.L, passing = dark ? 1 : 0;
+        var result = dark ? Color.White : Color.Black;
+        for (int i = 0; i < 28; i++)
         {
-            double lightness = Math.Clamp(l, 0, 1);
-            var candidate = ToColor(color with { L = lightness });
-            double luminance = Luminance(candidate);
-            if ((dark ? luminance >= limit : luminance <= limit) || (dark ? lightness == 1 : lightness == 0))
-                return candidate;
+            double middle = (failing + passing) / 2;
+            var candidate = ToColor(color with { L = middle });
+            luminance = Luminance(candidate);
+            if (dark ? luminance >= limit : luminance <= limit)
+            {
+                passing = middle;
+                result = candidate;
+            }
+            else failing = middle;
         }
+        return result;
     }
 
     internal static double Luminance(Color color) =>

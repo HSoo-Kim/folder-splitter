@@ -78,6 +78,7 @@ public sealed class UiText
         ["Custom colors…"] = ("사용자 지정 색…", "自定义颜色…", "カスタムカラー…"),
         ["Accent color"] = ("강조 색", "强调色", "アクセントカラー"),
         ["Background color"] = ("배경 색", "背景色", "背景色"),
+        ["Recent combinations"] = ("최근 조합", "最近使用的组合", "最近の組み合わせ"),
         ["More colors…"] = ("다른 색…", "更多颜色…", "その他の色…"),
         ["Colors are adjusted so text stays easy to read."] = ("글자가 잘 보이도록 색을 자동으로 맞춥니다.", "颜色会自动调整，以确保文字清晰易读。", "文字が読みやすくなるよう色を自動で調整します。"),
         ["Selected"] = ("선택됨", "已选择", "選択済み"),

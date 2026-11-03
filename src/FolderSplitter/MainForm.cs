@@ -50,6 +50,8 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolStripDropDownButton themeButton = new() { AccessibleName = "Color theme" };
     private string colorTheme;
     private string? customAccent, customBackground;
+    private List<CustomColorPair> recentCustomColors;
+    private List<string> pickerColors;
     private string activePaneColor;
     private bool showFolderTree;
     private readonly List<Action> languageBindings = [];
@@ -172,6 +174,8 @@ public sealed class MainForm : Form, IMessageFilter
         colorTheme = initialState.ColorTheme;
         customAccent = initialState.CustomAccent;
         customBackground = initialState.CustomBackground;
+        recentCustomColors = [.. initialState.RecentCustomColors];
+        pickerColors = [.. initialState.PickerColors];
         activePaneColor = initialState.ActivePaneColor;
         fontFamily = initialState.FontFamily is { } face && FontInstalled(face) ? face : null;
         textSize = initialState.TextSize;
@@ -747,9 +751,29 @@ public sealed class MainForm : Form, IMessageFilter
                 themeButton.DropDownItems.Add(item);
             }
             themeButton.DropDownItems.Add(new ToolStripSeparator());
+            bool activeListed = false;
+            foreach (var pair in recentCustomColors)
+            {
+                Color background = SessionStore.ParseColor(pair.Background!);
+                Color accent = SessionStore.ParseColor(pair.Accent!);
+                var image = CreateCustomColorSwatch(background, accent, toolbar.DeviceDpi);
+                var item = new ToolStripMenuItem(pair.Background + " · " + pair.Accent, image)
+                {
+                    AccessibleName = "Custom colors " + pair.Background + " " + pair.Accent,
+                    ImageScaling = ToolStripItemImageScaling.None,
+                    Checked = colorTheme == SessionStore.CustomTheme
+                        && pair.Background == customBackground && pair.Accent == customAccent
+                };
+                activeListed |= item.Checked;
+                item.Click += (_, _) => SetCustomColors(accent, background);
+                item.Disposed += (_, _) => image.Dispose();
+                themeButton.DropDownItems.Add(item);
+            }
+            // The active custom theme is checked on its own combination above; the dialog entry only
+            // carries the check when that combination is not listed.
             var custom = new ToolStripMenuItem(text.T("Custom colors…"))
             {
-                AccessibleName = "Custom colors", Checked = colorTheme == SessionStore.CustomTheme
+                AccessibleName = "Custom colors", Checked = colorTheme == SessionStore.CustomTheme && !activeListed
             };
             custom.Click += (_, _) => ShowCustomColors();
             themeButton.DropDownItems.Add(custom);
@@ -1042,6 +1066,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal bool FavoritesExpanded => favoritesExpanded;
     internal string ColorTheme => colorTheme;
+    internal IReadOnlyList<CustomColorPair> RecentCustomColors => recentCustomColors;
     internal string ActivePaneColor => activePaneColor;
     internal bool FolderTreeVisible => showFolderTree;
     internal FolderTree FolderTree => folderTree;
@@ -1067,6 +1092,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         customAccent = SessionStore.FormatColor(accent);
         customBackground = SessionStore.FormatColor(background);
+        recentCustomColors = SessionStore.RememberCustomColors(recentCustomColors, background, accent);
         colorTheme = SessionStore.CustomTheme;
         ApplyColorTheme();
         ApplyAppearance();
@@ -1077,8 +1103,29 @@ public sealed class MainForm : Form, IMessageFilter
     {
         using var dialog = new CustomColorsDialog(text,
             customAccent is null ? Theme.Accent : SessionStore.ParseColor(customAccent),
-            customBackground is null ? Theme.Canvas : SessionStore.ParseColor(customBackground), this);
-        if (dialog.ShowDialog(this) == DialogResult.OK) SetCustomColors(dialog.Accent, dialog.Background);
+            customBackground is null ? Theme.Canvas : SessionStore.ParseColor(customBackground), this,
+            recentCustomColors.Select(pair => (SessionStore.ParseColor(pair.Background!), SessionStore.ParseColor(pair.Accent!))).ToArray(),
+            pickerColors);
+        var result = dialog.ShowDialog(this);
+        pickerColors = [.. dialog.PickerColors];
+        if (result == DialogResult.OK) SetCustomColors(dialog.Accent, dialog.Background);
+        // Picker slots are a separate tool: cancelling the theme preview must not discard them.
+        SaveSession();
+    }
+
+    private static Bitmap CreateCustomColorSwatch(Color background, Color accent, int dpi)
+    {
+        int width = (int)Math.Round(24 * dpi / 96d);
+        int height = (int)Math.Round(16 * dpi / 96d);
+        var image = new Bitmap(width, height);
+        using var graphics = Graphics.FromImage(image);
+        using var backgroundFill = new SolidBrush(background);
+        using var accentFill = new SolidBrush(accent);
+        using var border = new Pen(Theme.Muted, Math.Max(1, dpi / 96f));
+        graphics.FillRectangle(backgroundFill, 0, 0, width / 2, height);
+        graphics.FillRectangle(accentFill, width / 2, 0, width - width / 2, height);
+        graphics.DrawRectangle(border, 0, 0, width - 1, height - 1);
+        return image;
     }
 
     internal void SetActivePaneColor(string color)
@@ -2716,7 +2763,8 @@ public sealed class MainForm : Form, IMessageFilter
                 Layout = visiblePanes.Length, LayoutTree = layoutTree,
                 Language = text.Language,
                 ColorTheme = colorTheme, ShowDetails = showDetails, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
-                CustomAccent = customAccent, CustomBackground = customBackground,
+                CustomAccent = customAccent, CustomBackground = customBackground, RecentCustomColors = recentCustomColors,
+                PickerColors = pickerColors,
                 ActivePaneColor = activePaneColor,
                 GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
                 CheckUpdates = checkUpdates, AutoUpdate = autoUpdate, ShowCommandBar = showCommandBar,

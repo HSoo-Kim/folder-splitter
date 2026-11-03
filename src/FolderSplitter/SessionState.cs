@@ -23,12 +23,20 @@ public sealed record Workspace
     public int ActivePane { get; init; }
 }
 
+public sealed record CustomColorPair
+{
+    public string? Background { get; init; }
+    public string? Accent { get; init; }
+}
+
 public sealed record SessionState
 {
     public string Language { get; init; } = "ko";
     public string ColorTheme { get; init; } = "light";
     public string? CustomAccent { get; init; }
     public string? CustomBackground { get; init; }
+    public List<CustomColorPair> RecentCustomColors { get; init; } = [];
+    public List<string> PickerColors { get; init; } = [];
     // Application-wide active pane outline; default follows the selected palette.
     public string ActivePaneColor { get; init; } = "default";
     // Null keeps the standard font; TextSize is small, normal or large.
@@ -78,6 +86,7 @@ public sealed record SessionState
 public static class SessionStore
 {
     public const string CustomTheme = "custom";
+    public const int RecentCustomColorLimit = 6;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public static string DefaultPath => Path.Combine(
@@ -187,12 +196,17 @@ public static class SessionStore
             ? visible.Contains(state.ActivePane) ? state.ActivePane : visible[0]
             : Math.Clamp(state.ActivePane, 0, layout - 1);
         string? accent = NormalizeColor(state.CustomAccent), background = NormalizeColor(state.CustomBackground);
+        var recentCustomColors = NormalizeRecentCustomColors(state.RecentCustomColors);
+        if (recentCustomColors.Count == 0 && background is not null && accent is not null)
+            recentCustomColors.Add(new CustomColorPair { Background = background, Accent = accent });
         return state with
         {
             Language = NormalizeLanguage(state.Language),
             ColorTheme = string.Equals(state.ColorTheme?.Trim(), CustomTheme, StringComparison.OrdinalIgnoreCase)
                 && accent is not null && background is not null ? CustomTheme : NormalizeColorTheme(state.ColorTheme),
             CustomAccent = accent, CustomBackground = background,
+            RecentCustomColors = recentCustomColors,
+            PickerColors = NormalizePickerColors(state.PickerColors),
             ActivePaneColor = NormalizeActivePaneColor(state.ActivePaneColor),
             FontFamily = string.IsNullOrWhiteSpace(state.FontFamily) || state.FontFamily.Trim().Length > 64 ? null : state.FontFamily.Trim(),
             TextSize = state.TextSize is "small" or "large" ? state.TextSize : "normal",
@@ -272,6 +286,56 @@ public static class SessionStore
     }
 
     public static string FormatColor(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+
+    private static List<string> NormalizePickerColors(IReadOnlyList<string>? source)
+    {
+        var colors = new List<string>();
+        foreach (string? value in source ?? [])
+        {
+            if (NormalizeColor(value) is not { } color) continue;
+            colors.Add(color);
+            if (colors.Count == 16) break;
+        }
+        return colors;
+    }
+
+    public static List<CustomColorPair> RememberCustomColors(
+        IReadOnlyList<CustomColorPair> recent, Color background, Color accent) =>
+        NormalizeRecentCustomColors(recent, new CustomColorPair
+        {
+            Background = FormatColor(background), Accent = FormatColor(accent)
+        });
+
+    private static List<CustomColorPair> NormalizeRecentCustomColors(
+        IReadOnlyList<CustomColorPair>? source, CustomColorPair? newest = null)
+    {
+        var result = new List<CustomColorPair>(RecentCustomColorLimit);
+        if (newest is not null)
+            result.Add(newest);
+        if (source is null)
+            return result;
+        foreach (var pair in source)
+        {
+            string? background = NormalizeColor(pair?.Background), accent = NormalizeColor(pair?.Accent);
+            if (background is null || accent is null)
+                continue;
+            bool duplicate = false;
+            foreach (var existing in result)
+            {
+                if (existing.Background == background && existing.Accent == accent)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate)
+                continue;
+            result.Add(new CustomColorPair { Background = background, Accent = accent });
+            if (result.Count == RecentCustomColorLimit)
+                break;
+        }
+        return result;
+    }
 
     public static string NormalizeActivePaneColor(string? color) => color?.Trim().ToLowerInvariant() switch
     {
