@@ -15,7 +15,8 @@ internal static class TabGroupPersistenceTests
         ("group names and all nine persisted colors normalize", GroupMetadata),
         ("group normalization preserves caller data and is idempotent", DoesNotMutate),
         ("groups roundtrip across active and hidden panes", SessionRoundtrip),
-        ("workspace groups share session normalization and storage", WorkspaceRoundtrip)
+        ("workspace groups share session normalization and storage", WorkspaceRoundtrip),
+        ("window groups normalize and roundtrip independently with legacy projection and workspaces", WindowGroupsRoundtrip)
     ];
 
     private static void LegacySessions()
@@ -466,6 +467,40 @@ internal static class TabGroupPersistenceTests
         });
         Equal(5, workspace.Panes[0].Tabs.Count);
         Equal("  Research  ", workspace.Panes[0].Groups[1].Name);
+    }
+
+    private static void WindowGroupsRoundtrip()
+    {
+        var first = new PaneState { Tabs = Paths(2), SelectedTab = 1,
+            Groups = [new() { Name = "First", Color = "Blue", Start = 0, Count = 2 }] };
+        var second = new PaneState { Tabs = [@"Z:\second", "", @"Z:\third"], SelectedTab = 2,
+            Groups = [new() { Name = " Second ", Color = "purple", Collapsed = true, Start = 0, Count = 3 }] };
+        var state = SessionStore.Normalize(new SessionState
+        {
+            Windows = [new() { Panes = [first] }, new() { Panes = [second] }],
+            LastActiveWindow = 1,
+            Workspaces = [new() { Name = "Second workspace", Panes = [second] }]
+        });
+        EqualPane(first, state.Windows[0].Panes[0]);
+        EqualPane(first, state.Panes[0]);
+        Equal(1, state.LastActiveWindow);
+        var normalizedSecond = state.Windows[1].Panes[0];
+        Sequence([@"Z:\second", @"Z:\third"], normalizedSecond.Tabs);
+        Sequence([new TabGroupState { Name = "Second", Color = "Purple", Collapsed = true, Start = 0, Count = 2 }],
+            normalizedSecond.Groups);
+        EqualPane(normalizedSecond, state.Workspaces[0].Panes[0]);
+        Equal(3, second.Tabs.Count);
+        Equal(" Second ", second.Groups[0].Name);
+        WithSessionFile(path =>
+        {
+            SessionStore.Save(path, state);
+            var restored = SessionStore.Load(path);
+            Equal(2, restored.Windows.Count);
+            EqualPane(first, restored.Panes[0]);
+            EqualPane(normalizedSecond, restored.Windows[1].Panes[0]);
+            EqualPane(normalizedSecond, restored.Workspaces[0].Panes[0]);
+            EqualPane(normalizedSecond, SessionStore.ProjectWindow(restored, restored.Windows[1]).Panes[0]);
+        });
     }
 
     // The pane and workspace shapes before tab groups; the envelope contains the fields under test.

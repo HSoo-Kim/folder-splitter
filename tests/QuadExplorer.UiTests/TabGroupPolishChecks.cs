@@ -27,7 +27,7 @@ internal static partial class Program
             Control target = Control.FromHandle(focus) ?? Control.FromChildHandle(focus) ?? fallback;
             var message = Message.Create(focus != 0 ? focus : fallback.Handle,
                 (keys & Keys.Alt) != 0 ? 0x104 : 0x100, (nint)(keys & Keys.KeyCode), 1);
-            if (target.FindForm() is MainForm form && form.PreFilterMessage(ref message)) return;
+            if (Application.FilterMessage(ref message)) return;
             if (target.PreProcessMessage(ref message)) return;
             SendMessage(message.HWnd, (uint)message.Msg, message.WParam, message.LParam);
         }

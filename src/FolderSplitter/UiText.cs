@@ -18,6 +18,10 @@ public sealed class UiText
     private static readonly Dictionary<string, (string Korean, string Chinese, string Japanese)> Strings = new()
     {
         ["Folder tree"] = ("폴더 트리", "文件夹树", "フォルダーツリー"),
+        ["Move group to new window"] = ("그룹을 새 창으로 이동", "将组移至新窗口", "グループを新しいウィンドウに移動"),
+        ["Move tab to new window"] = ("탭을 새 창으로 이동", "将标签页移至新窗口", "タブを新しいウィンドウに移動"),
+        ["Group moved to a new window."] = ("그룹을 새 창으로 이동했습니다.", "已将组移至新窗口。", "グループを新しいウィンドウに移動しました。"),
+        ["Tab moved to a new window."] = ("탭을 새 창으로 이동했습니다.", "已将标签页移至新窗口。", "タブを新しいウィンドウに移動しました。"),
         ["Show / hide folder tree (Ctrl+Shift+E)"] = ("폴더 트리 표시 / 숨기기 (Ctrl+Shift+E)", "显示 / 隐藏文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを表示 / 非表示 (Ctrl+Shift+E)"),
         ["Collapse / expand folder tree (Ctrl+Shift+E)"] = ("폴더 트리 접기 / 펼치기 (Ctrl+Shift+E)", "折叠 / 展开文件夹树 (Ctrl+Shift+E)", "フォルダーツリーを折りたたむ / 展開 (Ctrl+Shift+E)"),
         ["Drag to resize favorites and the folder tree"] = ("드래그해 즐겨찾기와 폴더 트리 높이 조절", "拖动以调整收藏夹和文件夹树的高度", "ドラッグしてお気に入りとフォルダーツリーの高さを調整"),

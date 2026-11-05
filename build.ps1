@@ -35,7 +35,7 @@ if ($UiTests) {
     $log = Join-Path $logDirectory ("native-ui-" + [Guid]::NewGuid().ToString("N") + ".log")
     try {
         & $dotnet "$root/tools/PrivateDesktopQa/bin/Release/net10.0-windows/PrivateDesktopQa.dll" `
-            --log $log --timeout 600 -- $dotnet `
+            --log $log --timeout 900 -- $dotnet `
             "$root/tests/QuadExplorer.UiTests/bin/Release/net10.0-windows10.0.19041.0/QuadExplorer.UiTests.dll"
         $nativeExit = $LASTEXITCODE
         if (Test-Path -LiteralPath $log) {

@@ -53,6 +53,8 @@ internal static partial class Program
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--published-group-smoke", var publishedExecutable, var publishedOutput])
+                return RunPublishedGroupSmoke(publishedExecutable, publishedOutput);
             if (args is ["--tab-groups"])
             {
                 RunTabGroupScenario(root);

@@ -229,9 +229,19 @@ public sealed partial class ExplorerPane
     private void FinishGroupMutation(FolderTab? active)
     {
         selectedIndex = active is null ? -1 : tabs.IndexOf(active);
+        RememberGroupSelection();
         SynchronizeGroupStrip();
         LayoutTabs();
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RememberGroupSelection()
+    {
+        if (ActiveTab?.Group is not { } group) return;
+        int member = 0;
+        for (int i = 0; i < selectedIndex; i++)
+            if (tabs[i].Group == group) member++;
+        group.LastSelectedMember = member;
     }
 
     private void SynchronizeGroupStrip()
@@ -390,9 +400,11 @@ public sealed partial class ExplorerPane
             item.ToolTipText = reason is null ? "" : text.T(reason);
         }
         menu.Items.Add(move);
+        menu.Items.Add(text.T("Move group to new window"), null,
+            (_, _) => MoveGroupToWindowRequested?.Invoke(this, group));
         menu.Closing += (_, _) => RenameGroup(group, name.Text);
         // WinForms finishes native menu teardown after Closed returns.
-        menu.Closed += (_, _) => BeginInvoke(() => menu.Dispose());
+        menu.Closed += (_, _) => menu.BeginInvoke(() => menu.Dispose());
         Theme.Apply(menu);
         var chip = groupChips[group];
         menu.Show(tabStrip, new Point(chip.Bounds.Left, chip.Bounds.Bottom));

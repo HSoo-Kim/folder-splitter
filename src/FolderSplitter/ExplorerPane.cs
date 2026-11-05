@@ -122,6 +122,8 @@ public sealed partial class ExplorerPane : UserControl
     internal event Action<ExplorerPane, FolderTab, SplitEdge>? SplitTabRequested;
     internal event Action<ExplorerPane, TabGroup>? GroupDragRequested;
     internal event Action<ExplorerPane, TabGroup, int>? MoveGroupRequested;
+    internal event Action<ExplorerPane, TabGroup>? MoveGroupToWindowRequested;
+    internal event Action<ExplorerPane, FolderTab>? MoveTabToWindowRequested;
     public event EventHandler<string>? FolderVisited;
     internal event Action<ExplorerPane>? OpenInOtherPaneRequested;
     internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
@@ -623,6 +625,7 @@ public sealed partial class ExplorerPane : UserControl
         if (tabs[index].Group is { Collapsed: true } group) group.Collapsed = false;
         if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host is { } previous) previous.Visible = false;
         selectedIndex = index;
+        RememberGroupSelection();
         for (int i = 0; i < tabs.Count; i++)
         {
             tabs[i].Button.Checked = i == index;
@@ -1039,6 +1042,9 @@ public sealed partial class ExplorerPane : UserControl
         }
         move.Enabled = ActiveTab is not null;
         tabMenu.Items.Add(move);
+        var movingTab = tabs[index];
+        tabMenu.Items.Add(text.T("Move tab to new window"), null,
+            (_, _) => MoveTabToWindowRequested?.Invoke(this, movingTab));
         var split = new ToolStripMenuItem(text.T("Split tab"));
         foreach (SplitEdge edge in Enum.GetValues<SplitEdge>())
         {

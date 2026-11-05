@@ -211,6 +211,7 @@ internal static partial class Program
         RunMultiWindowSharedSearch(fixture, folders[0]);
         RunMultiWindowDivider(fixture, folders[0]);
         RunMultiWindowDpiScenario(fixture);
+        RunGroupWindowScenario(fixture);
     }
 
     private static FolderSplitterApplicationContext MultiWindowContext(string session) => new(session, [],

@@ -253,6 +253,8 @@ public sealed class MainForm : Form, IMessageFilter
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
             pane.MoveGroupRequested += (source, group, number) => DockGroup(source, group, number - 1, null);
+            pane.MoveGroupToWindowRequested += (source, group) => application.MoveToNewWindow(this, source, null, group);
+            pane.MoveTabToWindowRequested += (source, tab) => application.MoveToNewWindow(this, source, tab, null);
             pane.GroupMoveDisabledReason = (source, group, number) =>
                 CanDockGroup(source, group, number - 1, null, out string reason) ? null : reason;
             pane.GroupDragRequested += StartGroupDrag;
@@ -2300,6 +2302,21 @@ public sealed class MainForm : Form, IMessageFilter
         finally { rebuilding = wasRebuilding; }
         ScheduleSave();
         return true;
+    }
+
+    internal void CompleteWindowTransfer(ExplorerPane source, ExplorerPane.FolderTab? tab, TabGroup? group)
+    {
+        if (group is not null) source.CloseGroup(group, remember: false);
+        else source.CloseTab(source.IndexOfTab(tab!), remember: false);
+        if (panes.All(pane => pane.TabCount == 0))
+        {
+            Close();
+            return;
+        }
+        int sourceId = source.PaneNumber - 1;
+        if (source.TabCount == 0 && visiblePanes.Length > 1 && visiblePanes.Contains(sourceId))
+            RenderLayout(RemovePane(layoutTree, sourceId)!);
+        RefreshCloseHistory();
     }
 
     private static PaneLayout? RemovePane(PaneLayout node, int id)

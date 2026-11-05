@@ -12,4 +12,6 @@ internal sealed class TabGroup
     internal string Name { get; set; } = "";
     internal TabGroupColor Color { get; set; }
     internal bool Collapsed { get; set; }
+    // Collapsing selects an outside tab; a later window transfer still selects the previous member.
+    internal int LastSelectedMember { get; set; }
 }

@@ -28,6 +28,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     private bool restoringWindows;
     private readonly HashSet<MainForm> pendingPresentation = [];
     private MainForm? restoredActiveWindow;
+    private MainForm? transferringSource;
     private string? saveError;
 
     internal string SessionPath { get; }
@@ -179,6 +180,53 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         return CreateWindow(state);
     }
 
+    internal void MoveToNewWindow(MainForm source, ExplorerPane pane, ExplorerPane.FolderTab? tab, TabGroup? group)
+    {
+        if (disposed || shuttingDown || saving || !windows.Contains(source)
+            || source.GetPane(pane.PaneNumber - 1) != pane) return;
+        IReadOnlyList<ExplorerPane.FolderTab> members = group is null
+            ? tab is not null && pane.IndexOfTab(tab) >= 0 ? new[] { tab } : []
+            : pane.GroupMembers(group);
+        if (members.Count == 0) return;
+        int selected = -1;
+        var paths = new string?[members.Count];
+        for (int i = 0; i < members.Count; i++)
+        {
+            paths[i] = members[i].Host?.LocationPath;
+            if (members[i] == pane.ActiveTab) selected = i;
+        }
+        if (selected < 0 && group is not null) selected = Math.Clamp(group.LastSelectedMember, 0, members.Count - 1);
+        Rectangle bounds = source.WindowState == FormWindowState.Normal ? source.Bounds : source.RestoreBounds;
+        Rectangle cascaded = BrowserWindowGeometry.Cascade(bounds, Screen.FromRectangle(bounds).WorkingArea, source.DeviceDpi);
+        var seed = new BrowserWindowState
+        {
+            Layout = 1, LayoutTree = PaneLayout.Preset(1), Panes = [new PaneState()],
+            WindowX = cascaded.X, WindowY = cascaded.Y, WindowWidth = cascaded.Width, WindowHeight = cascaded.Height
+        };
+        // Populate before Show and before removing anything: blank members must not become Home tabs.
+        saving = true;
+        try
+        {
+            var window = new MainForm(this, SessionStore.NormalizeBrowserWindow(seed), [], treeRoots);
+            var destination = window.GetPane(0);
+            if (group is not null)
+                destination.AddGroup(paths, group.Name, group.Color, collapsed: false, selectedMember: Math.Max(0, selected));
+            else if (paths[0] is { } path) destination.AddTab(path, countVisit: false);
+            else destination.AddBlankTab();
+            window.Show();
+            window.Activate();
+            transferringSource = source;
+            source.CompleteWindowTransfer(pane, tab, group);
+            window.SetApplicationStatus(group is null ? "Tab moved to a new window." : "Group moved to a new window.");
+        }
+        finally
+        {
+            transferringSource = null;
+            saving = false;
+        }
+        SaveSession();
+    }
+
     internal void Activated(MainForm window)
     {
         if (!shuttingDown && !restoringWindows && windows.Contains(window) && LastActiveWindow != window)
@@ -320,6 +368,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     internal void Closing(MainForm window, FormClosingEventArgs e)
     {
         if (shuttingDown) return;
+        if (window == transferringSource && windows.Count > 1) return;
         if (e.CloseReason is CloseReason.WindowsShutDown or CloseReason.TaskManagerClosing or CloseReason.ApplicationExitCall)
         {
             // The OS may close browsers one at a time. Snapshot the complete registry before the first disappears.
