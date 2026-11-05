@@ -95,7 +95,8 @@ public sealed partial class ExplorerPane
     private void AddCommand(string glyph, string key, string shortcut, Action action, bool needsSelection)
     {
         var button = new ToolStripButton(glyph) { Font = new Font(Theme.IconFont, 10), AccessibleName = $"Pane {PaneNumber} {key}", AutoToolTip = false };
-        button.Click += (_, _) => { action(); FocusFiles(); };
+        // Focus the list before a command can create its own editor, so Rename keeps that editor focused.
+        button.Click += (_, _) => { FocusFiles(); action(); };
         commandTips.Add(() => button.ToolTipText = $"{text.T(key)} ({shortcut})");
         commands.Items.Add(button);
         if (needsSelection) selectionCommands.Add(button);

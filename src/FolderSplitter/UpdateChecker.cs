@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
@@ -8,6 +9,7 @@ using System.Text.Json;
 namespace QuadExplorer;
 
 public sealed record ReleaseInfo(Version Version, string Tag, string Url, Uri? PackageUrl = null, string? PackageSha256 = null);
+
 
 internal static class UpdateChecker
 {
@@ -68,11 +70,53 @@ internal static class UpdateInstaller
         return http;
     }
 
-    public static async Task<Stream> DownloadAsync(Uri url, CancellationToken token)
+    public static Task<Stream> DownloadAsync(Uri url, CancellationToken token) => DownloadAsync(url, token, null);
+
+    public static async Task<Stream> DownloadAsync(Uri url, CancellationToken token, IProgress<UpdateProgress>? progress)
     {
-        var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStreamAsync(token);
+        var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+        try
+        {
+            response.EnsureSuccessStatusCode();
+            var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+            return new DownloadStream(stream, response, progress);
+        }
+        catch { response.Dispose(); throw; }
+    }
+
+    // The response owns the HTTP connection; its content length remains available even for a non-seekable stream.
+    private sealed class DownloadStream(Stream source, HttpResponseMessage response, IProgress<UpdateProgress>? progress) : Stream
+    {
+        internal long? TotalBytes => response.Content.Headers.ContentLength;
+        private long received;
+        public override bool CanRead => source.CanRead;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => TotalBytes ?? throw new NotSupportedException();
+        public override long Position { get => received; set => throw new NotSupportedException(); }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            int count = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            received += count;
+            progress?.Report(new(UpdateStage.Downloading, received, TotalBytes));
+            return count;
+        }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int read = source.Read(buffer, offset, count);
+            received += read;
+            progress?.Report(new(UpdateStage.Downloading, received, TotalBytes));
+            return read;
+        }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { source.Dispose(); response.Dispose(); }
+            base.Dispose(disposing);
+        }
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     public static string? InstallablePath()
@@ -98,19 +142,37 @@ internal static class UpdateInstaller
     }
 
     public static async Task InstallAsync(ReleaseInfo release, string exe,
-        Func<Uri, CancellationToken, Task<Stream>> download, CancellationToken token)
+        Func<Uri, CancellationToken, Task<Stream>> download, CancellationToken token, IProgress<UpdateProgress>? progress = null)
     {
         if (release.PackageUrl is null || release.PackageSha256 is null)
             throw new InvalidDataException("The release has no verifiable Windows package.");
         string package = exe + ".download", staged = exe + ".new", previous = exe + ".old";
         try
         {
-            await using (var source = await download(release.PackageUrl, token))
+            progress?.Report(new(UpdateStage.Downloading));
+            await using (var source = await download(release.PackageUrl, token).ConfigureAwait(false))
             await using (var file = File.Create(package))
-                await source.CopyToAsync(file, token);
+            {
+                long? total = source is DownloadStream http ? http.TotalBytes : source.CanSeek ? source.Length : null;
+                long received = 0;
+                progress?.Report(new(UpdateStage.Downloading, received, total));
+                byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+                try
+                {
+                    int count;
+                    while ((count = await source.ReadAsync(buffer.AsMemory(0, 81920), token).ConfigureAwait(false)) != 0)
+                    {
+                        await file.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
+                        received += count;
+                        progress?.Report(new(UpdateStage.Downloading, received, total));
+                    }
+                }
+                finally { ArrayPool<byte>.Shared.Return(buffer); }
+            }
+            progress?.Report(new(UpdateStage.Verifying));
             string actual;
             await using (var file = File.OpenRead(package))
-                actual = Convert.ToHexString(await SHA256.HashDataAsync(file, token));
+                actual = Convert.ToHexString(await SHA256.HashDataAsync(file, token).ConfigureAwait(false));
             if (!actual.Equals(release.PackageSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The downloaded package failed its SHA-256 check.");
             using (var zip = ZipFile.OpenRead(package))
@@ -128,6 +190,7 @@ internal static class UpdateInstaller
                 executable.ExtractToFile(staged, overwrite: true);
             }
             ValidateExecutable(staged, release.Version);
+            progress?.Report(new(UpdateStage.Installing));
             File.Move(exe, previous, overwrite: true);
             try { File.Move(staged, exe); }
             catch

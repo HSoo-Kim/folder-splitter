@@ -12,5 +12,6 @@
     <Compile Include="../../src/FolderSplitter/SessionState.cs" Link="SessionState.cs" />
     <Compile Include="../../src/FolderSplitter/BrowserWindowGeometry.cs" Link="BrowserWindowGeometry.cs" />
     <Compile Include="../../src/FolderSplitter/PaletteGenerator.cs" Link="PaletteGenerator.cs" />
+    <Compile Include="../../src/FolderSplitter/UpdateProgress.cs" Link="UpdateProgress.cs" />
   </ItemGroup>
 </Project>

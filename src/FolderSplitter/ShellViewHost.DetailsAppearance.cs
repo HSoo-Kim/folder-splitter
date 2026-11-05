@@ -9,6 +9,7 @@ public sealed partial class ShellViewHost
     private bool highlightSortedColumn;
     private bool applyingDetailsAppearance;
     private bool detailsAppearanceQueued;
+    private bool detailsAppearanceAfterEdit;
     private readonly List<DetailsWindow> detailsWindows = [];
     private DetailsWindow? detailsList;
     private DetailsWindow? detailsHeader;
@@ -70,6 +71,13 @@ public sealed partial class ShellViewHost
                     detailsWindows.Remove(oldHeader);
                 }
                 detailsHeader = WatchDetailsWindow(header, DetailsWindowKind.Header);
+            }
+            // Changing the list font or theme while a name is being edited makes the list end the edit, and
+            // with comfortable rows it also shifts the rows under the edit box. Finish once the edit is over.
+            if (SendMessage(list, 0x1018, 0, 0) != 0) // LVM_GETEDITCONTROL
+            {
+                detailsAppearanceAfterEdit = true;
+                return;
             }
             ApplyRowSpacing(list, header);
             // Switching from Details to the icon views leaves the Shell's column header visible over the
@@ -245,10 +253,19 @@ public sealed partial class ShellViewHost
             // Mouse parent notifications do not change appearance. Recalibrating row fonts
             // on a click can briefly remove the scrollbar and reset the native scroll origin.
             else if (message.Msg == 0x0210 && ((long)message.WParam & 0xffff) is 1 or 2 // WM_PARENTNOTIFY: create/destroy
+                    && !IsLabelEditor(message.LParam) // the rename box comes and goes without changing the list
                 || message.Msg == 0x02E3 || // WM_DPICHANGED_AFTERPARENT
                 kind == DetailsWindowKind.List && (message.Msg is 0x108E or 0x1003 or 0x0030
                     || message.Msg == 0x104D && !owner.rowCalibrated)) // LVM_SETVIEW / SETIMAGELIST / WM_SETFONT / INSERTITEMW
                 owner.QueueDetailsAppearance();
+        }
+
+        private static bool IsLabelEditor(nint child)
+        {
+            if (child == 0) return false;
+            var name = new System.Text.StringBuilder(16);
+            GetClassName(child, name, name.Capacity);
+            return name.ToString() == "Edit";
         }
 
         private void DrawWithTextFont(ref Message message)
@@ -260,6 +277,15 @@ public sealed partial class ShellViewHost
             {
                 nint edit = SendMessage(list, 0x1018, 0, 0); // LVM_GETEDITCONTROL
                 if (edit != 0) SendMessage(edit, 0x0030, owner.textFont, 0);
+                return;
+            }
+            if (code == -176) // LVN_ENDLABELEDITW: apply what was held back while the name was edited
+            {
+                if (owner.detailsAppearanceAfterEdit)
+                {
+                    owner.detailsAppearanceAfterEdit = false;
+                    owner.QueueDetailsAppearance();
+                }
                 return;
             }
             if (code == -101) // LVN_ITEMCHANGED

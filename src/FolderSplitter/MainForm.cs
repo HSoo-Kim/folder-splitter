@@ -102,6 +102,12 @@ public sealed partial class MainForm : Form, IMessageFilter
         ForeColor = Theme.Muted, BackColor = Theme.Canvas, Padding = new Padding(12, 4, 0, 4),
         AccessibleName = "Application version", LinkBehavior = LinkBehavior.HoverUnderline
     };
+    private readonly UpdateProgressBar updateProgressBar = new();
+    private readonly TableLayoutPanel versionStatus = new()
+    {
+        AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1,
+        Dock = DockStyle.Left, Margin = Padding.Empty, Padding = Padding.Empty
+    };
     // The bottom line: version on the left, author on the right.
     // A one-row table sizes itself to the taller label, also after font and DPI changes.
     private readonly TableLayoutPanel footer = new()
@@ -199,7 +205,11 @@ public sealed partial class MainForm : Form, IMessageFilter
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        footer.Controls.Add(versionLabel, 0, 0);
+        versionStatus.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        versionStatus.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        versionStatus.Controls.Add(versionLabel, 0, 0);
+        versionStatus.Controls.Add(updateProgressBar, 1, 0);
+        footer.Controls.Add(versionStatus, 0, 0);
         footer.Controls.Add(authorLink, 1, 0);
         versionLabel.LinkClicked += async (_, _) => await OpenAvailableUpdateAsync();
         using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("QuadExplorer.AppIcon")!)
@@ -298,6 +308,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         previewPane.PinChanged += (_, _) => { if (!previewPane.Pinned) UpdatePreview(); };
         VisibleChanged += (_, _) =>
         {
+            updateProgressBar.RefreshAnimation();
             foreach (var (window, _) in previewWindows)
                 if (Visible) window.Show(this);
                 else window.Hide();
@@ -512,6 +523,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         };
         Deactivate += (_, _) => { if (!globalToolbarPinned) HideGlobalToolbarOverlay(); };
         DpiChanged += (_, _) => { RefreshGlobalToolbar(); UpdateMinimumSize(); };
+        Resize += (_, _) => updateProgressBar.RefreshAnimation();
         showSidebar = initialState.ShowSidebar;
         sidebar.Visible = initialState.ShowSidebar;
         sidebarSplitter.Visible = initialState.ShowSidebar;
@@ -1208,6 +1220,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         }
         previewSplitter.BackColor = Theme.Border;
         RefreshThemeButton();
+        UpdateVersionText();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
     }
 
@@ -1580,7 +1593,7 @@ public sealed partial class MainForm : Form, IMessageFilter
 
     internal bool TrayIconVisible => application.TrayIconVisible;
     internal string VersionText => versionLabel.Text;
-    internal bool UpdateLinkShown => versionLabel.LinkArea.Length > 0;
+    internal bool UpdateLinkShown => versionLabel.Links.Cast<LinkLabel.Link>().Any(link => link.Enabled && link.Length > 0);
 
     internal bool AutoUpdateEnabled => autoUpdate;
 
@@ -1619,6 +1632,27 @@ public sealed partial class MainForm : Form, IMessageFilter
     private void UpdateVersionText()
     {
         string current = "v" + UpdateChecker.Current.ToString(3);
+        updateProgressBar.AccessibleName = text.T("Update progress");
+        updateProgressBar.Visible = updating;
+        if (updating)
+        {
+            updateNotice?.Close();
+            var progress = application.CurrentUpdateProgress ?? new UpdateProgress(UpdateStage.Downloading);
+            updateProgressBar.SetProgress(progress);
+            string status = progress.Stage switch
+            {
+                UpdateStage.Verifying => text.T("Verifying update…"),
+                UpdateStage.Installing => text.T("Installing update…"),
+                UpdateStage.Restarting => text.T("Restarting…"),
+                _ => progress.Percentage is { } percent
+                    ? text.T("Downloading update… {0}%", percent) : text.T("Downloading update…")
+            };
+            versionLabel.Text = current + "   " + status;
+            versionLabel.LinkArea = new LinkArea(current.Length + 3, status.Length);
+            versionLabel.DisabledLinkColor = Theme.Text;
+            versionLabel.Links[0].Enabled = false;
+            return;
+        }
         if (availableUpdate is null)
         {
             updateNotice?.Close();
@@ -1626,11 +1660,11 @@ public sealed partial class MainForm : Form, IMessageFilter
             versionLabel.LinkArea = new LinkArea(0, 0);
             return;
         }
-        string notice = updating ? text.T("Updating to {0}…", availableUpdate.Tag)
-            : CanInstallUpdate(availableUpdate) ? text.T("New version {0} available · Update", availableUpdate.Tag)
+        string notice = CanInstallUpdate(availableUpdate) ? text.T("New version {0} available · Update", availableUpdate.Tag)
             : text.T("New version {0} available · Download", availableUpdate.Tag);
         versionLabel.Text = current + "   " + notice;
         versionLabel.LinkArea = new LinkArea(current.Length + 3, notice.Length);
+        versionLabel.Links[0].Enabled = true;
         versionLabel.LinkColor = versionLabel.ActiveLinkColor = versionLabel.VisitedLinkColor = Theme.Accent;
         updateNotice?.RefreshNotice(availableUpdate, CanInstallUpdate(availableUpdate));
     }
@@ -2480,6 +2514,9 @@ public sealed partial class MainForm : Form, IMessageFilter
                 panes[visiblePanes[target]].ActiveView?.Travel(button == 1 ? 0x4000u : 0x8000u);
             return button is 1 or 2;
         }
+        // Keep editor input with the Shell before browser or tab-group shortcuts can consume it.
+        if (m.Msg >= 0x100 && m.Msg <= 0x109 && Active.ActiveView is { } editingView &&
+            editingView.IsLabelEditWindow(m.HWnd)) return editingView.TranslateKey(ref m);
         if (m.Msg is 0x100 or 0x104)
         {
             Keys key = (Keys)(int)m.WParam | ModifierKeys;

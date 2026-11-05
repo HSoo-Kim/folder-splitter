@@ -483,6 +483,13 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
 
     public bool OwnsWindow(nint window) => IsHandleCreated && (window == Handle || ShellNative.IsChild(Handle, window));
 
+    internal bool IsLabelEditWindow(nint window)
+    {
+        nint list = detailsList?.Handle ?? 0;
+        nint edit = list == 0 ? 0 : SendMessage(list, 0x1018, 0, 0); // LVM_GETEDITCONTROL
+        return edit != 0 && (window == edit || ShellNative.IsChild(edit, window));
+    }
+
     public bool TranslateKey(ref Message message)
     {
         if (view is null || !OwnsWindow(message.HWnd)) return false;

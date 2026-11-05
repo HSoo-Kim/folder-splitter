@@ -44,6 +44,9 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     internal WinEShortcut WinE { get; } = WinEShortcut.ForCurrentUser();
     internal StartupRegistration Startup { get; set; }
     internal Func<IReadOnlyList<string>, bool>? RestartLauncher { get; set; }
+    internal Func<string?> UpdateExecutablePath { get; set; } = UpdateInstaller.InstallablePath;
+    internal Func<Uri, CancellationToken, Task<Stream>> UpdateDownload { get; set; } = UpdateInstaller.DownloadAsync;
+    internal Action<ReleaseInfo>? ReleasePageOpener { get; set; }
     public IReadOnlyList<MainForm> Windows => registeredWindows;
     public MainForm? LastActiveWindow { get; private set; }
     public bool StartHidden { get; init; }
@@ -55,6 +58,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     internal ReleaseInfo? AvailableUpdate { get; private set; }
     internal Version? NotifiedUpdateVersion { get; set; }
     internal bool Updating { get; private set; }
+    internal UpdateProgress? CurrentUpdateProgress { get; private set; }
     internal DateTime LastUpdateCheck { get; set; } = DateTime.MinValue;
     internal TimeSpan UpdateCheckInterval => TimeSpan.FromMilliseconds(updateTimer.Interval);
 
@@ -697,17 +701,19 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     internal async Task OpenAvailableUpdateAsync(MainForm owner)
     {
         if (AvailableUpdate is not { } update || Updating) return;
-        if (!State.AutoUpdate || update.PackageUrl is null || update.PackageSha256 is null || UpdateInstaller.InstallablePath() is not { } exe)
+        if (!State.AutoUpdate || update.PackageUrl is null || update.PackageSha256 is null || UpdateExecutablePath() is not { } exe)
         { OpenReleasePage(update, owner); return; }
         if (FileOperations.InProgress) { owner.SetApplicationStatus("Wait for the file operation to finish or cancel it before restarting or updating."); return; }
         Updating = true;
-        foreach (var window in windows.ToArray()) window.RefreshUpdate();
-        try { await UpdateInstaller.InstallAsync(update, exe, UpdateInstaller.DownloadAsync, cancellation.Token); }
+        PublishUpdateProgress(new(UpdateStage.Downloading));
+        var progress = new InstallProgress(this);
+        try { await Task.Run(() => UpdateInstaller.InstallAsync(update, exe, UpdateDownload, cancellation.Token, progress)); }
         catch (Exception error) when (error is HttpRequestException or OperationCanceledException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
             if (disposed || LastActiveWindow is null) return;
             if (owner.IsDisposed) owner = LastActiveWindow;
             Updating = false;
+            CurrentUpdateProgress = null;
             foreach (var window in windows.ToArray()) window.RefreshUpdate();
             owner.SetApplicationStatus("Automatic update failed: {0}", error.Message);
             OpenReleasePage(update, owner);
@@ -718,6 +724,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
         if (FileOperations.InProgress)
         {
             Updating = false;
+            CurrentUpdateProgress = null;
             AvailableUpdate = null;
             foreach (var window in windows.ToArray()) window.RefreshUpdate();
             owner.SetApplicationStatus("Updated. Wait for the file operation to finish, then restart Folder Splitter.");
@@ -726,25 +733,57 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
         if (!SaveSession())
         {
             Updating = false;
+            CurrentUpdateProgress = null;
             AvailableUpdate = null;
             foreach (var window in windows.ToArray()) window.RefreshUpdate();
             owner.SetApplicationStatus("Updated. Restart Folder Splitter to finish.");
             return;
         }
+        PublishUpdateProgress(new(UpdateStage.Restarting));
+        // Flush the final footer paint before the replacement process closes these windows.
+        foreach (var window in windows.ToArray()) window.Update();
         if (Launch(exe, RestartArguments())) CloseAll();
         else
         {
             Updating = false;
+            CurrentUpdateProgress = null;
             AvailableUpdate = null;
             foreach (var window in windows.ToArray()) window.RefreshUpdate();
             owner.SetApplicationStatus("Updated. Restart Folder Splitter to finish.");
         }
     }
 
-    private static void OpenReleasePage(ReleaseInfo update, MainForm owner)
+    private void OpenReleasePage(ReleaseInfo update, MainForm owner)
     {
+        if (ReleasePageOpener is { } open) { open(update); return; }
         try { Process.Start(new ProcessStartInfo(update.Url) { UseShellExecute = true }); }
         catch (Win32Exception error) { owner.SetApplicationStatus(error.Message); }
+    }
+
+    private void PublishUpdateProgress(UpdateProgress progress)
+    {
+        if (disposed || !Updating) return;
+        CurrentUpdateProgress = progress;
+        foreach (var window in windows.ToArray()) window.RefreshUpdate();
+    }
+
+    private sealed class InstallProgress(FolderSplitterApplicationContext context) : IProgress<UpdateProgress>
+    {
+        private readonly SynchronizationContext ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        private UpdateProgress? last;
+        private long reportedAt;
+
+        public void Report(UpdateProgress value)
+        {
+            long now = Environment.TickCount64;
+            if (last is { } previous && previous.Stage == value.Stage && now - reportedAt < 100
+                && previous.Percentage == value.Percentage) return;
+            last = value;
+            reportedAt = now;
+            if (context.disposed) return;
+            try { ui.Post(_ => context.PublishUpdateProgress(value), null); }
+            catch (InvalidOperationException) when (context.disposed || context.cancellation.IsCancellationRequested) { }
+        }
     }
 
     private List<string> RestartArguments()

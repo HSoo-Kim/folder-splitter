@@ -59,6 +59,13 @@ internal static partial class Program
                 return RunPublishedGroupSmoke(publishedExecutable, publishedOutput);
             if (args is ["--published-single-smoke", var singleExecutable, var singleOutput])
                 return RunPublishedSinglePaneSmoke(singleExecutable, singleOutput);
+            if (args is ["--rename"])
+            {
+                RunRenameScenario(root);
+                Console.WriteLine($"RENAME_RESULT checks={checks} failures={failures}");
+                Directory.Delete(root, recursive: true);
+                return QuitWithoutDriverTeardown(failures == 0 ? 0 : 1);
+            }
             if (args is ["--tab-groups"])
             {
                 RunTabGroupScenario(root);
@@ -155,6 +162,12 @@ internal static partial class Program
             {
                 Task.Run(RunUpdateInstallScenario).GetAwaiter().GetResult();
                 Console.WriteLine($"UPDATE_INSTALL_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--update-progress"])
+            {
+                RunUpdateProgressScenario(root);
+                Console.WriteLine($"UPDATE_PROGRESS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
             if (args is ["--custom-colors"])
@@ -397,6 +410,7 @@ internal static partial class Program
             RunNativeOpenSelectionScenario(root);
             RunOpenInTabScenario(root);
             RunNativeFolderTabMenuScenario(root);
+            RunRenameScenario(root);
             RunNativeShortcutMenuScenario(root);
             RunHelpDialogScenario(root);
             RunStatusChromeScenario(root);
@@ -413,6 +427,7 @@ internal static partial class Program
             RunMultiWindowScenario(root);
             RunCrossWindowDragScenario(root);
             RunUpdateScenario(root);
+            RunUpdateProgressScenario(root);
             RunPreviewScenario(root);
             RunPdfScenario(root);
             RunTabStripScenario(root);
@@ -427,7 +442,7 @@ internal static partial class Program
             RunResizeMetric(root);
         }
         catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }
-        finally { Directory.Delete(root, recursive: true); }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
         Console.WriteLine(failures == 0 ? $"PASS {checks} native UI integration checks" : $"FAIL {failures} native UI checks ({checks} passed)");
         return QuitWithoutDriverTeardown(failures == 0 ? 0 : 1);
     }
