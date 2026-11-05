@@ -8,6 +8,64 @@ internal static partial class Program
 {
     private sealed record PublishedAccessible(IAccessible Object, int Child, string Name);
 
+    private static int RunPublishedSinglePaneSmoke(string executable, string output)
+    {
+        Directory.CreateDirectory(output);
+        string session = Path.Combine(output, "published-single-session.json");
+        string folder = Directory.CreateDirectory(Path.Combine(output, "Published-folder")).FullName;
+        SessionStore.Save(session, new SessionState
+        {
+            Language = "en", Layout = 1, StartWithWindows = false, GlobalHotkey = false,
+            CheckUpdates = false, AutoRestartMemory = 0, KeepInTray = false,
+            ExplorerFavoritesImported = true, Panes = [new() { Tabs = [] }]
+        });
+        try
+        {
+            for (int launch = 1; launch <= 2; launch++)
+            {
+                var info = new ProcessStartInfo(Path.GetFullPath(executable)) { UseShellExecute = false };
+                info.ArgumentList.Add("--session");
+                info.ArgumentList.Add(session);
+                if (launch == 1) info.ArgumentList.Add(folder);
+                using var process = Process.Start(info) ?? throw new InvalidOperationException("Published process did not start.");
+                try
+                {
+                    List<nint> windows = [];
+                    PublishedWait(() =>
+                    {
+                        windows = PublishedWindows(process.Id, browsersOnly: true);
+                        return windows.Count == 1 && PublishedNames(windows[0])
+                            .Any(item => item.Name.Contains("Published-folder", StringComparison.Ordinal));
+                    }, "single published browser opening the scratch folder");
+                    Check(windows.Count == 1, $"published single-pane launch {launch} opens exactly one browser with the scratch folder");
+                    var settings = PublishedNames(windows[0]).First(item => item.Name == "Settings");
+                    settings.Object.accDoDefaultAction(settings.Child);
+                    PublishedAccessible? exit = null;
+                    PublishedWait(() =>
+                    {
+                        exit = PublishedWindows(process.Id, browsersOnly: false).SelectMany(PublishedNames)
+                            .FirstOrDefault(item => item.Name == "Exit");
+                        return exit is not null;
+                    }, "single-pane published Settings Exit");
+                    exit!.Object.accDoDefaultAction(exit.Child);
+                    Check(process.WaitForExit(30_000) && process.ExitCode == 0,
+                        $"published single-pane launch {launch} exits cleanly through Settings");
+                    var saved = SessionStore.Load(session);
+                    Check(saved.Windows.Count == 1 && saved.Windows[0].Panes[0].Tabs.Contains(folder)
+                        && saved.Windows[0].Layout == 1,
+                        $"published single-pane launch {launch} saves the opened folder and one-pane layout for relaunch");
+                }
+                finally
+                {
+                    if (!process.HasExited) { process.Kill(entireProcessTree: true); process.WaitForExit(); }
+                }
+            }
+        }
+        catch (Exception exception) { failures++; Console.Error.WriteLine("FAIL published single-pane smoke " + exception); }
+        Console.WriteLine($"PUBLISHED_SINGLE_SMOKE_RESULT checks={checks} failures={failures}");
+        return failures == 0 ? 0 : 1;
+    }
+
     private static int RunPublishedGroupSmoke(string executable, string output)
     {
         Directory.CreateDirectory(output);

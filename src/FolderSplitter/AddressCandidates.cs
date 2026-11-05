@@ -23,6 +23,7 @@ internal sealed class AddressCandidates : Form
     private Form? ownerForm;
     private string? hoveredPath;
     internal event Action<SearchHit>? Chosen;
+    internal event Action<SearchHit, bool>? OpenInTabRequested;
     internal event Action? MoreRequested;
     // Result pages shown in turn; choosing the "show more" row asks for the next one.
     internal static readonly int[] ResultLimits = [50, 200, 500];
@@ -50,11 +51,16 @@ internal sealed class AddressCandidates : Form
         rows.DrawItem += DrawRow;
         rows.MouseDown += (_, e) =>
         {
-            if (e.Button != MouseButtons.Left) return;
+            if (e.Button is not (MouseButtons.Left or MouseButtons.Middle)) return;
             int index = rows.IndexFromPoint(e.Location);
             if (index < 0) return;
-            if (rows.Items[index] is SearchHit hit) Chosen?.Invoke(hit);
-            else if (rows.Items[index] is FooterRow { Kind: CandidateFooter.More }) MoreRequested?.Invoke();
+            if (rows.Items[index] is SearchHit hit)
+            {
+                if (e.Button == MouseButtons.Middle || (ModifierKeys & Keys.Control) != 0)
+                    OpenInTabRequested?.Invoke(hit, (ModifierKeys & (Keys.Control | Keys.Shift)) == (Keys.Control | Keys.Shift));
+                else Chosen?.Invoke(hit);
+            }
+            else if (e.Button == MouseButtons.Left && rows.Items[index] is FooterRow { Kind: CandidateFooter.More }) MoreRequested?.Invoke();
         };
         rows.MouseMove += (_, e) =>
         {
@@ -291,12 +297,12 @@ internal sealed class AddressCandidates : Form
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == 0x203) return; // WM_LBUTTONDBLCLK: the first click of the pair already acted; the list may have changed since
-            if (m.Msg == 0x201) // WM_LBUTTONDOWN
+            if (m.Msg is 0x201 or 0x207) // WM_LBUTTONDOWN / WM_MBUTTONDOWN
             {
                 var point = new Point(unchecked((short)(long)m.LParam), unchecked((short)((long)m.LParam >> 16)));
                 int index = IndexFromPoint(point);
                 if (index >= 0) SelectedIndex = index;
-                OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, point.X, point.Y, 0));
+                OnMouseDown(new MouseEventArgs(m.Msg == 0x207 ? MouseButtons.Middle : MouseButtons.Left, 1, point.X, point.Y, 0));
                 return;
             }
             base.WndProc(ref m);

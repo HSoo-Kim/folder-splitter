@@ -28,6 +28,8 @@
 
 A Windows file manager built on the native Shell file list (`IExplorerBrowser`). It doesn't modify or replace `explorer.exe` and runs as a separate app.
 
+Folders open in background tabs with middle-click, the native right-click menu's **Open in new tab**, Ctrl+double-click or Ctrl+Enter; add Shift to the Ctrl gesture to switch to the new tab. Sidebar, folder tree, breadcrumb and address-search entries also accept middle-click or Ctrl+click. Related tabs open after their opener and join its group while room remains. Drop folders or files onto a tab strip to open them at the insertion marker (files are selected in their folder); these drops create links to locations, never move source items. Hover over a tab while dragging to select it before dropping into its native file list.
+
 ## Key Capabilities
 
 | Feature | What it does |
@@ -122,7 +124,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **Tab width and tab list**: Tabs grow and shrink with the folder name, and a lone tab shows more of a long name. With many tabs they shrink evenly; when they still do not fit, the `▾` button next to `+` lists every tab.
 - **Drag tabs into place**: Drag a tab or group chip along any pane's strip; an insertion marker shows the destination. A tab dropped between group members, or immediately right of an expanded chip, joins that group. A group chip always moves its members together. Drop near a file-list edge to split in that direction, or in another pane's center to move there. Empty panes accept tabs and groups too. Press Esc to cancel a drag.
 - **Keyboard tab access**: `Ctrl+Shift+F6` focuses the active pane's tab strip. Arrow keys reach tabs and group chips; Enter/Space selects a tab or toggles a chip. Apps or `Shift+F10` opens the focused item's menu below it. `Ctrl+Shift+PageUp` / `Ctrl+Shift+PageDown` moves the current tab left/right, entering or leaving groups at their boundaries. Existing `F6` / `Shift+F6` pane navigation is unchanged.
-- **Related tabs**: Duplicating a tab puts its copy immediately after it in the same group. Folder-tree “Open in new tab” does the same for the active tab's group; favorites and places still open ungrouped tabs at the end. When a group is full, the related tab opens ungrouped immediately after that group.
+- **Related tabs**: Duplicating a tab puts its copy immediately after it in the same group. Folder-opening gestures and menus append consecutive openings to the active tab's related run and inherit its group while room remains. When a group is full, new folders open ungrouped immediately after that group. A pinned opener's related tabs always open unpinned after the pinned prefix. External folder/file drops over pins likewise insert after the prefix; hovering over a pin still switches to it.
 - **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
 - **Keep the pane you are using**: Switching to one pane keeps the active pane; if it has no tabs, a visible pane with tabs is kept instead. Hidden panes retain their tabs.
 - **Moving between panes**: `F6` goes to the next pane and `Shift+F6` to the previous one, wrapping around. `Alt+1` to `Alt+4` jump straight to that pane; if it isn't open, the status line says so.

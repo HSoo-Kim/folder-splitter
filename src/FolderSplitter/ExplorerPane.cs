@@ -124,6 +124,7 @@ public sealed partial class ExplorerPane : UserControl
     internal event Action<ExplorerPane, TabGroup, int>? MoveGroupRequested;
     internal event Action<ExplorerPane, TabGroup>? MoveGroupToWindowRequested;
     public event EventHandler<string>? FolderVisited;
+    internal event Action<IReadOnlyList<string>>? OpenFoldersInNewWindowRequested;
     internal event Action<ExplorerPane>? OpenInOtherPaneRequested;
     internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
 
@@ -135,6 +136,7 @@ public sealed partial class ExplorerPane : UserControl
         this.searchRoots = searchRoots;
         candidates = new AddressCandidates(number);
         candidates.Chosen += OpenCandidate;
+        candidates.OpenInTabRequested += (hit, foreground) => { CloseCandidates(); OpenPathsInNewTabs([hit.FullPath], foreground); };
         candidates.MoreRequested += ShowMoreCandidates;
         searchTimer.Tick += async (_, _) => { searchTimer.Stop(); await QueryCandidates(); };
         if (search is not null) search.IndexChanged += SearchIndexChanged;
@@ -292,6 +294,7 @@ public sealed partial class ExplorerPane : UserControl
         // The status line is a caption: a step smaller than the body text.
         FontChanged += (_, _) => status.Font = new Font(Font.FontFamily, Math.Max(7f, Font.SizeInPoints - 1f));
         contents.Controls.Add(emptyHint);
+        InitializeExternalTabDrops();
         emptyHint.Click += (_, _) => FocusAddress();
         Enter += (_, _) => Activated?.Invoke(this, EventArgs.Empty);
         MouseDown += (_, _) => Activated?.Invoke(this, EventArgs.Empty);
@@ -564,6 +567,14 @@ public sealed partial class ExplorerPane : UserControl
         string? selectFile = File.Exists(path) ? Path.GetFullPath(path) : null;
         var host = new ShellViewHost(selectFile is null ? path : Path.GetDirectoryName(selectFile)!, text) { Visible = false };
         host.SetDetailsAppearance(showVerticalSeparators, comfortableRows, highlightSortedColumn);
+        host.OpenFoldersInTabsRequested += (paths, foreground) =>
+        {
+            if (host == ActiveView) OpenPathsInNewTabs(paths, foreground);
+        };
+        host.OpenFoldersInNewWindowRequested += paths =>
+        {
+            if (host == ActiveView) OpenFoldersInNewWindowRequested?.Invoke(paths);
+        };
         if (selectFile is not null) host.NavigateAndSelect(selectFile);
         tab.Host = host;
         var button = tab.Button;
@@ -621,6 +632,7 @@ public sealed partial class ExplorerPane : UserControl
     {
         CloseCandidates();
         if (index < 0 || index >= tabs.Count) return;
+        if (ActiveTab != tabs[index]) { tabOpener = null; openerRunTabs.Clear(); }
         if (tabs[index].Group is { Collapsed: true } group) group.Collapsed = false;
         if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host is { } previous) previous.Visible = false;
         selectedIndex = index;
@@ -675,6 +687,7 @@ public sealed partial class ExplorerPane : UserControl
         var active = ActiveTab;
         int nextIndex = selectedIndex > index ? selectedIndex - 1 : Math.Min(selectedIndex, tabs.Count - 2);
         tabs.RemoveAt(index);
+        openerRunTabs.Remove(tab);
         selectedIndex = active == tab || active is null ? -1 : tabs.IndexOf(active);
         if (tab.Group is not null || groupChips.Count > 0) SynchronizeGroupStrip();
         tabStrip.Items.Remove(tab.Button);
@@ -1247,7 +1260,7 @@ public sealed partial class ExplorerPane : UserControl
             {
                 string target = path;
                 var segment = new ToolStripButton(label) { Margin = new Padding(0), Padding = new Padding(2, 0, 2, 0), ToolTipText = target };
-                segment.Click += (_, _) => Navigate(target);
+                BindFolderNavigationTarget(segment, target);
                 var chevron = new ToolStripDropDownButton("\u203A")
                 {
                     ShowDropDownArrow = false, Margin = new Padding(0), Padding = new Padding(1, 0, 1, 0),
@@ -1318,7 +1331,7 @@ public sealed partial class ExplorerPane : UserControl
             for (int i = first - 1; i >= 0; i--)
             {
                 string target = breadcrumbSegments[i].Path;
-                hidden.DropDownItems.Add(breadcrumbSegments[i].Label, null, (_, _) => Navigate(target));
+                BindFolderNavigationTarget(hidden.DropDownItems.Add(breadcrumbSegments[i].Label), target);
             }
             hidden.DropDownOpening += (_, _) => Theme.Apply(breadcrumb);
             breadcrumb.Items.Insert(0, hidden);
@@ -1337,7 +1350,7 @@ public sealed partial class ExplorerPane : UserControl
                 .Select(directory => directory.FullName).Take(500).ToList();
             names.Sort((left, right) => StrCmpLogicalW(Path.GetFileName(left), Path.GetFileName(right)));
             foreach (string path in names)
-                chevron.DropDownItems.Add(Path.GetFileName(path), null, (_, _) => Navigate(path));
+                BindFolderNavigationTarget(chevron.DropDownItems.Add(Path.GetFileName(path)), path);
             if (names.Count == 0) chevron.DropDownItems.Add(text.T("(No subfolders)")).Enabled = false;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -1493,6 +1506,7 @@ public sealed partial class ExplorerPane : UserControl
             searchTimer.Dispose();
             selectionTimer.Dispose();
             folderSizeTimer.Dispose();
+            dragHoverTimer.Dispose();
             candidates.Dispose();
             tips.Dispose();
             tabMenu.Dispose();

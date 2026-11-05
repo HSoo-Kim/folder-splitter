@@ -2,7 +2,7 @@ using System.Security;
 
 namespace QuadExplorer;
 
-internal enum FolderTreeTarget { CurrentPane, NewTab, NewPane, ExplorerWindow }
+internal enum FolderTreeTarget { CurrentPane, NewTab, BackgroundTab, ForegroundTab, NewPane, ExplorerWindow }
 
 internal sealed class FolderTree : UserControl
 {
@@ -70,7 +70,7 @@ internal sealed class FolderTree : UserControl
             if (e.KeyCode == Keys.Enter)
             {
                 e.Handled = e.SuppressKeyPress = true;
-                RequestOpen(e.Control ? FolderTreeTarget.NewTab : FolderTreeTarget.CurrentPane);
+                RequestOpen(e.Control ? e.Shift ? FolderTreeTarget.ForegroundTab : FolderTreeTarget.BackgroundTab : FolderTreeTarget.CurrentPane);
             }
             else if (e.KeyCode == Keys.F5)
             {
@@ -164,9 +164,20 @@ internal sealed class FolderTree : UserControl
             (hit.Location & (TreeViewHitTestLocations.Label | TreeViewHitTestLocations.Image)) == 0 ||
             hit.Node?.Tag is not Folder) return;
         Tree.SelectedNode = hit.Node;
-        RequestOpen(e.Button == MouseButtons.Middle || (ModifierKeys & Keys.Control) != 0
-            ? FolderTreeTarget.NewTab : FolderTreeTarget.CurrentPane);
+        var node = hit.Node;
+        var target = e.Button == MouseButtons.Middle || (ModifierKeys & Keys.Control) != 0
+            ? (ModifierKeys & (Keys.Control | Keys.Shift)) == (Keys.Control | Keys.Shift)
+                ? FolderTreeTarget.ForegroundTab : FolderTreeTarget.BackgroundTab
+            : FolderTreeTarget.CurrentPane;
+        // Let TreeView finish native selection/capture before a foreground Shell view can pump messages.
+        Tree.BeginInvoke(() =>
+        {
+            if (lifetimeToken.IsCancellationRequested || node.TreeView != Tree) return;
+            Tree.SelectedNode = node;
+            RequestOpen(target);
+        });
     }
+
 
     public async Task FollowPathAsync(string path)
     {

@@ -109,6 +109,8 @@ internal static partial class Program
     private static async Task TgEditorAndKeyboard(MainForm form, ExplorerPane pane, string[] paths)
     {
         pane.ReplaceTabs(new PaneState { Tabs = paths.Take(3).ToList() });
+        await OitReady(pane.ActiveView!); // finish the fixture's Shell activation before opening a popup
+        await NativeAppearanceDispatch(form);
         var original = pane.Tabs[0];
         TgTabMenu(pane, original, "Add tab to new group").PerformClick();
         await NativeAppearanceDispatch(form); // the editor opens after native context-menu teardown

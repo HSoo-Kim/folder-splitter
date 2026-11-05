@@ -250,6 +250,11 @@ public sealed partial class MainForm : Form, IMessageFilter
             };
             pane.SelectionChanged += (_, _) => { if (ReferenceEquals(pane, Active)) SchedulePreview(); };
             pane.FavoriteRequested += (_, path) => AddFavorite(path);
+            pane.OpenFoldersInNewWindowRequested += paths =>
+            {
+                if (paths.Count > 32) pane.SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first.");
+                application.CreateWindowFromFolders(this, paths.Count <= 32 ? paths : paths.Take(32).ToArray());
+            };
             pane.MoveTabsRequested += MoveTabs;
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
@@ -342,7 +347,8 @@ public sealed partial class MainForm : Form, IMessageFilter
         TrackHover(places);
         // An owner-drawn list keeps old pixels when it only gets narrower, leaving tails of long names; repaint it all.
         places.Resize += (_, _) => places.Invalidate();
-        places.MouseClick += (_, _) => OpenPlace();
+        places.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) OpenSidebarPlace(places, e); };
+        places.MouseDown += (_, e) => { if (e.Button == MouseButtons.Middle) OpenSidebarPlace(places, e); };
         places.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Enter) { OpenPlace(); e.Handled = true; }
@@ -350,7 +356,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         var placeMenu = new ContextMenuStrip();
         BindText(placeMenu.Items.Add("Open in new tab", null, (_, _) =>
         {
-            if (places.SelectedItem is Place place) Active.AddTab(place.Path);
+            if (places.SelectedItem is Place place) Active.OpenPathsInNewTabs([place.Path], foreground: true);
         }), "Open in new tab");
         BindText(placeMenu.Items.Add("Remove favorite", null, (_, _) =>
         {
@@ -369,7 +375,8 @@ public sealed partial class MainForm : Form, IMessageFilter
         favoritePlaces.DrawItem += DrawPlace;
         TrackHover(favoritePlaces);
         favoritePlaces.Resize += (_, _) => favoritePlaces.Invalidate();
-        favoritePlaces.MouseClick += (_, _) => { if (favoritePlaces.SelectedItem is Place p) Active.Navigate(p.Path); };
+        favoritePlaces.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) OpenSidebarPlace(favoritePlaces, e); };
+        favoritePlaces.MouseDown += (_, e) => { if (e.Button == MouseButtons.Middle) OpenSidebarPlace(favoritePlaces, e); };
         favoritePlaces.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Enter && favoritePlaces.SelectedItem is Place p)
@@ -377,7 +384,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         };
         var favoriteMenu = new ContextMenuStrip();
         BindText(favoriteMenu.Items.Add("Open in new tab", null, (_, _) =>
-        { if (favoritePlaces.SelectedItem is Place p) Active.AddTab(p.Path); }), "Open in new tab");
+        { if (favoritePlaces.SelectedItem is Place p) Active.OpenPathsInNewTabs([p.Path], foreground: true); }), "Open in new tab");
         BindText(favoriteMenu.Items.Add("Remove favorite", null, (_, _) =>
         {
             if (favoritePlaces.SelectedItem is Place p)
@@ -604,6 +611,16 @@ public sealed partial class MainForm : Form, IMessageFilter
         }
         list.MouseMove += (_, e) => { int index = list.IndexFromPoint(e.Location); Set(index < list.Items.Count ? index : -1); };
         list.MouseLeave += (_, _) => Set(-1);
+    }
+
+    private void OpenSidebarPlace(ListBox list, MouseEventArgs e)
+    {
+        if (e.Button is not (MouseButtons.Left or MouseButtons.Middle)) return;
+        int index = list.IndexFromPoint(e.Location);
+        if (index < 0 || list.Items[index] is not Place place) return;
+        if (e.Button == MouseButtons.Middle || (ModifierKeys & Keys.Control) != 0)
+            Active.OpenPathsInNewTabs([place.Path], (ModifierKeys & (Keys.Control | Keys.Shift)) == (Keys.Control | Keys.Shift));
+        else Active.Navigate(place.Path);
     }
 
     private void BindTip(Control control, string key)
@@ -1775,6 +1792,8 @@ public sealed partial class MainForm : Form, IMessageFilter
         {
             case FolderTreeTarget.CurrentPane: Active.Navigate(path); break;
             case FolderTreeTarget.NewTab: Active.AddRelatedTab(path); break;
+            case FolderTreeTarget.BackgroundTab: Active.OpenPathsInNewTabs([path], foreground: false); break;
+            case FolderTreeTarget.ForegroundTab: Active.OpenPathsInNewTabs([path], foreground: true); break;
             case FolderTreeTarget.NewPane:
                 if (visiblePanes.Length == 4)
                 { Active.SetLocalizedStatus("Maximum 4 panes. Close a pane first."); return; }

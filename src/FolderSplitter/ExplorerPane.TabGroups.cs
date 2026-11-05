@@ -155,8 +155,7 @@ public sealed partial class ExplorerPane
 
     internal void AddRelatedTab(string path)
     {
-        if (ActiveTab is not { } active) { AddTab(path); return; }
-        InsertRelatedTab(active, path);
+        OpenPathsInNewTabs([path], foreground: true);
     }
 
     private void DuplicateTab(FolderTab original)

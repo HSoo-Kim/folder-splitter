@@ -193,12 +193,26 @@ public interface IFolderView2
     [PreserveSig] int GetSortColumnCount(out int count);
     [PreserveSig] int SetSortColumns([In, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] SortColumn[] columns, int count);
     [PreserveSig] int GetSortColumns([Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] SortColumn[] columns, int count);
-    void GetItem(); void GetVisibleItem(); void GetSelectedItem(); void GetSelection(); void GetSelectionState();
+    [PreserveSig] int GetItem(int item, ref Guid interfaceId, out IShellItem shellItem);
+    void GetVisibleItem();
+    [PreserveSig] int GetSelectedItem(int start, out int item);
+    void GetSelection(); void GetSelectionState();
     [PreserveSig] int InvokeVerbOnSelection([MarshalAs(UnmanagedType.LPStr)] string verb);
     [PreserveSig] int SetViewModeAndIconSize(uint mode, int size);
     [PreserveSig] int GetViewModeAndIconSize(out uint mode, out int size);
     void SetGroupSubsetCount(); void GetGroupSubsetCount(); void SetRedraw(); void IsMoveInSameFolder();
     [PreserveSig] int DoRename();
+}
+
+// Shell items retain their namespace identity, including rows originating in libraries/results folders.
+[ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IShellItem
+{
+    [PreserveSig] int BindToHandler(nint bindingContext, ref Guid handler, ref Guid interfaceId, out IShellItem item);
+    [PreserveSig] int GetParent(out IShellItem parent);
+    [PreserveSig] int GetDisplayName(uint nameType, out nint name);
+    [PreserveSig] int GetAttributes(uint mask, out uint attributes);
+    [PreserveSig] int Compare(IShellItem other, uint hint, out int order);
 }
 
 // The folder view's background menu (New folder, Paste) is invoked by its canonical verb, as File Explorer does.
@@ -208,6 +222,25 @@ public interface IContextMenu
     [PreserveSig] int QueryContextMenu(nint menu, uint index, uint firstCommand, uint lastCommand, uint flags);
     [PreserveSig] int InvokeCommand(nint info);
     [PreserveSig] int GetCommandString(nuint command, uint type, nint reserved, nint name, uint length);
+}
+
+[ComImport, Guid("000214F4-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IContextMenu2
+{
+    [PreserveSig] int QueryContextMenu(nint menu, uint index, uint firstCommand, uint lastCommand, uint flags);
+    [PreserveSig] int InvokeCommand(nint info);
+    [PreserveSig] int GetCommandString(nuint command, uint type, nint reserved, nint name, uint length);
+    [PreserveSig] int HandleMenuMsg(uint message, nuint wParam, nint lParam);
+}
+
+[ComImport, Guid("BCFCE0A0-EC17-11D0-8D10-00A0C90F2719"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IContextMenu3
+{
+    [PreserveSig] int QueryContextMenu(nint menu, uint index, uint firstCommand, uint lastCommand, uint flags);
+    [PreserveSig] int InvokeCommand(nint info);
+    [PreserveSig] int GetCommandString(nuint command, uint type, nint reserved, nint name, uint length);
+    [PreserveSig] int HandleMenuMsg(uint message, nuint wParam, nint lParam);
+    [PreserveSig] int HandleMenuMsg2(uint message, nuint wParam, nint lParam, out nint result);
 }
 
 [StructLayout(LayoutKind.Sequential)]

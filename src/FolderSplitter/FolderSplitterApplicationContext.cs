@@ -169,8 +169,13 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     public MainForm CreateWindowFromActive(MainForm source)
     {
         string path = source?.ActiveFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return CreateWindowFromFolders(source, string.IsNullOrEmpty(path) ? [] : [path]);
+    }
+
+    internal MainForm CreateWindowFromFolders(MainForm? source, IReadOnlyList<string> paths)
+    {
         var state = new BrowserWindowState { Layout = 1, LayoutTree = PaneLayout.Preset(1),
-            Panes = [new PaneState { Tabs = string.IsNullOrEmpty(path) ? [] : [path] }] };
+            Panes = [new PaneState { Tabs = [.. paths] }] };
         if (source is not null)
         {
             Rectangle bounds = source.WindowState == FormWindowState.Normal ? source.Bounds : source.RestoreBounds;
