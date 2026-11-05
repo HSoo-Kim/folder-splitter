@@ -47,7 +47,15 @@ internal static partial class Program
                     }
                     await Visit(child + Path.DirectorySeparatorChar, "address navigation counts exactly one normalized folder visit");
                     pane.FocusFiles();
-                    var crumb = pane.Breadcrumb.Items.OfType<ToolStripButton>().Single(item => item.Text == "count-parent");
+                    ToolStripItem crumb = pane.Breadcrumb.Items.OfType<ToolStripButton>().Single(item => item.Text == "count-parent");
+                    if (!crumb.Available)
+                    {
+                        // Restored physical bounds can put this ancestor in the real breadcrumb overflow.
+                        var overflow = pane.Breadcrumb.Items.OfType<ToolStripDropDownButton>()
+                            .Single(item => item.AccessibleName == "Hidden path folders");
+                        overflow.ShowDropDown();
+                        crumb = overflow.DropDownItems.Cast<ToolStripItem>().Single(item => item.Text == "count-parent");
+                    }
                     await Navigate(pane.ActiveView!, crumb.PerformClick);
                     FreqIncrement(expected, parent);
                     FreqCounts(form, expected, "breadcrumb navigation counts exactly once");

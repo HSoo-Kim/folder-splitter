@@ -12,6 +12,10 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         string sessionPath = SessionStore.DefaultPath;
+        // Resolve the scratch session before loading: legacy loads now create a migration backup.
+        int sessionArgument = Array.LastIndexOf(args, "--session");
+        if (sessionArgument >= 0 && sessionArgument + 1 < args.Length)
+            sessionPath = Path.GetFullPath(args[sessionArgument + 1]);
         var text = new UiText(SessionStore.Load(sessionPath).Language);
         var folders = new List<string>();
         bool toggle = false, hidden = false, minimized = false;
@@ -60,10 +64,12 @@ internal static class Program
         // Only the default session registers itself at launch: a work or test session started with --session
         // must not take over the one Run value. Any session can still turn the option on in Settings.
         bool registerStartup = sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase);
-        Application.Run(new MainForm(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync)
+        using var context = new FolderSplitterApplicationContext(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync)
         {
             StartMinimized = hidden || minimized, StartHidden = hidden, RegisterStartupOnLaunch = registerStartup
-        });
+        };
+        context.ShowWindows();
+        Application.Run(context);
     }
 
     // After an update the new executable starts before the old one has exited.

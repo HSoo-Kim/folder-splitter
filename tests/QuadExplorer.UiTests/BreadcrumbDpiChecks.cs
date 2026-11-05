@@ -24,6 +24,11 @@ internal static partial class Program
                 pane.FocusFiles();
                 await NativeAppearanceDispatch(form);
                 var address = Descendants(pane).OfType<TextBox>().Single(box => box.AccessibleName == "Pane 1 address");
+                // This is a font/clipping fixture, not a window-bounds test. Keep the original 800-pixel
+                // field explicitly now that saved window bounds no longer receive an extra startup DPI scale.
+                int outlineInset = (int)Math.Round(7 * pane.DeviceDpi / 96d);
+                form.Width += 800 - address.Width - 2 * outlineInset;
+                await NativeAppearanceDispatch(form);
                 using var originalFont = (Font)address.Font.Clone();
                 int windowDpi = address.DeviceDpi;
                 var results = new List<(bool Fits, string Name)>();
@@ -54,7 +59,12 @@ internal static partial class Program
                     Console.WriteLine($"DPI step={step} requested={dpi} form={form.DeviceDpi} address={address.DeviceDpi} strip={strip.DeviceDpi} " +
                         $"addressHeight={address.ClientSize.Height} stripHeight={strip.ClientSize.Height} " +
                         $"addressFont={address.Font.SizeInPoints:F2} stripFont={strip.Font.SizeInPoints:F2}");
-                    foreach (var item in strip.Items.Cast<ToolStripItem>().Where(item => item.Available))
+                    var visibleItems = strip.Items.Cast<ToolStripItem>().Where(item => item.Available).ToArray();
+                    int requiredItems = dpi switch { 96 => 11, 120 => 7, _ => 5 };
+                    if (fieldBounds.Width != 800 || visibleItems.Length < requiredItems)
+                        throw new InvalidOperationException($"Breadcrumb sizing fixture lost coverage at step {step}: "
+                            + $"field width {fieldBounds.Width}, visible items {visibleItems.Length}, required {requiredItems}.");
+                    foreach (var item in visibleItems)
                     {
                         // ToolStrip's layout can place a correctly sized glyph below its clipping parent.
                         var layout = (ToolStripItemTextRenderEventArgs?)null;
