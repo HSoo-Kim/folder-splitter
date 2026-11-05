@@ -76,6 +76,29 @@ internal static class BrowserWindowGeometryTests
         }
     }
 
+    public static void TornOffBounds()
+    {
+        var work = new Rectangle(-3200, -400, 2400, 1600);
+        var source = new Rectangle(100, 100, 1200, 800);
+        foreach (var (sourceDpi, targetDpi, expectedSize) in new[]
+        {
+            (96, 96, new Size(1200, 800)), (96, 144, new Size(1800, 1200)),
+            (144, 96, new Size(900, 600)), (120, 144, new Size(1440, 960))
+        })
+        {
+            var bottomRight = BrowserWindowGeometry.TearOff(source, new Point(work.Right - 1, work.Bottom - 1),
+                work, sourceDpi, targetDpi);
+            Equal(expectedSize, bottomRight.Size);
+            Equal(work.Right, bottomRight.Right);
+            Equal(work.Bottom, bottomRight.Bottom);
+            var topLeft = BrowserWindowGeometry.TearOff(source, work.Location, work, sourceDpi, targetDpi);
+            Equal(work.Location, topLeft.Location);
+            Equal(expectedSize, topLeft.Size);
+            var tinyMonitor = new Rectangle(1920, 0, 640, 480);
+            Equal(tinyMonitor, BrowserWindowGeometry.TearOff(source, tinyMonitor.Location, tinyMonitor, sourceDpi, targetDpi));
+        }
+    }
+
     private static void Equal<T>(T expected, T actual)
     {
         if (!EqualityComparer<T>.Default.Equals(expected, actual))

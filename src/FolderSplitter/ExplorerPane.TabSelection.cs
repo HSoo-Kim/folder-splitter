@@ -152,25 +152,38 @@ public sealed partial class ExplorerPane
         var copied = new List<FolderTab>();
         var groups = new Dictionary<TabGroup, TabGroup>();
         SuppressSavedGroupSync = true;
-        foreach (var original in source)
+        try
         {
-            TabGroup? group = null;
-            if (preserveGroups && original.Group is { } old)
+            foreach (var original in source)
             {
-                if (!groups.TryGetValue(old, out group))
+                TabGroup? group = null;
+                if (preserveGroups && original.Group is { } old)
                 {
-                    Control? owner = original.Button.Owner;
-                    while (owner is not null && owner is not ExplorerPane) owner = owner.Parent;
-                    bool wholeGroup = owner is ExplorerPane pane && pane.GroupMembers(old).All(source.Contains);
-                    group = new TabGroup { Name = old.Name, Color = old.Color, SavedId = wholeGroup ? old.SavedId : null };
-                    groups.Add(old, group);
+                    if (!groups.TryGetValue(old, out group))
+                    {
+                        Control? owner = original.Button.Owner;
+                        while (owner is not null && owner is not ExplorerPane) owner = owner.Parent;
+                        bool wholeGroup = owner is ExplorerPane pane && pane.GroupMembers(old).All(source.Contains);
+                        group = new TabGroup { Name = old.Name, Color = old.Color, SavedId = wholeGroup ? old.SavedId : null };
+                        groups.Add(old, group);
+                    }
                 }
+                if (InsertTab(original.Host?.LocationPath, select: false, countVisit: false, group: group) is not { } tab)
+                {
+                    RemoveTabsForMove(copied);
+                    return [];
+                }
+                copied.Add(tab);
             }
-            copied.Add(InsertTab(original.Host?.LocationPath, select: false, countVisit: false, group: group)!);
+            SelectTab(tabs.IndexOf(copied[0]));
+            return copied;
         }
-        SelectTab(tabs.IndexOf(copied[0]));
-        SuppressSavedGroupSync = false;
-        return copied;
+        catch
+        {
+            RemoveTabsForMove(copied);
+            throw;
+        }
+        finally { SuppressSavedGroupSync = false; }
     }
 
     private void ReopenSelection(ClosedSelectionTab[] snapshot)

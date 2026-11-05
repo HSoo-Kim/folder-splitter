@@ -1,7 +1,7 @@
 namespace QuadExplorer;
 
 internal sealed record TabDropPlan(int TargetPane, SplitEdge? Edge, Rectangle Preview, string Label, bool Allowed,
-    int? InsertionIndex = null, TabGroup? JoinGroup = null);
+    int? InsertionIndex = null, TabGroup? JoinGroup = null, MainForm? TargetWindow = null);
 
 // Shown only while dragging one of our tabs. Native Shell file drops otherwise
 // continue to go directly to the Shell views beneath this window.
@@ -9,7 +9,7 @@ internal sealed class TabDockOverlay : Form
 {
     internal const string DragFormat = "FolderSplitter.Tab";
     private readonly Func<Point, TabDropPlan?> hitTest;
-    private readonly Rectangle[] paneBounds;
+    private Rectangle[] paneBounds;
     private readonly UiText text;
     private TabDropPlan? preview;
 
@@ -41,6 +41,13 @@ internal sealed class TabDockOverlay : Form
             UpdatePreview(this, e);
             if (preview is { Allowed: true }) Result = preview;
         };
+    }
+
+    internal void RefreshBounds(Rectangle bounds, Rectangle[] panes)
+    {
+        if (Bounds != bounds) Bounds = bounds;
+        paneBounds = panes;
+        Invalidate();
     }
 
     private void UpdatePreview(object? sender, DragEventArgs e)

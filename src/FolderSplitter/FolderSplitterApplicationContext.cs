@@ -6,7 +6,7 @@ using QuadExplorer.Search;
 namespace QuadExplorer;
 
 // No browser owns the message loop: closing the first window must not retire shared services.
-public sealed class FolderSplitterApplicationContext : ApplicationContext
+public sealed partial class FolderSplitterApplicationContext : ApplicationContext
 {
     private readonly List<MainForm> windows = [];
     private readonly System.Collections.ObjectModel.ReadOnlyCollection<MainForm> registeredWindows;
@@ -182,7 +182,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         return CreateWindow(state);
     }
 
-    internal void MoveGroupToNewWindow(MainForm source, ExplorerPane pane, TabGroup group)
+    internal void MoveGroupToNewWindow(MainForm source, ExplorerPane pane, TabGroup group, Point? releasePoint = null)
     {
         if (disposed || shuttingDown || saving || !windows.Contains(source)
             || source.GetPane(pane.PaneNumber - 1) != pane) return;
@@ -198,6 +198,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         if (selected < 0) selected = Math.Clamp(group.LastSelectedMember, 0, members.Count - 1);
         Rectangle bounds = source.WindowState == FormWindowState.Normal ? source.Bounds : source.RestoreBounds;
         Rectangle cascaded = BrowserWindowGeometry.Cascade(bounds, Screen.FromRectangle(bounds).WorkingArea, source.DeviceDpi);
+        if (releasePoint is { } point) cascaded = TearOffBounds(source, bounds, point);
         var seed = new BrowserWindowState
         {
             Layout = 1, LayoutTree = PaneLayout.Preset(1), Panes = [new PaneState()],
@@ -212,6 +213,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
             var moved = destination.AddGroup(paths, group.Name, group.Color, collapsed: false,
                 selectedMember: Math.Max(0, selected));
             if (moved is not null) moved.SavedId = group.SavedId;
+            if (moved is null) { window.Dispose(); return; }
             window.Show();
             window.Activate();
             transferringSource = source;
@@ -227,13 +229,14 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     }
 
     internal void MoveTabsToNewWindow(MainForm sourceWindow, ExplorerPane source,
-        IReadOnlyList<ExplorerPane.FolderTab> tabs)
+        IReadOnlyList<ExplorerPane.FolderTab> tabs, Point? releasePoint = null)
     {
         if (disposed || shuttingDown || saving || !windows.Contains(sourceWindow)
             || sourceWindow.GetPane(source.PaneNumber - 1) != source
             || tabs.Count == 0 || tabs.Any(tab => source.IndexOfTab(tab) < 0)) return;
         Rectangle bounds = sourceWindow.WindowState == FormWindowState.Normal ? sourceWindow.Bounds : sourceWindow.RestoreBounds;
         Rectangle cascaded = BrowserWindowGeometry.Cascade(bounds, Screen.FromRectangle(bounds).WorkingArea, sourceWindow.DeviceDpi);
+        if (releasePoint is { } point) cascaded = TearOffBounds(sourceWindow, bounds, point);
         var seed = new BrowserWindowState
         {
             Layout = 1, LayoutTree = PaneLayout.Preset(1), Panes = [new PaneState()],

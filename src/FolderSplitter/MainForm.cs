@@ -2085,65 +2085,37 @@ public sealed partial class MainForm : Form, IMessageFilter
         IReadOnlyList<ExplorerPane.FolderTab>? movingTabs = null)
     {
         ActivatePane(source.PaneNumber - 1);
-        Rectangle bounds = paneHost.RectangleToScreen(paneHost.ClientRectangle);
-        Rectangle[] regions = visiblePanes.Select(i => panes[i].RectangleToScreen(panes[i].ClientRectangle)).ToArray();
-        using var overlay = new TabDockOverlay(bounds, regions,
-            point => group is null ? FindDropPlan(point, source, tab!, movingTabs!) : FindGroupDropPlan(point, source, group), text);
-        var data = new DataObject();
-        data.SetData(TabDockOverlay.DragFormat, false, group is null ? "tab" : "group");
+        application.StartTabDrag(this, source, tab, group, movingTabs);
+    }
+
+    internal DragDropEffects RunTabDrag(IDataObject data)
+    {
         tabDragging = true;
-        DragDropEffects effect;
-        try
-        {
-            overlay.Show(this);
-            effect = DoDragDrop(data, DragDropEffects.Move);
-        }
-        finally
-        {
-            overlay.Hide();
-            tabDragging = false;
-        }
-        if (effect != DragDropEffects.Move || overlay.Result is not { } drop || IsDisposed) return;
-        if (drop.InsertionIndex is { } insertion)
-        {
-            var receiving = panes[drop.TargetPane];
-            if (ReferenceEquals(receiving, source))
-            {
-                if (group is not null) source.ReorderGroup(group, insertion);
-                else source.ReorderTabs(movingTabs!, insertion, drop.JoinGroup);
-            }
-            else if (group is not null) DockGroup(source, group, drop.TargetPane, null, insertion);
-            else DockTabs(source, movingTabs!, drop.TargetPane, null, insertion, drop.JoinGroup);
-        }
-        else if (group is not null) DockGroup(source, group, drop.TargetPane, drop.Edge);
-        else DockTabs(source, movingTabs!, drop.TargetPane, drop.Edge);
+        try { return DoDragDrop(data, DragDropEffects.Move); }
+        finally { tabDragging = false; }
     }
 
     protected override void OnQueryContinueDrag(QueryContinueDragEventArgs e)
     {
         base.OnQueryContinueDrag(e);
-        if (tabDragging && e.EscapePressed) e.Action = DragAction.Cancel;
+        if (tabDragging) application.ContinueTabDrag(e, Cursor.Position);
     }
 
-    private TabDropPlan? FindDropPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab tab,
-        IReadOnlyList<ExplorerPane.FolderTab> movingTabs) =>
-        FindStripOrDockPlan(screen, source, tab, null, movingTabs);
-
-    private TabDropPlan? FindGroupDropPlan(Point screen, ExplorerPane source, TabGroup group) =>
-        FindStripOrDockPlan(screen, source, null, group);
-
-    private TabDropPlan? FindStripOrDockPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab? tab, TabGroup? group,
+    internal TabDropPlan? FindStripOrDockPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab? tab, TabGroup? group,
         IReadOnlyList<ExplorerPane.FolderTab>? movingTabs = null)
     {
         foreach (int target in visiblePanes)
         {
             if (panes[target].FindStripDropPlan(screen, tab, group, movingTabs) is not { } strip) continue;
             if (ReferenceEquals(panes[target], source)) return strip;
+            if (!strip.Allowed) return strip;
             string reason;
-            bool allowed = group is not null
-                ? CanDockGroup(source, group, target, null, out reason)
+            bool allowed = !panes.Contains(source)
+                ? CanReceiveDrag(source, movingTabs ?? source.GroupMembers(group!), group, strip, out reason)
+                : group is not null ? CanDockGroup(source, group, target, null, out reason)
                 : CanDockTabs(source, movingTabs!, target, null, out reason);
-            return allowed ? strip : strip with { Allowed = false, Label = text.T(reason) };
+            return strip with { Allowed = allowed, Label = allowed && !panes.Contains(source)
+                ? text.T("Move to window") : allowed ? strip.Label : text.T(reason) };
         }
         foreach (int target in visiblePanes)
         {
@@ -2173,16 +2145,83 @@ public sealed partial class MainForm : Form, IMessageFilter
                 if (edge == SplitEdge.Bottom) preview.Y += full.Height - preview.Height;
             }
             string reason;
-            bool allowed = group is not null
-                ? CanDockGroup(source, group, target, edge, out reason)
+            bool allowed = !panes.Contains(source)
+                ? CanReceiveDrag(source, movingTabs ?? source.GroupMembers(group!), group,
+                    new TabDropPlan(target, edge, preview, "", true), out reason)
+                : group is not null ? CanDockGroup(source, group, target, edge, out reason)
                 : CanDockTabs(source, movingTabs!, target, edge, out reason);
             string label = allowed ? edge is { } side ? text.T($"Split {side.ToString().ToLowerInvariant()}")
                 : group is not null ? text.T("Move group to pane {0}", target + 1)
                 : movingTabs!.Count == 1 ? text.T("Move tab to pane {0}", target + 1)
                 : text.T("Move {0} tabs to pane {1}", movingTabs.Count, target + 1) : text.T(reason);
+            if (allowed && !panes.Contains(source)) label = text.T("Move to window") + (edge is { } split
+                ? " · " + text.T($"Split {split.ToString().ToLowerInvariant()}") : "");
             return new TabDropPlan(target, edge, preview, label, allowed);
         }
         return null;
+    }
+
+    internal Rectangle DragBounds => paneHost.RectangleToScreen(paneHost.ClientRectangle);
+    internal Rectangle[] DragPaneBounds => visiblePanes.Select(i => panes[i].RectangleToScreen(panes[i].ClientRectangle)).ToArray();
+
+    internal bool CanReceiveDrag(ExplorerPane source, IReadOnlyList<ExplorerPane.FolderTab> tabs,
+        TabGroup? group, TabDropPlan drop, out string reason)
+    {
+        reason = "This tab is no longer available.";
+        if (IsDisposed || tabs.Count == 0 || tabs.Distinct().Count() != tabs.Count
+            || tabs.Any(tab => source.IndexOfTab(tab) < 0) || !visiblePanes.Contains(drop.TargetPane)) return false;
+        if (group is not null && (tabs.Count > TabGroup.MaxTabs || !source.GroupMembers(group).SequenceEqual(tabs))) return false;
+        if (drop.Edge is not null && visiblePanes.Length == panes.Length)
+        { reason = "Maximum 4 panes.\nDrop in a pane's center to move the tabs instead."; return false; }
+        var destination = panes[drop.Edge is null ? drop.TargetPane
+            : Enumerable.Range(0, panes.Length).First(i => !visiblePanes.Contains(i))];
+        if (destination.TabCount + tabs.Count > 32)
+        { reason = "Destination cannot hold these tabs.\nClose tabs first."; return false; }
+        if (drop.InsertionIndex is { } insertion)
+        {
+            if (insertion < 0 || insertion > destination.TabCount) return false;
+            if (group is null && !destination.CanInsertStripTabs(tabs, insertion, drop.JoinGroup, out _, out reason))
+                return false;
+        }
+        reason = "";
+        return true;
+    }
+
+    internal bool ReceiveDrag(ExplorerPane source, IReadOnlyList<ExplorerPane.FolderTab> tabs,
+        TabGroup? group, TabDropPlan drop)
+    {
+        if (!CanReceiveDrag(source, tabs, group, drop, out string reason))
+        { source.SetLocalizedStatus(reason); return false; }
+        int destination = drop.Edge is null ? drop.TargetPane
+            : Enumerable.Range(0, panes.Length).First(i => !visiblePanes.Contains(i));
+        var receiving = panes[destination];
+        var previous = receiving.ActiveTab;
+        int selected = 0;
+        for (int i = 0; i < tabs.Count; i++)
+            if (tabs[i] == source.ActiveTab) { selected = i; break; }
+        bool wasRebuilding = rebuilding;
+        rebuilding = true;
+        try
+        {
+            var copied = receiving.AddTabBatch(tabs, preserveGroups: group is not null || tabs.Count > 1);
+            if (copied.Count != tabs.Count) return false;
+            if (group is not null) receiving.SetGroupCollapsed(copied[0].Group!, false);
+            if (drop.InsertionIndex is { } insertion && !(group is not null
+                ? receiving.ReorderGroup(copied[0].Group!, insertion)
+                : receiving.ReorderTabs(copied, insertion, drop.JoinGroup)))
+            {
+                receiving.RemoveTabsForMove(copied);
+                if (previous is not null) receiving.SelectTab(receiving.IndexOfTab(previous), focus: false);
+                return false;
+            }
+            receiving.SelectTab(receiving.IndexOfTab(copied[selected]), focus: false);
+            InvalidateRedo();
+            if (drop.Edge is { } edge) RenderLayout(layoutTree.Split(drop.TargetPane, destination, edge));
+            ActivatePane(destination);
+            receiving.FocusFiles();
+            return true;
+        }
+        finally { rebuilding = wasRebuilding; }
     }
 
     private bool CanDockTabs(ExplorerPane source, IReadOnlyList<ExplorerPane.FolderTab> tabs,
@@ -2350,6 +2389,8 @@ public sealed partial class MainForm : Form, IMessageFilter
 
     internal void CompleteWindowTransfer(ExplorerPane source, IReadOnlyList<ExplorerPane.FolderTab> tabs)
     {
+        reopenedItems.RemoveAll(item => item.Pane == source.PaneNumber - 1
+            && item.Tabs is { } reopened && reopened.Any(tabs.Contains));
         source.RemoveTabsForMove(tabs);
         application.SyncSavedGroups(source);
         if (panes.All(pane => pane.TabCount == 0))

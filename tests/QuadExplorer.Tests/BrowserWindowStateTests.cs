@@ -19,7 +19,8 @@ internal static class BrowserWindowStateTests
         ("saved physical window bounds survive repeated session roundtrips", PhysicalBoundsRoundtrip),
         ("saved physical bounds restore twice unchanged at 120 and 144 DPI", BrowserWindowGeometryTests.SavedBounds),
         ("fresh window defaults and minimums scale at 120 and 144 DPI", BrowserWindowGeometryTests.FreshDefaults),
-        ("new windows preserve source size and cascade within their monitor at 120 and 144 DPI", BrowserWindowGeometryTests.CascadedBounds)
+        ("new windows preserve source size and cascade within their monitor at 120 and 144 DPI", BrowserWindowGeometryTests.CascadedBounds),
+        ("torn off windows scale across monitor DPI and clamp negative and tiny working areas", BrowserWindowGeometryTests.TornOffBounds)
     ];
 
     private static BrowserWindowState SampleWindow() => new()

@@ -28,4 +28,15 @@ internal static class BrowserWindowGeometry
         if (y + height > work.Bottom) y = work.Top;
         return new Rectangle(Math.Max(work.Left, x), Math.Max(work.Top, y), width, height);
     }
+
+    internal static Rectangle TearOff(Rectangle source, Point release, Rectangle work, int sourceDpi, int targetDpi)
+    {
+        double scale = (double)targetDpi / sourceDpi;
+        Size minimum = MinimumSize(targetDpi);
+        int width = Math.Min(work.Width, Math.Max(minimum.Width, (int)Math.Round(source.Width * scale)));
+        int height = Math.Min(work.Height, Math.Max(minimum.Height, (int)Math.Round(source.Height * scale)));
+        int captionOffset = (int)Math.Round(16 * targetDpi / 96d);
+        return new Rectangle(Math.Clamp(release.X - width / 2, work.Left, work.Right - width),
+            Math.Clamp(release.Y - captionOffset, work.Top, work.Bottom - height), width, height);
+    }
 }

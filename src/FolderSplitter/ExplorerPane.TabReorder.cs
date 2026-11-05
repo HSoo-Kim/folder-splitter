@@ -4,7 +4,7 @@ public sealed partial class ExplorerPane
 {
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Func<ExplorerPane, TabGroup, int, string?>? GroupMoveDisabledReason { get; set; }
-    private bool CanInsertStripTabs(IReadOnlyList<FolderTab> moving, int insertionIndex, TabGroup? joinGroup,
+    internal bool CanInsertStripTabs(IReadOnlyList<FolderTab> moving, int insertionIndex, TabGroup? joinGroup,
         out TabGroup? group, out string reason)
     {
         group = joinGroup;
@@ -12,6 +12,13 @@ public sealed partial class ExplorerPane
         if (moving.Count == 0 || insertionIndex < 0 || insertionIndex > tabs.Count) return false;
         if (group is null && insertionIndex > 0 && insertionIndex < tabs.Count
             && tabs[insertionIndex - 1].Group is { } before && tabs[insertionIndex].Group == before) group = before;
+        if (group is not null)
+        {
+            var joining = group;
+            int start = tabs.FindIndex(tab => tab.Group == joining);
+            int end = tabs.FindLastIndex(tab => tab.Group == joining) + 1;
+            if (start < 0 || insertionIndex < start || insertionIndex > end) return false;
+        }
         if (tabs.Count + moving.Count(tab => !tabs.Contains(tab)) > 32)
         { reason = "Destination has 32 tabs.\nClose a tab first."; return false; }
         if (group is not null && GroupMembers(group).Count(tab => !moving.Contains(tab)) + moving.Count > TabGroup.MaxTabs)

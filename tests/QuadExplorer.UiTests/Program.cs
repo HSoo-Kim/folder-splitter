@@ -61,6 +61,7 @@ internal static partial class Program
                 RunMultiSelectTabScenario(root);
                 RunMultiSelectDockingScenario(root);
                 RunSavedGroupScenario(root);
+                RunCrossWindowDragScenario(root);
                 Console.WriteLine($"TAB_GROUPS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
@@ -105,6 +106,7 @@ internal static partial class Program
                 RunMultiWindowScenario(root);
                 RunMultiSelectDockingScenario(root);
                 RunSavedGroupScenario(root);
+                RunCrossWindowDragScenario(root);
                 Console.WriteLine($"MULTI_WINDOW_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
@@ -351,6 +353,7 @@ internal static partial class Program
             RunAppearanceScenario(root);
             RunTrayScenario(root);
             RunMultiWindowScenario(root);
+            RunCrossWindowDragScenario(root);
             RunUpdateScenario(root);
             RunPreviewScenario(root);
             RunPdfScenario(root);
