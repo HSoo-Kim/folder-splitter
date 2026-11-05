@@ -46,13 +46,14 @@ public sealed partial class ExplorerPane : UserControl
     {
         public ShellViewHost? Host { get; set; }
         public FolderTabButton Button { get; } = button;
+        public TabGroup? Group { get; set; }
     }
     private readonly List<FolderTab> tabs = [];
     private readonly UiText text;
     private readonly List<Action> languageBindings = [];
     private Func<string>? localizedStatus;
     private string statusMessage = "";
-    private readonly Stack<string?> closedTabs = [];
+    private readonly Stack<ClosedTabEntry> closedTabs = [];
     private readonly ToolStrip tabStrip = Theme.Strip();
     private readonly Panel contents = new() { Dock = DockStyle.Fill, BackColor = Color.White };
     private readonly Label emptyHint = new()
@@ -103,8 +104,9 @@ public sealed partial class ExplorerPane : UserControl
     internal FolderTab? ActiveTab => selectedIndex >= 0 ? tabs[selectedIndex] : null;
     public ShellViewHost? ActiveView => selectedIndex >= 0 ? tabs[selectedIndex].Host : null;
     public string CurrentPath => ActiveView?.LocationPath ?? "";
-    internal IEnumerable<string> RecentPaths => closedTabs.OfType<string>().Take(4);
-    internal bool CanReopenTab => closedTabs.Count > 0 && tabs.Count < 32;
+    internal IEnumerable<string> RecentPaths => ClosedPaths().Take(4);
+    internal bool CanReopenTab => closedTabs.TryPeek(out var entry) && tabs.Count + entry.Count <= 32;
+    internal TabGroup? LastReopenedGroup { get; private set; }
     internal event EventHandler? TabClosed;
     internal event EventHandler? TabReopened;
     internal event EventHandler? ClosePaneRequested;
@@ -115,6 +117,8 @@ public sealed partial class ExplorerPane : UserControl
     public event Action<ExplorerPane, string, int>? MoveTabRequested;
     internal event Action<ExplorerPane, FolderTab>? TabDragRequested;
     internal event Action<ExplorerPane, FolderTab, SplitEdge>? SplitTabRequested;
+    internal event Action<ExplorerPane, TabGroup>? GroupDragRequested;
+    internal event Action<ExplorerPane, TabGroup, int>? MoveGroupRequested;
     public event EventHandler<string>? FolderVisited;
     internal event Action<ExplorerPane>? OpenInOtherPaneRequested;
     internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
@@ -287,9 +291,8 @@ public sealed partial class ExplorerPane : UserControl
         emptyHint.Click += (_, _) => FocusAddress();
         Enter += (_, _) => Activated?.Invoke(this, EventArgs.Empty);
         MouseDown += (_, _) => Activated?.Invoke(this, EventArgs.Empty);
-        foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
-        if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
-        else ShowEmptyState();
+        ReplaceTabs(state);
+        if (tabs.Count == 0) ShowEmptyState();
         address.TextChanged += (_, _) => ScheduleSearch();
         address.GotFocus += (_, _) => ScheduleSearch();
         address.LostFocus += (_, _) =>
@@ -499,6 +502,7 @@ public sealed partial class ExplorerPane : UserControl
             host.ApplyThemeColors();
         }
         candidates.RefreshTheme();
+        LayoutTabs();
     }
 
     public void AddTab(string path, bool select = true, bool countVisit = true) => InsertTab(path, select, countVisit);
@@ -506,9 +510,14 @@ public sealed partial class ExplorerPane : UserControl
     // A tab with no folder yet: the address bar takes focus so the user can type a path or search.
     public void AddBlankTab() => InsertTab(null, select: true);
 
-    private void InsertTab(string? path, bool select, bool countVisit = true)
+    private FolderTab? InsertTab(string? path, bool select, bool countVisit = true, TabGroup? group = null)
     {
-        if (tabs.Count >= 32) { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return; }
+        if (tabs.Count >= 32) { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return null; }
+        if (group is not null && GroupMembers(group).Count >= TabGroup.MaxTabs)
+        {
+            SetLocalizedStatus("A group holds up to 12 tabs.");
+            return null;
+        }
         string title = text.T("New tab");
         var button = new FolderTabButton
         {
@@ -517,7 +526,7 @@ public sealed partial class ExplorerPane : UserControl
             ImageAlign = ContentAlignment.MiddleLeft, AccessibleName = $"Folder tab: {title}",
             Margin = new Padding(1, 0, 1, 0)
         };
-        var tab = new FolderTab(button);
+        var tab = new FolderTab(button) { Group = group };
         button.CloseRequested += (_, _) => CloseTab(tabs.IndexOf(tab));
         button.DragRequested += (_, _) => TabDragRequested?.Invoke(this, tab);
         button.Click += (_, _) => SelectTab(tabs.IndexOf(tab));
@@ -527,12 +536,17 @@ public sealed partial class ExplorerPane : UserControl
             if (e.Button == MouseButtons.Middle) CloseTab(index);
             else if (e.Button == MouseButtons.Right) ShowTabMenu(index);
         };
-        tabs.Add(tab);
-        tabStrip.Items.Insert(tabStrip.Items.IndexOf(newTab), button);
+        var active = ActiveTab;
+        int lastMember = group is null ? -1 : tabs.FindLastIndex(member => member.Group == group);
+        int insertion = lastMember < 0 ? tabs.Count : lastMember + 1;
+        tabs.Insert(insertion, tab);
+        selectedIndex = active is null ? -1 : tabs.IndexOf(active);
+        SynchronizeGroupStrip();
         if (path is not null) AttachHost(tab, path, countVisit);
-        if (select) SelectTab(tabs.Count - 1);
+        if (select) SelectTab(insertion);
         else LayoutTabs();
         StateChanged?.Invoke(this, EventArgs.Empty);
+        return tab;
     }
 
     private void AttachHost(FolderTab tab, string path, bool countVisit = true)
@@ -600,6 +614,7 @@ public sealed partial class ExplorerPane : UserControl
     {
         CloseCandidates();
         if (index < 0 || index >= tabs.Count) return;
+        if (tabs[index].Group is { Collapsed: true } group) group.Collapsed = false;
         if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host is { } previous) previous.Visible = false;
         selectedIndex = index;
         for (int i = 0; i < tabs.Count; i++)
@@ -641,17 +656,10 @@ public sealed partial class ExplorerPane : UserControl
         var tab = tabs[index];
         int nextIndex = selectedIndex > index ? selectedIndex - 1 : Math.Min(selectedIndex, tabs.Count - 2);
         tabs.RemoveAt(index);
+        selectedIndex = -1;
+        SynchronizeGroupStrip();
         tabStrip.Items.Remove(tab.Button);
-        if (remember)
-        {
-            closedTabs.Push(tab.Host?.LocationPath);
-            if (closedTabs.Count > 32)
-            {
-                var recent = closedTabs.Take(32).Reverse().ToArray();
-                closedTabs.Clear();
-                foreach (string? path in recent) closedTabs.Push(path);
-            }
-        }
+        if (remember) RememberClosedTab(new ClosedTabEntry(tab.Host?.LocationPath));
         if (tab.Host is { } host)
         {
             contents.Controls.Remove(host);
@@ -660,16 +668,36 @@ public sealed partial class ExplorerPane : UserControl
         tab.Button.Dispose();
         selectedIndex = -1;
         if (tabs.Count == 0) { ShowEmptyState(); LayoutTabs(); }
-        else SelectTab(Math.Max(0, nextIndex));
+        else
+        {
+            int next = Math.Max(0, nextIndex);
+            if (tabs[next].Group is { Collapsed: true })
+            {
+                int visible = tabs.FindIndex(next, member => member.Group?.Collapsed != true);
+                if (visible < 0) visible = tabs.FindLastIndex(member => member.Group?.Collapsed != true);
+                if (visible >= 0) next = visible;
+            }
+            SelectTab(next);
+        }
         StateChanged?.Invoke(this, EventArgs.Empty);
         if (remember) TabClosed?.Invoke(this, EventArgs.Empty);
     }
 
     public void ReopenTab()
     {
-        if (closedTabs.Count == 0 || tabs.Count >= 32) return;
-        if (closedTabs.Pop() is { } path) AddTab(path);
-        else AddBlankTab();
+        if (!CanReopenTab)
+        {
+            if (closedTabs.Count > 0) SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first.");
+            return;
+        }
+        var entry = closedTabs.Pop();
+        LastReopenedGroup = entry.Group is { } group
+            ? AddGroup(group.Paths, group.Name, group.Color, selectedMember: group.SelectedMember) : null;
+        if (entry.Group is null)
+        {
+            if (entry.Path is { } path) AddTab(path);
+            else AddBlankTab();
+        }
         TabReopened?.Invoke(this, EventArgs.Empty);
     }
 
@@ -840,7 +868,8 @@ public sealed partial class ExplorerPane : UserControl
             - (tabs[selectedIndex].Host is null ? 1 : 0);
         return new()
         {
-            Tabs = saved.Select(tab => tab.Host!.LocationPath).ToList(), SelectedTab = Math.Max(0, selected)
+            Tabs = saved.Select(tab => tab.Host!.LocationPath).ToList(), SelectedTab = Math.Max(0, selected),
+            Groups = CaptureGroups(saved)
         };
     }
     internal int IndexOfTab(FolderTab tab) => tabs.IndexOf(tab);
@@ -859,6 +888,11 @@ public sealed partial class ExplorerPane : UserControl
         tabStrip.SuspendLayout();
         try
         {
+            if (groupChips.Count > 0)
+            {
+                LayoutGroupedTabs();
+                return;
+            }
             int count = tabs.Count;
             float scale = tabStrip.DeviceDpi / 96f;
             int Scaled(int value) => (int)Math.Round(value * scale);
@@ -966,8 +1000,7 @@ public sealed partial class ExplorerPane : UserControl
         tabWheel += message.Msg == 0x20E ? delta : -delta;
         int steps = tabWheel / 120;
         tabWheel %= 120;
-        int target = Math.Clamp(selectedIndex + steps, 0, tabs.Count - 1);
-        if (steps != 0 && target != selectedIndex) SelectTab(target);
+        if (steps != 0) SelectAdjacentTab(steps, wrap: false);
         return true;
     }
 
@@ -978,7 +1011,8 @@ public sealed partial class ExplorerPane : UserControl
         tabMenu.Items.Clear();
         tabMenu.Items.Add(text.T("New tab"), null, (_, _) => AddBlankTab());
         tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => AddTab(CurrentPath)).Enabled = ActiveView is not null;
-        tabMenu.Items.Add(text.T("Reopen closed tab"), null, (_, _) => ReopenTab()).Enabled = closedTabs.Count > 0;
+        tabMenu.Items.Add(text.T("Reopen closed tab"), null, (_, _) => ReopenTab()).Enabled = CanReopenTab;
+        AddGroupTabMenu(tabMenu, tabs[index]);
         var move = new ToolStripMenuItem(text.T("Move tab to pane"));
         for (int i = 1; i <= 4; i++)
         {
@@ -1072,6 +1106,7 @@ public sealed partial class ExplorerPane : UserControl
     {
         while (tabs.Count > 0) CloseTab(tabs.Count - 1, remember: false);
         foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
+        RestoreGroups(state.Groups);
         if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
     }
 

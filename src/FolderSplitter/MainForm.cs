@@ -68,7 +68,7 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly List<(SplitContainer Control, string Path)> splits = [];
     private PaneLayout layoutTree;
     private readonly List<(int Pane, PaneLayout? Layout)> closedItems = [];
-    private readonly List<(int Pane, ExplorerPane.FolderTab? Tab, bool Global)> reopenedItems = [];
+    private readonly List<(int Pane, ExplorerPane.FolderTab? Tab, TabGroup? Group, bool Global)> reopenedItems = [];
     private bool redoingClose;
     private int[] visiblePanes;
     private readonly Panel sidebar;
@@ -268,7 +268,7 @@ public sealed class MainForm : Form, IMessageFilter
             {
                 int index = closedItems.FindLastIndex(item => item.Pane == pane.PaneNumber - 1 && item.Layout is null);
                 if (index >= 0) closedItems.RemoveAt(index);
-                reopenedItems.Add((pane.PaneNumber - 1, pane.ActiveTab, true));
+                reopenedItems.Add((pane.PaneNumber - 1, pane.ActiveTab, pane.LastReopenedGroup, true));
                 RefreshCloseHistory();
             };
             pane.StateChanged += (_, _) =>
@@ -283,6 +283,8 @@ public sealed class MainForm : Form, IMessageFilter
             pane.MoveTabRequested += MoveTab;
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
+            pane.MoveGroupRequested += (source, group, number) => DockGroup(source, group, number - 1, null);
+            pane.GroupDragRequested += StartGroupDrag;
             pane.TransferRequested += (source, move) => { ActivatePane(Array.IndexOf(panes, source)); TransferSelection(move); };
             pane.OpenInOtherPaneRequested += source => { ActivatePane(Array.IndexOf(panes, source)); OpenFolderInOtherPane(); };
             pane.FolderVisited += (_, path) => { if (ready) { folderVisits.Record(path); ScheduleSave(); } };
@@ -2268,12 +2270,24 @@ public sealed class MainForm : Form, IMessageFilter
     {
         if (tabDragging || source.IndexOfTab(tab) < 0) return;
         source.SelectTab(source.IndexOfTab(tab), focus: false);
+        StartStripDrag(source, tab, null);
+    }
+
+    private void StartGroupDrag(ExplorerPane source, TabGroup group)
+    {
+        if (tabDragging || !source.Groups.Contains(group)) return;
+        StartStripDrag(source, null, group);
+    }
+
+    private void StartStripDrag(ExplorerPane source, ExplorerPane.FolderTab? tab, TabGroup? group)
+    {
         ActivatePane(source.PaneNumber - 1);
         Rectangle bounds = paneHost.RectangleToScreen(paneHost.ClientRectangle);
         Rectangle[] regions = visiblePanes.Select(i => panes[i].RectangleToScreen(panes[i].ClientRectangle)).ToArray();
-        using var overlay = new TabDockOverlay(bounds, regions, point => FindDropPlan(point, source, tab), text);
+        using var overlay = new TabDockOverlay(bounds, regions,
+            point => group is null ? FindDropPlan(point, source, tab!) : FindGroupDropPlan(point, source, group), text);
         var data = new DataObject();
-        data.SetData(TabDockOverlay.DragFormat, false, "tab");
+        data.SetData(TabDockOverlay.DragFormat, false, group is null ? "tab" : "group");
         tabDragging = true;
         DragDropEffects effect;
         try
@@ -2286,12 +2300,31 @@ public sealed class MainForm : Form, IMessageFilter
             overlay.Hide();
             tabDragging = false;
         }
-        if (effect == DragDropEffects.Move && overlay.Result is { } drop && !IsDisposed)
-            DockTab(source, tab, drop.TargetPane, drop.Edge);
+        if (effect != DragDropEffects.Move || overlay.Result is not { } drop || IsDisposed) return;
+        if (drop.InsertionIndex is { } insertion)
+        {
+            if (group is not null) source.ReorderGroup(group, insertion);
+            else if (tab is not null) source.ReorderTab(tab, insertion);
+        }
+        else if (group is not null) DockGroup(source, group, drop.TargetPane, drop.Edge);
+        else if (tab is not null) DockTab(source, tab, drop.TargetPane, drop.Edge);
     }
 
-    private TabDropPlan? FindDropPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab tab)
+    protected override void OnQueryContinueDrag(QueryContinueDragEventArgs e)
     {
+        base.OnQueryContinueDrag(e);
+        if (tabDragging && e.EscapePressed) e.Action = DragAction.Cancel;
+    }
+
+    private TabDropPlan? FindDropPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab tab) =>
+        FindStripOrDockPlan(screen, source, tab, null);
+
+    private TabDropPlan? FindGroupDropPlan(Point screen, ExplorerPane source, TabGroup group) =>
+        FindStripOrDockPlan(screen, source, null, group);
+
+    private TabDropPlan? FindStripOrDockPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab? tab, TabGroup? group)
+    {
+        if (source.FindStripDropPlan(screen, tab, group) is { } strip) return strip;
         foreach (int target in visiblePanes)
         {
             Rectangle full = panes[target].RectangleToScreen(panes[target].ClientRectangle);
@@ -2319,8 +2352,12 @@ public sealed class MainForm : Form, IMessageFilter
                 preview.Height /= 2;
                 if (edge == SplitEdge.Bottom) preview.Y += full.Height - preview.Height;
             }
-            bool allowed = CanDockTab(source, tab, target, edge, out string reason);
-            string label = allowed ? edge is { } side ? text.T($"Split {side.ToString().ToLowerInvariant()}") : text.T("Move tab to pane {0}", target + 1) : text.T(reason);
+            string reason;
+            bool allowed = group is not null
+                ? CanDockGroup(source, group, target, edge, out reason)
+                : CanDockTab(source, tab!, target, edge, out reason);
+            string label = allowed ? edge is { } side ? text.T($"Split {side.ToString().ToLowerInvariant()}")
+                : text.T(group is null ? "Move tab to pane {0}" : "Move group to pane {0}", target + 1) : text.T(reason);
             return new TabDropPlan(target, edge, preview, label, allowed);
         }
         return null;
@@ -2372,6 +2409,75 @@ public sealed class MainForm : Form, IMessageFilter
         if (emptyPane && edge is null) RenderLayout(RemovePane(layoutTree, sourceId)!);
         ActivatePane(destination);
         receiving.FocusFiles();
+        ScheduleSave();
+        return true;
+    }
+
+    private bool CanDockGroup(ExplorerPane source, TabGroup group, int target, SplitEdge? edge, out string reason)
+    {
+        reason = "";
+        int sourceId = Array.IndexOf(panes, source);
+        int count = source.GroupMembers(group).Count;
+        if (sourceId < 0 || !visiblePanes.Contains(sourceId) || count == 0
+            || target < 0 || target >= panes.Length || (edge is not null && !visiblePanes.Contains(target)))
+        { reason = "This group is no longer available."; return false; }
+        if (edge is null && target == sourceId)
+        { reason = "Drop near a file-list edge to split, in the center to move, or on the tab strip to reorder.\nEsc cancels."; return false; }
+        bool relocatePane = edge is not null && target != sourceId && source.TabCount == count;
+        if (edge is not null && !relocatePane && visiblePanes.Length == panes.Length)
+        { reason = "Maximum 4 panes.\nDrop in a pane's center to move the group instead."; return false; }
+        int destination = edge is null ? target : relocatePane ? sourceId
+            : Enumerable.Range(0, panes.Length).First(i => !visiblePanes.Contains(i));
+        if (!relocatePane && panes[destination].TabCount + count > 32)
+        { reason = "Destination cannot hold this group.\nClose tabs first."; return false; }
+        return true;
+    }
+
+    internal bool DockGroup(ExplorerPane source, TabGroup group, int target, SplitEdge? edge)
+    {
+        if (!CanDockGroup(source, group, target, edge, out string reason))
+        { source.SetLocalizedStatus(() => text.T(reason).Replace("\n", " ")); return false; }
+        int sourceId = source.PaneNumber - 1;
+        var members = source.GroupMembers(group);
+        bool wholePane = source.TabCount == members.Count;
+        bool wasSaving = saving;
+        saving = true;
+        try
+        {
+            if (edge is { } side && target != sourceId && wholePane)
+            {
+                InvalidateRedo();
+                source.SetGroupCollapsed(group, false);
+                RenderLayout(RemovePane(layoutTree, sourceId)!.Split(target, sourceId, side));
+                ActivatePane(sourceId);
+                source.FocusFiles();
+            }
+            else
+            {
+                int destination = edge is null ? target
+                    : Enumerable.Range(0, panes.Length).First(i => !visiblePanes.Contains(i));
+                var receiving = panes[destination];
+                int selected = 0;
+                for (int i = 0; i < members.Count; i++)
+                    if (ReferenceEquals(members[i], source.ActiveTab)) { selected = i; break; }
+                var paths = members.Select(tab => tab.Host?.LocationPath).ToArray();
+                if (receiving.AddGroup(paths, group.Name, group.Color, collapsed: false, selectedMember: selected) is null)
+                    return false;
+                InvalidateRedo();
+                source.CloseGroup(group, remember: false);
+                var nextLayout = layoutTree;
+                if (edge is { } splitEdge) nextLayout = nextLayout.Split(target, destination, splitEdge);
+                else
+                {
+                    if (!visiblePanes.Contains(destination)) nextLayout = nextLayout.Split(sourceId, destination, SplitEdge.Right);
+                    if (wholePane) nextLayout = RemovePane(nextLayout, sourceId)!;
+                }
+                if (!ReferenceEquals(nextLayout, layoutTree)) RenderLayout(nextLayout);
+                ActivatePane(destination);
+                receiving.FocusFiles();
+            }
+        }
+        finally { saving = wasSaving; }
         ScheduleSave();
         return true;
     }
@@ -2627,15 +2733,16 @@ public sealed class MainForm : Form, IMessageFilter
         for (int i = reopenedItems.Count - 1; i >= 0; i--)
         {
             var item = reopenedItems[i];
-            if (item.Tab is null || item.Pane == pane) reopenedItems.RemoveAt(i);
-            else reopenedItems[i] = (item.Pane, item.Tab, false);
+            if ((item.Tab is null && item.Group is null) || item.Pane == pane) reopenedItems.RemoveAt(i);
+            else reopenedItems[i] = (item.Pane, item.Tab, item.Group, false);
         }
     }
 
     private int RedoIndex(int? pane = null) => reopenedItems.FindLastIndex(item =>
-        (pane is null ? item.Global : item.Pane == pane && item.Tab is not null)
-        && visiblePanes.Contains(item.Pane) && (item.Tab is { } tab
-            ? panes[item.Pane].IndexOfTab(tab) >= 0 : visiblePanes.Length > 1));
+        (pane is null ? item.Global : item.Pane == pane && (item.Tab is not null || item.Group is not null))
+        && visiblePanes.Contains(item.Pane) && (item.Group is { } group
+            ? panes[item.Pane].Groups.Contains(group) : item.Tab is { } tab
+                ? panes[item.Pane].IndexOfTab(tab) >= 0 : visiblePanes.Length > 1));
 
     private void RefreshCloseHistory()
     {
@@ -2657,11 +2764,12 @@ public sealed class MainForm : Form, IMessageFilter
         redoingClose = true;
         try
         {
-            if (item.Tab is null) ClosePane(item.Pane);
+            if (item.Tab is null && item.Group is null) ClosePane(item.Pane);
             else
             {
                 var pane = panes[item.Pane];
-                pane.CloseTab(pane.IndexOfTab(item.Tab));
+                if (item.Group is { } group) pane.CloseGroup(group);
+                else pane.CloseTab(pane.IndexOfTab(item.Tab!));
                 ActivatePane(item.Pane);
                 pane.FocusFiles();
             }
@@ -2685,7 +2793,7 @@ public sealed class MainForm : Form, IMessageFilter
         {
             closedItems.RemoveAt(closedItems.Count - 1);
             RenderLayout(layout, preserveClosedPanes: true);
-            reopenedItems.Add((item.Pane, null, true));
+            reopenedItems.Add((item.Pane, null, null, true));
             ActivatePane(item.Pane);
             Active.FocusFiles();
             RefreshCloseHistory();
@@ -2693,7 +2801,7 @@ public sealed class MainForm : Form, IMessageFilter
         else
         {
             var pane = panes[item.Pane];
-            if (pane.TabCount >= 32) return;
+            if (!pane.CanReopenTab) return;
             if (!visiblePanes.Contains(item.Pane))
                 RenderLayout(layoutTree.Split(activePane, item.Pane, SplitEdge.Right), preserveClosedPanes: true);
             pane.ReopenTab();
@@ -2720,8 +2828,8 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.Shift | Keys.E: SetFolderTreeVisible(!showFolderTree); break;
             case Keys.Alt | Keys.P: SetPreviewVisible(!showPreview); break;
             case Keys.Control | Keys.Shift | Keys.F11: SetGlobalToolbarPinned(!globalToolbarPinned); break;
-            case Keys.Control | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + 1) % Active.TabCount); break;
-            case Keys.Control | Keys.Shift | Keys.Tab: if (Active.TabCount > 0) Active.SelectTab((Active.SelectedIndex + Active.TabCount - 1) % Active.TabCount); break;
+            case Keys.Control | Keys.Tab: Active.SelectAdjacentTab(1); break;
+            case Keys.Control | Keys.Shift | Keys.Tab: Active.SelectAdjacentTab(-1); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
             case Keys.Control | Keys.D2: ApplyLayout(2); break;
             case Keys.Control | Keys.D3: ApplyLayout(3); break;

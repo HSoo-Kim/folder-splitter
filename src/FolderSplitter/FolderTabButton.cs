@@ -6,6 +6,18 @@ internal sealed class FolderTabButton : ToolStripButton
     private bool dragged;
     private Point pressPosition;
     private ToolStrip? dragOwner;
+    private TabGroupColor? groupColor;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal TabGroupColor? GroupColor
+    {
+        get => groupColor;
+        set
+        {
+            if (groupColor == value) return;
+            groupColor = value;
+            Invalidate();
+        }
+    }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public string Title { get; set; } = "";
     public event EventHandler? CloseRequested;
@@ -91,8 +103,15 @@ internal sealed class FolderTabButton : ToolStripButton
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (!Checked && !Selected) return; // the close mark shows on the viewed tab and under the pointer
-        Theme.PaintClose(e.Graphics, CloseBounds, Selected ? Theme.Text : Theme.Muted, Owner?.DeviceDpi ?? 96);
+        if (Checked || Selected) // the close mark shows on the viewed tab and under the pointer
+            Theme.PaintClose(e.Graphics, CloseBounds, Selected ? Theme.Text : Theme.Muted, Owner?.DeviceDpi ?? 96);
+        // Draw last: renderer early returns for selected/hovered tabs must never hide membership.
+        if (GroupColor is { } color && Width > 0 && Height > 0)
+        {
+            int thickness = Math.Min(Height, Math.Max(2, (int)Math.Round(3 * (Owner?.DeviceDpi ?? 96) / 96d)));
+            using var brush = new SolidBrush(Theme.GroupColor(color));
+            e.Graphics.FillRectangle(brush, 0, Height - thickness, Width, thickness);
+        }
     }
 
     protected override void Dispose(bool disposing)

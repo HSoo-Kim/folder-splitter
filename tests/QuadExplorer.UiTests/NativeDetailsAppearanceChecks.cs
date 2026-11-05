@@ -57,11 +57,14 @@ internal static partial class Program
                 CheckNativeAppearanceBody(host, list, "initial-with-separators", true);
                 // Compare against compact rows drawn the same way: no separators or grid lines in either capture.
                 host.SetDetailsAppearance(false, false);
+                await NativeAppearanceDispatch(host);
                 await NativeAppearanceRedrawn(redrawWatcher, list);
                 var compactIcon = NativeAppearanceInk(list, 1, "compact-icon"); // LVIR_ICON
                 var compactText = NativeAppearanceInk(list, 2, "compact-label"); // LVIR_LABEL
 
                 host.SetDetailsAppearance(false, true);
+                // Row-font changes queue native layout work before the redraw gate changes.
+                await NativeAppearanceDispatch(host);
                 int comfortable = NativeAppearanceRowHeight(list);
                 int target = (int)Math.Round(28d * dpi / 96);
                 Console.WriteLine($"NATIVE_DETAILS comfortable={comfortable} target={target}");

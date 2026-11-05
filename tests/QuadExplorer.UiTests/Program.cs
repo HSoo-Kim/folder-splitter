@@ -53,6 +53,12 @@ internal static partial class Program
         {
             var folders = Enumerable.Range(1, 4).Select(i => Directory.CreateDirectory(Path.Combine(root, $"Pane-{i}")).FullName).ToArray();
             if (scrollbarDemo) return RunScrollbarDemo(root);
+            if (args is ["--tab-groups"])
+            {
+                RunTabGroupScenario(root);
+                Console.WriteLine($"TAB_GROUPS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--address-icons"])
             {
                 RunAddressCandidateIconScenario(root);
@@ -323,6 +329,7 @@ internal static partial class Program
             RunPreviewScenario(root);
             RunPdfScenario(root);
             RunTabStripScenario(root);
+            RunTabGroupScenario(root);
             RunConvenienceScenario(root);
             RunCustomColorsScenario(root);
             RunBreadcrumbDpiScenario(root, null);
@@ -1692,8 +1699,12 @@ internal static partial class Program
                         typeof(ExplorerPane).GetMethod("ShowTabMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                             .Invoke(pane, [0]);
                         Check(menu.Items[0].Text == text.T("New tab")
-                            && ((ToolStripMenuItem)menu.Items[3]).DropDownItems[0].Text == text.T("Pane {0}", 2)
-                            && ((ToolStripMenuItem)menu.Items[4]).DropDownItems[0].Text == text.T("Left"),
+                            && menu.Items.OfType<ToolStripMenuItem>().Any(item => item.Text == text.T("Move tab to pane")
+                                && item.DropDownItems[0].Text == text.T("Pane {0}", 2))
+                            && menu.Items.OfType<ToolStripMenuItem>().Any(item => item.Text == text.T("Split tab")
+                                && item.DropDownItems[0].Text == text.T("Left"))
+                            && menu.Items.OfType<ToolStripMenuItem>().Any(item => item.Text == text.T("Add tab to new group"))
+                            && menu.Items.OfType<ToolStripMenuItem>().Any(item => item.Text == text.T("Add tab to group")),
                             language + " tab and split context menus translate");
                         menu.Close();
                         // Opening a tab menu selects it; restore the unsubmitted address before the next switch.

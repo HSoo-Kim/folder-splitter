@@ -1,6 +1,7 @@
 namespace QuadExplorer;
 
-internal sealed record TabDropPlan(int TargetPane, SplitEdge? Edge, Rectangle Preview, string Label, bool Allowed);
+internal sealed record TabDropPlan(int TargetPane, SplitEdge? Edge, Rectangle Preview, string Label, bool Allowed,
+    int? InsertionIndex = null);
 
 // Shown only while dragging one of our tabs. Native Shell file drops otherwise
 // continue to go directly to the Shell views beneath this window.
@@ -62,14 +63,24 @@ internal sealed class TabDockOverlay : Form
         }
         if (preview is null)
         {
-            TextRenderer.DrawText(e.Graphics, text.T("Drop near a file-list edge to split, or in the center to move a tab.\nEsc cancels."),
+            TextRenderer.DrawText(e.Graphics, text.T("Drop near a file-list edge to split, in the center to move, or on the tab strip to reorder.\nEsc cancels."),
                 Font, ClientRectangle, Theme.Muted,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
             return;
         }
         Rectangle area = ToLocal(preview.Preview);
-        area.Inflate(-5, -5);
         Color accent = preview.Allowed ? Theme.Accent : Color.FromArgb(160, 55, 45);
+        if (preview.InsertionIndex is not null)
+        {
+            using var marker = new SolidBrush(accent);
+            e.Graphics.FillRectangle(marker, area);
+            var label = new Rectangle(8, Math.Min(ClientSize.Height - Font.Height * 2, area.Bottom + 4),
+                Math.Max(0, ClientSize.Width - 16), Font.Height * 2);
+            TextRenderer.DrawText(e.Graphics, preview.Label, Font, label, accent,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
+            return;
+        }
+        area.Inflate(-5, -5);
         using var fill = new SolidBrush(preview.Allowed ? Theme.Selected : Color.FromArgb(253, 232, 228));
         using var outline = new Pen(accent, 3);
         e.Graphics.FillRectangle(fill, area);

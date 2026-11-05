@@ -35,7 +35,8 @@ internal static class Program
             ("normalization does not mutate caller lists", DoesNotMutate),
             ("split tree sessions preserve sparse pane IDs and ratios", SplitTreeRoundtrip),
             ("legacy and malformed layouts normalize safely", LegacyLayouts)
-        }.Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases).Concat(PaletteGeneratorTests.Cases).ToArray();
+        }.Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases).Concat(PaletteGeneratorTests.Cases)
+            .Concat(TabGroupPersistenceTests.Cases).ToArray();
 
         var failures = 0;
         Directory.CreateDirectory(TestDirectory);

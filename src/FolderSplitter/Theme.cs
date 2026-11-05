@@ -110,6 +110,20 @@ internal static class Theme
     private static Palette previous = Light;
     private static readonly List<Palette> CustomPalettes = [];
     private static readonly FlatRenderer Renderer = new();
+    private readonly record struct GroupSwatch(Color Fill, Color Text);
+    private static readonly Color[] LightGroupColors =
+    [
+        Color.FromArgb(95, 99, 104), Color.FromArgb(26, 115, 232), Color.FromArgb(197, 34, 31),
+        Color.FromArgb(155, 101, 0), Color.FromArgb(19, 115, 51), Color.FromArgb(181, 38, 109),
+        Color.FromArgb(132, 48, 206), Color.FromArgb(0, 111, 122), Color.FromArgb(185, 78, 0)
+    ];
+    private static readonly Color[] DarkGroupColors =
+    [
+        Color.FromArgb(154, 160, 166), Color.FromArgb(138, 180, 248), Color.FromArgb(242, 139, 130),
+        Color.FromArgb(253, 214, 99), Color.FromArgb(129, 201, 149), Color.FromArgb(244, 139, 193),
+        Color.FromArgb(197, 138, 249), Color.FromArgb(120, 217, 236), Color.FromArgb(252, 173, 112)
+    ];
+    private static GroupSwatch[] groupColors = BuildGroupColors(Light);
     private const int CornerRadius = 7;
     private const int PaintInset = 2;
     private static readonly Color FolderBack = Color.FromArgb(205, 145, 36);
@@ -145,12 +159,57 @@ internal static class Theme
     // A ToolStripTextBox tagged with this is drawn as a rounded search field with a magnifier.
     public static readonly object SearchField = new();
 
+    internal static Color GroupColor(TabGroupColor color) => groupColors[GroupColorIndex(color)].Fill;
+    internal static Color GroupTextColor(TabGroupColor color) => groupColors[GroupColorIndex(color)].Text;
+
+    private static int GroupColorIndex(TabGroupColor color) =>
+        color is >= TabGroupColor.Grey and <= TabGroupColor.Orange ? (int)color : 0;
+
+    private static GroupSwatch[] BuildGroupColors(Palette palette)
+    {
+        var seeds = palette.Dark ? DarkGroupColors : LightGroupColors;
+        var result = new GroupSwatch[seeds.Length];
+        for (int i = 0; i < seeds.Length; i++)
+        {
+            Color seed = seeds[i], fill = seed;
+            if (!Readable(fill))
+            {
+                // Keep the nine hues recognizable, including on a user-selected strip background.
+                // Quantized RGB is checked against every tab state, not just the empty strip.
+                Color endpoint = palette.Dark ? Color.White : Color.Black;
+                double failing = 0, passing = 1;
+                fill = endpoint;
+                for (int step = 0; step < 24; step++)
+                {
+                    double middle = (failing + passing) / 2;
+                    var candidate = Color.FromArgb(
+                        (int)Math.Round(seed.R + (endpoint.R - seed.R) * middle),
+                        (int)Math.Round(seed.G + (endpoint.G - seed.G) * middle),
+                        (int)Math.Round(seed.B + (endpoint.B - seed.B) * middle));
+                    if (Readable(candidate)) { passing = middle; fill = candidate; }
+                    else failing = middle;
+                }
+            }
+            Color text = PaletteGenerator.Contrast(Color.Black, fill) >= PaletteGenerator.Contrast(Color.White, fill)
+                ? Color.Black : Color.White;
+            result[i] = new GroupSwatch(fill, text);
+        }
+        return result;
+
+        bool Readable(Color color) => PaletteGenerator.Contrast(color, palette.Canvas) >= 3
+            && PaletteGenerator.Contrast(color, palette.Surface) >= 3
+            && PaletteGenerator.Contrast(color, palette.Hover) >= 3
+            && PaletteGenerator.Contrast(color, palette.Selected) >= 3
+            && PaletteGenerator.Contrast(color, palette.Pressed) >= 3;
+    }
+
     public static void Set(string mode)
     {
         var next = Palettes.TryGetValue(mode?.Trim().ToLowerInvariant() ?? "", out var palette) ? palette
             : throw new ArgumentException("Unknown color theme.", nameof(mode));
         previous = current;
         current = next;
+        groupColors = BuildGroupColors(next);
     }
 
     public static void SetCustom(Color accent, Color background)
@@ -160,6 +219,7 @@ internal static class Theme
             colors.Accent, colors.Selected, colors.ErrorText, colors.Hover, colors.Pressed, colors.Dark);
         previous = current;
         current = next;
+        groupColors = BuildGroupColors(next);
         if (!CustomPalettes.Contains(next)) CustomPalettes.Add(next);
     }
 
@@ -726,7 +786,8 @@ internal static class Theme
             foreach (var item in strip.Items.Cast<ToolStripItem>()
                 .Where(item => item.Available && item.Placement == ToolStripItemPlacement.Main).OrderBy(item => item.Bounds.Left))
             {
-                bool button = item is ToolStripButton or ToolStripDropDownButton && item is not FolderTabButton;
+                bool button = item is ToolStripButton or ToolStripDropDownButton
+                    && item is not FolderTabButton and not TabGroupChip;
                 if (button && group is { } open && item.Bounds.Left - open.Right <= gap)
                 {
                     group = Rectangle.Union(open, item.Bounds);
@@ -745,6 +806,8 @@ internal static class Theme
 
         private static void PaintItem(ToolStripItemRenderEventArgs e)
         {
+            // Group chips paint their own pill; no default button wash or border belongs behind it.
+            if (e.Item is TabGroupChip) return;
             bool isChecked = e.Item is ToolStripButton { Checked: true } or ToolStripMenuItem { Checked: true };
             bool active = e.Item.Enabled && (e.Item.Selected || e.Item.Pressed);
             int dpi = e.ToolStrip?.DeviceDpi ?? 96;

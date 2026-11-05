@@ -12,6 +12,17 @@ public sealed record PaneState
 {
     public List<string> Tabs { get; init; } = [];
     public int SelectedTab { get; init; }
+    public List<TabGroupState> Groups { get; init; } = [];
+}
+
+// Start and Count refer to slots in the saved pane's Tabs list.
+public sealed record TabGroupState
+{
+    public string Name { get; init; } = "";
+    public string Color { get; init; } = "Grey";
+    public bool Collapsed { get; init; }
+    public int Start { get; init; }
+    public int Count { get; init; }
 }
 
 // A named set of panes and tabs the user can switch back to.
@@ -152,12 +163,15 @@ public static class SessionStore
         {
             var pane = state.Panes is not null && index < state.Panes.Count ? state.Panes[index] : null;
             var tabs = new List<string>();
+            List<int>? savedTabSlots = pane?.Groups is { Count: > 0 } ? [] : null;
             if (pane?.Tabs is not null)
             {
-                foreach (var tab in pane.Tabs)
+                for (int slot = 0; slot < pane.Tabs.Count; slot++)
                 {
+                    string? tab = pane.Tabs[slot];
                     if (string.IsNullOrWhiteSpace(tab))
                         continue;
+                    savedTabSlots?.Add(slot);
                     tabs.Add(tab);
                     if (tabs.Count == 32)
                         break;
@@ -169,7 +183,8 @@ public static class SessionStore
             panes.Add(new PaneState
             {
                 Tabs = tabs,
-                SelectedTab = tabs.Count == 0 ? -1 : Math.Clamp(pane?.SelectedTab ?? 0, 0, tabs.Count - 1)
+                SelectedTab = tabs.Count == 0 ? -1 : Math.Clamp(pane?.SelectedTab ?? 0, 0, tabs.Count - 1),
+                Groups = NormalizeTabGroups(pane?.Groups, pane?.Tabs?.Count ?? 0, savedTabSlots)
             });
         }
 
@@ -228,6 +243,71 @@ public static class SessionStore
             RightRowRatio = NormalizeRatio(state.RightRowRatio)
         };
     }
+
+    private static List<TabGroupState> NormalizeTabGroups(
+        IReadOnlyList<TabGroupState>? source, int originalTabCount, IReadOnlyList<int>? savedTabSlots)
+    {
+        var groups = new List<TabGroupState>();
+        if (source is null || savedTabSlots is null || savedTabSlots.Count == 0)
+            return groups;
+
+        var ranges = new List<(int Start, int End)>();
+        foreach (var group in source)
+        {
+            // Validate the original range before filtering blank slots or limiting its size.
+            // Subtraction avoids overflow on malformed counts and starts.
+            if (group is null || group.Start < 0 || group.Count < 1
+                || group.Start >= originalTabCount || group.Count > originalTabCount - group.Start)
+                continue;
+            int originalEnd = group.Start + group.Count;
+            bool overlaps = false;
+            foreach (var range in ranges)
+            {
+                if (group.Start < range.End && originalEnd > range.Start)
+                {
+                    overlaps = true;
+                    break;
+                }
+            }
+            if (overlaps)
+                continue;
+
+            int end = group.Start + Math.Min(group.Count, 12);
+            int start = -1, count = 0;
+            for (int slot = 0; slot < savedTabSlots.Count; slot++)
+            {
+                int originalSlot = savedTabSlots[slot];
+                if (originalSlot < group.Start)
+                    continue;
+                if (originalSlot >= end)
+                    break;
+                if (start < 0)
+                    start = slot;
+                count++;
+            }
+            if (count == 0)
+                continue;
+
+            string name = (group.Name ?? "").Trim();
+            groups.Add(group with
+            {
+                Name = name.Length > 40 ? name[..40] : name,
+                Color = NormalizeTabGroupColor(group.Color),
+                Start = start,
+                Count = count
+            });
+            ranges.Add((group.Start, originalEnd));
+        }
+        groups.Sort(static (first, second) => first.Start.CompareTo(second.Start));
+        return groups;
+    }
+
+    private static string NormalizeTabGroupColor(string? color) => color?.Trim().ToLowerInvariant() switch
+    {
+        "blue" => "Blue", "red" => "Red", "yellow" => "Yellow", "green" => "Green",
+        "pink" => "Pink", "purple" => "Purple", "cyan" => "Cyan", "orange" => "Orange",
+        _ => "Grey"
+    };
 
     public static Workspace NormalizeWorkspace(Workspace workspace)
     {
