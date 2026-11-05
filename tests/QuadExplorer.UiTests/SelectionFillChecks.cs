@@ -66,6 +66,30 @@ internal static partial class Program
                 Check((int)SendMessage(list, 0x10AE, 0, 0) == 0, "selection fill: the Shell list highlights Name as its sorted column");
                 await CheckFill("after the Shell highlights its sorted column without a message");
 
+                // Selected rows are filled past the last column to the list's right edge. Moving the selection
+                // must schedule that tail for repaint on both rows, or the old row keeps its fill there.
+                string first = Path.Combine(folder, "sample-00.txt"), third = Path.Combine(folder, "sample-02.txt");
+                Check(host.SelectPaths([first]) == 1, "selection fill: selects one row before moving the selection");
+                await NativeAppearanceDispatch(host);
+                SelectionFillUpdateWindow(list);
+                Check(host.SelectPaths([third]) == 1, "selection fill: moves the selection to another row");
+                NativeAppearanceGetClientRect(list, out var client);
+                nint region = SelectionFillCreateRectRgn(0, 0, 0, 0);
+                try
+                {
+                    SelectionFillGetUpdateRgn(list, region, false);
+                    foreach (var (index, name) in new[] { (0, "the row that lost the selection"), (2, "the row that gained the selection") })
+                    {
+                        var row = new NativeRect();
+                        NativeAppearanceRectMessage(list, 0x100E, index, ref row);
+                        Check(row.Right < client.Right - 8, "selection fill: the columns end before the list's right edge");
+                        Check(SelectionFillPtInRegion(region, client.Right - 4, (row.Top + row.Bottom) / 2),
+                            "selection fill: " + name + " is repainted to the right of the last column");
+                    }
+                }
+                finally { SelectionFillDeleteObject(region); }
+                await NativeAppearanceDispatch(host);
+
                 async Task Settle()
                 {
                     await NativeAppearanceDispatch(host);
@@ -105,4 +129,19 @@ internal static partial class Program
 
     [DllImport("user32.dll", EntryPoint = "CallWindowProcW")]
     private static extern nint SelectionFillCallWindowProc(nint procedure, nint window, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll", EntryPoint = "UpdateWindow")]
+    private static extern bool SelectionFillUpdateWindow(nint window);
+
+    [DllImport("gdi32.dll", EntryPoint = "CreateRectRgn")]
+    private static extern nint SelectionFillCreateRectRgn(int left, int top, int right, int bottom);
+
+    [DllImport("user32.dll", EntryPoint = "GetUpdateRgn")]
+    private static extern int SelectionFillGetUpdateRgn(nint window, nint region, bool erase);
+
+    [DllImport("gdi32.dll", EntryPoint = "PtInRegion")]
+    private static extern bool SelectionFillPtInRegion(nint region, int x, int y);
+
+    [DllImport("gdi32.dll", EntryPoint = "DeleteObject")]
+    private static extern bool SelectionFillDeleteObject(nint handle);
 }

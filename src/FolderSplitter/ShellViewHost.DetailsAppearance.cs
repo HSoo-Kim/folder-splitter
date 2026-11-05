@@ -262,6 +262,11 @@ public sealed partial class ShellViewHost
                 if (edit != 0) SendMessage(edit, 0x0030, owner.textFont, 0);
                 return;
             }
+            if (code == -101) // LVN_ITEMCHANGED
+            {
+                InvalidateRowTail(list, message.LParam);
+                return;
+            }
             if (code != -12) return; // NM_CUSTOMDRAW
             int stage = Marshal.ReadInt32(message.LParam, 3 * IntPtr.Size);
             nint dc = Marshal.ReadIntPtr(message.LParam, 4 * IntPtr.Size);
@@ -348,6 +353,30 @@ public sealed partial class ShellViewHost
                 DetailsNative.DrawFocusRect(dc, ref bounds);
                 DetailsNative.RestoreDC(dc, saved);
             }
+        }
+
+        // A selected row and the focused row are painted across the whole client width, but the list only
+        // repaints a changed row up to its last column. Without this the old row keeps its fill to the right
+        // of the columns and the new row never gets it until something repaints the whole list.
+        private static void InvalidateRowTail(nint list, nint data)
+        {
+            int header = Marshal.SizeOf<DetailsNative.NotifyHeader>(); // NMLISTVIEW follows its NMHDR
+            int item = Marshal.ReadInt32(data, header);
+            uint newState = (uint)Marshal.ReadInt32(data, header + 8), oldState = (uint)Marshal.ReadInt32(data, header + 12);
+            uint changed = (uint)Marshal.ReadInt32(data, header + 16);
+            if ((changed & 0x8) == 0 || ((newState ^ oldState) & 0x3) == 0) return; // LVIF_STATE; LVIS_SELECTED | LVIS_FOCUSED
+            if (SendMessage(list, 0x108F, 0, 0) != 1) return; // only Details view paints past the columns
+            DetailsNative.GetClientRect(list, out var client);
+            if (item < 0)
+            {
+                DetailsNative.InvalidateRect(list, ref client, false);
+                return;
+            }
+            var row = new DetailsNative.Rect(); // LVIR_BOUNDS
+            if (DetailsNative.SendMessage(list, 0x100E, item, ref row) == 0 || row.Right >= client.Right) return;
+            row.Left = Math.Max(0, row.Right);
+            row.Right = client.Right;
+            DetailsNative.InvalidateRect(list, ref row, false);
         }
 
         private void DrawHeader(ref Message message)
@@ -518,6 +547,7 @@ public sealed partial class ShellViewHost
         [DllImport("user32.dll", EntryPoint = "SendMessageW")]
         internal static extern nint HeaderMessage(nint window, int message, nint wParam, ref HeaderItem item);
         [DllImport("user32.dll")] internal static extern bool RedrawWindow(nint window, nint rect, nint region, uint flags);
+        [DllImport("user32.dll")] internal static extern bool InvalidateRect(nint window, ref Rect rect, bool erase);
         [DllImport("user32.dll", EntryPoint = "SendMessageW")]
         internal static extern nint SendMessage(nint window, int message, nint wParam, ref Rect rect);
         [DllImport("user32.dll")] internal static extern nint GetDC(nint window);
