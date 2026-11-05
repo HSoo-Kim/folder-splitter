@@ -165,7 +165,7 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **List appearance**: Each pane's `View` menu groups its options by scope: this pane only, all panes, and Windows-wide settings. For all panes you can hide the command bar (the filter is still on `Ctrl+F` and the other commands are in the pane options), toggle vertical separators and sorted-column highlighting (both off by default), and choose `Compact` or `Comfortable` row spacing (default). Comfortable spacing only adds room between rows; icons and text keep their size.
 - **Folder file total**: The status line shows the total size of the files directly in the current folder, such as `Files here: 18.4 MB`. Subfolders are not scanned, so it is a single folder read with no load on the PC; network folders are skipped.
 - **Languages**: 한국어, English, 简体中文, 日本語.
-- **Session restore**: Each browser window retains its own tabs, layout, active pane, position, size, maximized/hidden/minimized state, sidebar, folder tree and preview settings. Favorites, workspaces and application preferences are shared.
+- **Session restore**: Each browser window retains its own tabs, layout, active pane, position, size, maximized state, sidebar, folder tree and preview settings. Ordinary launches show all saved windows; update and memory restarts also restore each window's hidden/minimized presentation. Favorites, workspaces and application preferences are shared.
 - **Workspaces**: `Workspaces` at the top saves the current panes and tabs under a name and opens them again later (up to 20). Handy when switching between projects.
 - **Version and updates**: The lower left shows the current version and a link when a new release is available. While the app is visible, an update notice appears at the bottom right and stays until you close it; the version link remains. Clicking `Update` installs and restarts if automatic installation is enabled and the executable is writable; otherwise it opens the release page. Nothing is installed until you click. Checks run at startup, every hour while the app runs, and when the window returns after 15 minutes or more.
 - **Memory cleanup**: The Windows File Explorer component used for the file lists keeps a little memory for every folder visited and only returns it when the app exits. Once memory grew past a threshold (100 MB by default), the app saves its tabs, layout and settings and restarts quietly while the window is hidden or minimized. In `Settings` → `Memory cleanup` choose 100, 200, 300 or 500 MB or Off, or restart right away with `Clean up memory now`.
@@ -176,10 +176,10 @@ File lists are native Windows lists, so column sorting and right-click menus are
 
 | Situation | What happens |
 |---|---|
-| `Win+Alt+E` | Brings the last-active browser window to the front; press again to hide that window to the notification area. |
-| Closing a browser (X) | Closes only that browser while another remains. Closing the last browser keeps it in the notification area when enabled, with a one-time notice. |
-| `Win+E` | Opens Folder Splitter only if turned on in `Settings`; otherwise File Explorer opens. Toggles the last-active browser like Win+Alt+E. |
-| Launching it again | Brings the last-active browser back instead of opening another. |
+| `Win+Alt+E` | Reveals all browser windows and focuses the last-active one; press again while a browser is foreground to hide all windows to the notification area (or minimize them when tray mode is off). |
+| Closing a browser (X) | Closes only that browser while another remains. Closing the last browser keeps it in the notification area when enabled, with a one-time notice. With tray mode off, closing the last visible browser exits. |
+| `Win+E` | Opens Folder Splitter only if turned on in `Settings`; otherwise File Explorer opens. Toggles the browser windows like Win+Alt+E. |
+| Launching it again | Reveals all browser windows and focuses the last-active one instead of opening another. |
 | Signing in to Windows | Restores every browser hidden in the notification area (minimized when that option is off). On by default; turn it off in `Settings` or Task Manager's Startup apps. |
 
 - **New browser**: `Ctrl+N`, `Settings` → `New window`, or the notification-area menu opens one pane on the invoking browser's active folder. Browsers share settings, favorites, visits and the workspace catalog; loading a workspace changes only the invoking browser.
@@ -253,6 +253,7 @@ The two apps find files in different ways.
 - The settings path is unchanged so tabs and favorites from earlier QuadExplorer versions carry over.
 - Legacy sessions with no saved window list migrate to one browser window. On loading a valid legacy file, the app first copies the original bytes to `<session path>.pre-multiwindow.bak` (for example, `session.json.pre-multiwindow.bak`). This backup is created once and never overwritten; loading does not rewrite the session file. If the backup cannot be created, the session still loads with a warning. Missing, corrupt and JSON-null files do not create migration backups.
 - Saved sessions also include the first browser window in the older single-window fields, regardless of which window was last active. Older releases can read that projection, but saving from an older release **drops every additional window**. Before downgrading, copy the current session file if you want to retain all windows; the migration backup contains the original single-window session, not later multiwindow changes.
+- Downgrading to 0.8.20 drops extra windows when it saves; above 100% display scaling, 0.8.20 also enlarges the saved window on each launch (its old behavior).
 - Run only one app instance at a time against the same settings file.
 - Limits: up to 32 tabs per pane and 100 favorites.
 - Frequently opened folders: to rank search results, the app counts how often you open each folder. Only folder paths and counts are kept (at most 100 folders, stored in the settings file, and counts fade over time). Clear them with `Settings` → `Forget frequently opened folders`. Earlier versions ignore this entry.

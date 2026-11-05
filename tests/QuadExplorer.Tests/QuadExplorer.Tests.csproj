@@ -10,6 +10,7 @@
     <Compile Include="../../src/FolderSplitter/PaneLayout.cs" Link="PaneLayout.cs" />
     <Compile Include="../../src/FolderSplitter/FolderVisits.cs" Link="FolderVisits.cs" />
     <Compile Include="../../src/FolderSplitter/SessionState.cs" Link="SessionState.cs" />
+    <Compile Include="../../src/FolderSplitter/BrowserWindowGeometry.cs" Link="BrowserWindowGeometry.cs" />
     <Compile Include="../../src/FolderSplitter/PaletteGenerator.cs" Link="PaletteGenerator.cs" />
   </ItemGroup>
 </Project>

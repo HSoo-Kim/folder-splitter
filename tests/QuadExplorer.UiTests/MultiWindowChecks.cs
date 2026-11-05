@@ -1,4 +1,5 @@
 using QuadExplorer;
+using QuadExplorer.Search;
 using System.Reflection;
 using System.Text.Json;
 
@@ -64,14 +65,13 @@ internal static partial class Program
                 second.Hide();
                 context.Summon();
                 Check(second.Visible && third.Visible && ReferenceEquals(context.LastActiveWindow, second),
-                    "summon restores the last-active browser without hiding a visible peer");
+                    "summon restores all browsers and retains the captured last-active target");
                 MultiWindowActivated(third);
                 third.Hide();
                 second.Hide();
                 context.ToggleFromHotkey();
-                Check(third.Visible && !second.Visible && ReferenceEquals(context.LastActiveWindow, third),
-                    "the global hotkey summons only the last-active browser");
-                second.Show();
+                Check(third.Visible && second.Visible && ReferenceEquals(context.LastActiveWindow, third),
+                    "the global hotkey summons every hidden browser and retains the last-active target");
 
                 second.SetColorTheme("dark");
                 Check(context.Windows.All(window => window.ColorTheme == "dark" && window.BackColor == Theme.Canvas
@@ -203,8 +203,14 @@ internal static partial class Program
         }
         RunMultiWindowLastClose(fixture, folders[0], keepInTray: false);
         RunMultiWindowLastClose(fixture, folders[0], keepInTray: true);
-        foreach (string mode in new[] { "saved", "hidden", "minimized" })
+        foreach (string mode in new[] { "saved", "hidden", "minimized", "wait-pid" })
             RunMultiWindowPresentation(fixture, folders[0], mode);
+        RunMultiWindowTrayRelaunch(fixture, folders[0]);
+        RunMultiWindowRestartSuccess(fixture, folders[0]);
+        RunMultiWindowReachability(fixture, folders[0]);
+        RunMultiWindowSharedSearch(fixture, folders[0]);
+        RunMultiWindowDivider(fixture, folders[0]);
+        RunMultiWindowDpiScenario(fixture);
     }
 
     private static FolderSplitterApplicationContext MultiWindowContext(string session) => new(session, [],
@@ -331,8 +337,10 @@ internal static partial class Program
         });
         using var context = new FolderSplitterApplicationContext(session, [], treeRoots: [folder])
         {
-            StartHidden = mode == "hidden", StartMinimized = mode is "hidden" or "minimized"
+            StartHidden = mode == "hidden", StartMinimized = mode is "hidden" or "minimized",
+            RestorePresentation = mode == "wait-pid"
         };
+        var visibility = context.Windows.Select(window => new MultiWindowVisibility(window)).ToArray();
         RunMultiWindowContext(context, async () =>
         {
             foreach (var window in context.Windows) await MultiWindowReady(window);
@@ -342,11 +350,21 @@ internal static partial class Program
             {
                 "hidden" => context.Windows.All(window => !window.Visible),
                 "minimized" => context.Windows.All(window => window.Visible && window.WindowState == FormWindowState.Minimized),
-                _ => context.Windows[0].Visible && context.Windows[0].WindowState == FormWindowState.Minimized
-                    && !context.Windows[1].Visible
+                "wait-pid" => context.Windows[0].Visible && context.Windows[0].WindowState == FormWindowState.Minimized
+                    && !context.Windows[1].Visible,
+                _ => context.Windows.All(window => window.Visible)
+                    && context.Windows[0].WindowState == FormWindowState.Maximized
+                    && context.Windows[1].WindowState == FormWindowState.Normal
             }, $"{mode} presentation applies independently to every restored browser");
-            Check(context.Windows.All(window => window.IsUnobtrusive),
-                $"{mode} restored browsers are all unobtrusive for memory restart");
+            Check(mode == "saved" ? context.Windows.All(window => !window.IsUnobtrusive)
+                : context.Windows.All(window => window.IsUnobtrusive),
+                $"{mode} ordinary launch is visible while explicit and restart presentations remain unobtrusive");
+            Check(visibility.Select((record, index) => record.First is { } first
+                && (mode == "saved"
+                    ? first.State == (index == 0 ? FormWindowState.Maximized : FormWindowState.Normal)
+                    : first.State == FormWindowState.Minimized)
+                && (mode == "saved" || record.VisibleStates.All(state => state == FormWindowState.Minimized))).All(value => value),
+                $"{mode} FIRST VisibleChanged already has the required state with no visible normal-size flash");
             Check(context.SaveSession() && SessionStore.Load(session).Windows.All(window => window.ShowSidebar)
                 && SessionStore.Load(session).Windows[0].Maximized,
                 $"{mode} aggregate capture retains hidden sidebar preferences and minimized maximized restore state");
@@ -356,6 +374,369 @@ internal static partial class Program
                 $"{mode} startup presentation does not hide or minimize a newly requested peer");
         });
     }
+
+    private sealed class MultiWindowVisibility
+    {
+        internal (FormWindowState State, Rectangle Bounds)? First { get; private set; }
+        internal List<FormWindowState> VisibleStates { get; } = [];
+
+        internal MultiWindowVisibility(MainForm window)
+        {
+            window.VisibleChanged += (_, _) =>
+            {
+                if (!window.Visible) return;
+                First ??= (window.WindowState, window.Bounds);
+                VisibleStates.Add(window.WindowState);
+            };
+        }
+    }
+
+    private static void MultiWindowSeed(string session, string folder, int count = 2) =>
+        SessionStore.Save(session, new SessionState
+        {
+            Language = "en", ExplorerFavoritesImported = true, KeepInTray = true, GlobalHotkey = false,
+            StartWithWindows = false, CheckUpdates = false, AutoUpdate = false, AutoRestartMemory = 0,
+            Windows = Enumerable.Range(0, count).Select(_ => new BrowserWindowState
+            {
+                Layout = 1, ShowFolderTree = false, Panes = [new PaneState { Tabs = [folder] }],
+                WindowWidth = 1100, WindowHeight = 720
+            }).ToList()
+        });
+
+    private static void MultiWindowTrayCommand(FolderSplitterApplicationContext context, string command)
+    {
+        var tray = (NotifyIcon)typeof(FolderSplitterApplicationContext)
+            .GetField("trayIcon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(context)!;
+        tray.ContextMenuStrip!.Items.Cast<ToolStripItem>().Single(item => item.Text == command).PerformClick();
+    }
+
+    private static async Task MultiWindowIdle()
+    {
+        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Idle(object? sender, EventArgs args)
+        {
+            Application.Idle -= Idle;
+            drained.TrySetResult();
+        }
+        Application.Idle += Idle;
+        try { await drained.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+        finally { Application.Idle -= Idle; }
+    }
+
+    private static void RunMultiWindowTrayRelaunch(string fixture, string folder)
+    {
+        string session = Path.Combine(fixture, "ordinary-after-tray-exit.json");
+        MultiWindowSeed(session, folder);
+        using (var context = MultiWindowContext(session))
+        {
+            RunMultiWindowContext(context, async () =>
+            {
+                foreach (var window in context.Windows) await MultiWindowReady(window);
+                // Dismiss each peer through the same consumer command as the global shortcut.
+                foreach (var window in context.Windows) window.DismissFromHotkey();
+                Check(context.Windows.All(window => !window.Visible),
+                    "tray Exit fixture has every saved browser hidden before choosing Exit");
+                MultiWindowTrayCommand(context, "Exit");
+            });
+        }
+        Check(SessionStore.Load(session).Windows.All(window => window.Hidden),
+            "tray menu Exit persists every hidden browser before disposing the application");
+        using var relaunched = MultiWindowContext(session);
+        RunMultiWindowContext(relaunched, async () =>
+        {
+            foreach (var window in relaunched.Windows) await MultiWindowReady(window);
+            Check(relaunched.Windows.Count == 2 && relaunched.Windows.All(window => window.Visible
+                && window.WindowState == FormWindowState.Normal),
+                "ordinary launch after hidden tray Exit reveals ALL saved browser windows");
+        });
+    }
+
+    private static Action<string>? multiWindowSessionWritten;
+    private static void MultiWindowObserveSave(string path) => multiWindowSessionWritten?.Invoke(path);
+
+    private static void RunMultiWindowRestartSuccess(string fixture, string folder)
+    {
+        string session = Path.Combine(fixture, "restart-success.json");
+        MultiWindowSeed(session, folder, count: 3);
+        using (var context = MultiWindowContext(session))
+        {
+            var windows = context.Windows.ToArray();
+            int launches = 0, writes = 0, exits = 0;
+            int[] closed = new int[windows.Length];
+            IReadOnlyList<string>? actualArguments = null;
+            context.ThreadExit += (_, _) => exits++;
+            for (int index = 0; index < windows.Length; index++)
+            {
+                int captured = index;
+                windows[index].FormClosed += (_, _) => closed[captured]++;
+            }
+            RunMultiWindowContext(context, async () =>
+            {
+                foreach (var window in windows) await MultiWindowReady(window);
+                windows[0].Hide();
+                windows[1].WindowState = FormWindowState.Minimized;
+                windows[2].WindowState = FormWindowState.Maximized;
+                MultiWindowActivated(windows[2]);
+                // Observe the actual store call, not a timer or filesystem-event approximation.
+                var harmony = new HarmonyLib.Harmony("FolderSplitter.UiTests.MultiWindowRestartSave");
+                var save = HarmonyLib.AccessTools.Method(typeof(SessionStore), nameof(SessionStore.Save));
+                var prefix = HarmonyLib.AccessTools.Method(typeof(Program), nameof(MultiWindowObserveSave));
+                multiWindowSessionWritten = path => { if (path == session) writes++; };
+                harmony.Patch(save, prefix: new HarmonyLib.HarmonyMethod(prefix));
+                try
+                {
+                    windows[2].RestartLauncher = arguments =>
+                    {
+                        launches++;
+                        actualArguments = arguments.ToArray();
+                        return true;
+                    };
+                    windows[2].RestartApplication();
+                    windows[2].RestartApplication();
+                }
+                finally
+                {
+                    harmony.Unpatch(save, prefix);
+                    multiWindowSessionWritten = null;
+                }
+            });
+            Check(launches == 1 && actualArguments is not null && actualArguments.SequenceEqual(
+                ["--wait-pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    "--session", session]),
+                "successful restart launches exactly once with only --wait-pid pid and the custom --session");
+            Check(writes == 1 && windows.All(window => window.IsDisposed)
+                && closed.All(count => count == 1) && exits == 1,
+                "successful restart writes the aggregate session once, disposes every form and raises ThreadExit once");
+        }
+        using var restarted = new FolderSplitterApplicationContext(session, [], treeRoots: [folder])
+        {
+            RestorePresentation = true
+        };
+        var records = restarted.Windows.Select(window => new MultiWindowVisibility(window)).ToArray();
+        RunMultiWindowContext(restarted, async () =>
+        {
+            foreach (var window in restarted.Windows) await MultiWindowReady(window);
+            Check(restarted.Windows.Count == 3 && !restarted.Windows[0].Visible
+                && restarted.Windows[1].Visible && restarted.Windows[1].WindowState == FormWindowState.Minimized
+                && restarted.Windows[2].Visible && restarted.Windows[2].WindowState == FormWindowState.Maximized
+                && ReferenceEquals(restarted.LastActiveWindow, restarted.Windows[2]),
+                "--wait-pid replacement context restores hidden, minimized and maximized peers and last-active browser");
+            Check(records.Select((record, index) => record.First?.State == (index == 2
+                    ? FormWindowState.Maximized : FormWindowState.Minimized)
+                && record.VisibleStates.All(state => state != FormWindowState.Normal)).All(value => value),
+                "memory-restart replacement FIRST VisibleChanged never presents any peer at normal size");
+        });
+    }
+
+    private static void RunMultiWindowReachability(string fixture, string folder)
+    {
+        string session = Path.Combine(fixture, "hidden-peer-reachability.json");
+        MultiWindowSeed(session, folder);
+        using var context = MultiWindowContext(session);
+        var first = context.Windows[0];
+        var second = context.Windows[1];
+        int exits = 0;
+        context.ThreadExit += (_, _) => exits++;
+        RunMultiWindowContext(context, async () =>
+        {
+            await MultiWindowReady(first);
+            await MultiWindowReady(second);
+            first.Hide();
+            MultiWindowActivated(second);
+            MultiWindowTrayCommand(context, "Open Folder Splitter");
+            Check(first.Visible && second.Visible && ReferenceEquals(context.LastActiveWindow, second),
+                "tray menu Open reaches a hidden non-last-active browser and retains the captured focus target");
+            first.Hide();
+            second.WindowState = FormWindowState.Minimized;
+            PostMessage(context.ActivationHandle, 0x0312, 0x4653, 0);
+            await MultiWindowIdle();
+            Check(first.Visible && second.Visible && context.Windows.All(window => window.WindowState != FormWindowState.Minimized)
+                && ReferenceEquals(context.LastActiveWindow, second),
+                "real hotkey receiver reveals a hidden non-last-active peer and restores its minimized active peer");
+            first.Hide();
+            second.SetCloseToTray(false);
+            Check(first.Visible && second.Visible && !context.TrayIconVisible,
+                "turning tray off reveals a hidden peer even while another browser is already visible");
+            first.Hide();
+            second.Close();
+            Check(first.IsDisposed && second.IsDisposed && context.Windows.Count == 0 && exits == 1,
+                "tray-off last-visible close exits the whole context instead of stranding a hidden peer");
+        });
+    }
+
+    private static void RunMultiWindowSharedSearch(string fixture, string folder)
+    {
+        string match = Directory.CreateDirectory(Path.Combine(folder, "multiwindow-search-survivor")).FullName;
+        string session = Path.Combine(fixture, "shared-search.json");
+        MultiWindowSeed(session, folder);
+        using var backend = new IndependentSearchBackend([folder], Path.Combine(fixture, "shared-search.fsix"));
+        using var context = new FolderSplitterApplicationContext(session, [], backend, [folder]);
+        RunMultiWindowContext(context, async () =>
+        {
+            var original = context.Windows[0];
+            var survivor = context.Windows[1];
+            await MultiWindowReady(original);
+            await MultiWindowReady(survivor);
+            await backend.BuildOrLoadAsync(CancellationToken.None);
+            original.Close();
+            var pane = survivor.GetPane(0);
+            var address = Descendants(pane).OfType<TextBox>()
+                .Single(box => box.AccessibleName?.EndsWith(" address") == true);
+            await Search(pane, address, "multiwindow-search-survivor");
+            Check(original.IsDisposed && pane.CandidatesVisible && pane.SearchCandidates.Any(hit => hit.FullPath == match),
+                "surviving browser queries the real shared search backend after the original browser closes");
+            await Navigate(pane.ActiveView!, () => PostMessage(address.Handle, 0x100, (nint)Keys.Enter, 0));
+            Check(pane.CurrentPath == match,
+                "surviving browser opens a real shared-search candidate after the original browser closes");
+        });
+    }
+
+    private static void RunMultiWindowDivider(string fixture, string folder)
+    {
+        string session = Path.Combine(fixture, "divider-peer.json");
+        MultiWindowSeed(session, folder);
+        using var context = MultiWindowContext(session);
+        RunMultiWindowContext(context, async () =>
+        {
+            var first = context.Windows[0];
+            var second = context.Windows[1];
+            await MultiWindowReady(first);
+            await MultiWindowReady(second);
+            (nint Header, nint List) Handles(MainForm window)
+            {
+                nint header = 0, list = 0;
+                EnumChildWindows(window.GetPane(0).ActiveView!.Handle, (child, _) =>
+                {
+                    var name = new System.Text.StringBuilder(32);
+                    GetClassName(child, name, name.Capacity);
+                    if (name.ToString() == "SysHeader32") header = child;
+                    else if (name.ToString() == "SysListView32") list = child;
+                    return true;
+                }, 0);
+                return (header, list);
+            }
+            var a = Handles(first);
+            var b = Handles(second);
+            var column = new HeaderRect();
+            HeaderItemRect(b.Header, 0x1207, 0, ref column);
+            nint At(int x) => (nint)(((column.Top + column.Bottom) / 2 << 16) | (x & 0xFFFF));
+            int aBefore = (int)SendMessage(a.List, 0x101D, 0, 0);
+            int bBefore = (int)SendMessage(b.List, 0x101D, 0, 0);
+            PostMessage(b.Header, 0x201, 1, At(column.Right - 1));
+            PostMessage(b.Header, 0x200, 1, At(column.Right + 90));
+            await MultiWindowIdle();
+            int during = (int)SendMessage(b.List, 0x101D, 0, 0);
+            Check(second.ColumnDividerDragging && !first.ColumnDividerDragging
+                && during - bBefore is >= 90 and <= 92 && (int)SendMessage(a.List, 0x101D, 0, 0) == aBefore,
+                "native divider drag in browser B is tracked only by B while browser A remains open");
+            PostMessage(b.Header, 0x200, 1, At(column.Right + 40));
+            PostMessage(b.Header, 0x202, 0, At(column.Right + 40));
+            await MultiWindowIdle();
+            Check(!first.ColumnDividerDragging && !second.ColumnDividerDragging
+                && (int)SendMessage(b.List, 0x101D, 0, 0) == during - 50
+                && (int)SendMessage(a.List, 0x101D, 0, 0) == aBefore,
+                "releasing B's native divider commits only B's width and leaves A's columns unchanged");
+        });
+    }
+
+    private static MainForm MultiWindowCtrlN(FolderSplitterApplicationContext context, MainForm source)
+    {
+        source.Activate();
+        source.GetPane(0).FocusFiles();
+        var before = context.Windows.ToArray();
+        byte[] saved = new byte[256];
+        if (!PnGetKeyboardState(saved)) throw new InvalidOperationException("GetKeyboardState failed");
+        byte[] keyboard = new byte[256];
+        keyboard[0x11] = keyboard[0xA2] = 0x80;
+        try
+        {
+            if (!PnSetKeyboardState(keyboard)) throw new InvalidOperationException("SetKeyboardState failed");
+            var message = Message.Create(source.GetPane(0).ActiveView!.Handle, 0x100, (nint)Keys.N, 1);
+            if (!source.PreFilterMessage(ref message)) throw new InvalidOperationException("Ctrl+N was not consumed");
+        }
+        finally
+        {
+            if (!PnSetKeyboardState(saved)) throw new InvalidOperationException("Could not restore keyboard state");
+        }
+        return context.Windows.Single(window => !before.Contains(window));
+    }
+
+    private static void RunMultiWindowDpiScenario(string fixture)
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(fixture, "NativeDpi")).FullName;
+        string session = Path.Combine(fixture, "dpi-physical-roundtrip.json");
+        // A real legacy payload, not SessionStore.Save (which would pre-normalize Windows).
+        File.WriteAllText(session, JsonSerializer.Serialize(new
+        {
+            Language = "en", ExplorerFavoritesImported = true, KeepInTray = true, GlobalHotkey = false,
+            StartWithWindows = false, CheckUpdates = false, AutoUpdate = false, AutoRestartMemory = 0,
+            Layout = 1, ShowFolderTree = false, Panes = new[] { new PaneState { Tabs = [folder] } },
+            WindowWidth = 1943, WindowHeight = 1129
+        }));
+        Size? firstRound = null;
+        for (int round = 1; round <= 2; round++)
+        {
+            using var context = MultiWindowContext(session);
+            var window = context.Windows.Single();
+            var visibility = new MultiWindowVisibility(window);
+            RunMultiWindowContext(context, async () =>
+            {
+                await MultiWindowReady(window);
+                uint nativeDpi = MultiWindowNativeDpi(window.Handle);
+                Rectangle work = Screen.FromControl(window).WorkingArea;
+                Size expected = new(Math.Min(1943, work.Width), Math.Min(1129, work.Height));
+                Console.WriteLine($"METRIC multi_window_dpi round={round} native={nativeDpi} managed={window.DeviceDpi}"
+                    + $" requested=1943x1129 work={work.Width}x{work.Height} actual={window.Width}x{window.Height}");
+                Check(nativeDpi == window.DeviceDpi && window.Size == expected
+                    && visibility.First?.Bounds.Size == expected
+                    && (firstRound is null || window.Size == firstRound),
+                    $"native DPI round {round} restores legacy physical bounds before FIRST visibility without scale growth");
+                firstRound ??= window.Size;
+                Check(context.SaveSession() && SessionStore.Load(session).Windows[0].WindowWidth == expected.Width
+                    && SessionStore.Load(session).Windows[0].WindowHeight == expected.Height,
+                    $"native DPI round {round} saves the same physical width and height without DPI conversion");
+            });
+        }
+
+        string fresh = Path.Combine(fixture, "dpi-fresh-install.json");
+        using var freshContext = new FolderSplitterApplicationContext(fresh, [folder], treeRoots: [folder],
+            latestRelease: _ => Task.FromResult<ReleaseInfo?>(null));
+        var source = freshContext.Windows.Single();
+        var firstVisibility = new MultiWindowVisibility(source);
+        RunMultiWindowContext(freshContext, async () =>
+        {
+            await MultiWindowReady(source);
+            uint dpi = MultiWindowNativeDpi(source.Handle);
+            var work = Screen.FromControl(source).WorkingArea;
+            var defaultSize = new Size(Math.Min((int)Math.Round(1400 * dpi / 96d), work.Width),
+                Math.Min((int)Math.Round(900 * dpi / 96d), work.Height));
+            Check(source.Size == defaultSize && firstVisibility.First?.Bounds.Size == defaultSize,
+                "fresh-install browser scales the 1400x900 default to native DPI before FIRST visibility");
+            Check(source.MinimumSize.Width >= (int)Math.Ceiling(900 * dpi / 96d)
+                && source.MinimumSize.Height >= (int)Math.Ceiling(600 * dpi / 96d),
+                "fresh-install browser minimum width and height scale to native DPI");
+            MultiWindowPlace(source, 12, 12, Math.Min(1600, work.Width - 80), Math.Min(1000, work.Height - 80));
+            Rectangle normal = source.Bounds;
+            for (int maximized = 0; maximized <= 1; maximized++)
+            {
+                if (maximized == 1) source.WindowState = FormWindowState.Maximized;
+                var peer = MultiWindowCtrlN(freshContext, source);
+                await MultiWindowReady(peer);
+                int offset = (int)Math.Round(32 * dpi / 96d);
+                int x = normal.Right + offset > work.Right ? work.Left : normal.Left + offset;
+                int y = normal.Bottom + offset > work.Bottom ? work.Top : normal.Top + offset;
+                Check(peer.WindowState == FormWindowState.Normal && peer.Size == normal.Size
+                    && peer.Location == new Point(x, y) && work.Contains(peer.Bounds)
+                    && Screen.FromControl(peer).DeviceName == Screen.FromRectangle(normal).DeviceName,
+                    $"Ctrl+N from {(maximized == 1 ? "maximized" : "normal")} source copies normal physical size and cascades within its monitor");
+                peer.Close();
+                source.WindowState = FormWindowState.Normal;
+            }
+        });
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetDpiForWindow")]
+    private static extern uint MultiWindowNativeDpi(nint window);
 
     private static void RunMultiWindowLastClose(string fixture, string folder, bool keepInTray)
     {

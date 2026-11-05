@@ -14,7 +14,12 @@ internal static class BrowserWindowStateTests
         ("workspaces normalize independently of browser windows", WorkspaceNormalization),
         ("legacy migration backs up original bytes once without rewriting", MigrationBackup),
         ("modern and corrupt sessions create no migration backup", NoMigrationBackup),
-        ("migration backup failures warn without losing loaded data", BackupFailure)
+        ("migration backup failures warn without losing loaded data", BackupFailure),
+        ("0.8.20 fixture survives upgrade downgrade and reupgrade with original backup", LegacyVersionRoundtrip),
+        ("saved physical window bounds survive repeated session roundtrips", PhysicalBoundsRoundtrip),
+        ("saved physical bounds restore twice unchanged at 120 and 144 DPI", BrowserWindowGeometryTests.SavedBounds),
+        ("fresh window defaults and minimums scale at 120 and 144 DPI", BrowserWindowGeometryTests.FreshDefaults),
+        ("new windows preserve source size and cascade within their monitor at 120 and 144 DPI", BrowserWindowGeometryTests.CascadedBounds)
     ];
 
     private static BrowserWindowState SampleWindow() => new()
@@ -233,6 +238,134 @@ internal static class BrowserWindowStateTests
         Equal(JsonSerializer.Serialize(direct), JsonSerializer.Serialize(session.Workspaces[0]));
         Equal(99, workspace.Panes[3].SelectedTab);
         Equal(" Project ", workspace.Name);
+    }
+
+    private static void LegacyVersionRoundtrip()
+    {
+        InDirectory(path =>
+        {
+            var original = System.Text.Encoding.UTF8.GetBytes(Legacy0820SessionFixture.Json);
+            File.WriteAllBytes(path, original);
+            var legacy = Legacy0820SessionFixture.Read(path);
+            var migrated = SessionStore.Load(path, out var warning);
+            var backupPath = path + ".pre-multiwindow.bak";
+            Equal<string?>(null, warning);
+            Equal(1, migrated.Windows.Count);
+            Equal(0, migrated.LastActiveWindow);
+            Equal(1943, migrated.Windows[0].WindowWidth);
+            Equal(1129, migrated.Windows[0].WindowHeight);
+            Equal(true, migrated.Windows[0].Maximized);
+            Equal<int?>(null, migrated.Windows[0].WindowX);
+            Equal<int?>(null, migrated.Windows[0].WindowY);
+            Equal(3, migrated.Windows[0].ActivePane);
+            Equal("D:\\Projects\\release", migrated.Windows[0].Panes[0].Tabs[1]);
+            Equal(1, migrated.Workspaces.Count);
+            Equal(2, migrated.FrequentFolders.Count);
+            Equal(true, original.SequenceEqual(File.ReadAllBytes(path)));
+            Equal(true, original.SequenceEqual(File.ReadAllBytes(backupPath)));
+
+            var first = migrated.Windows[0] with
+            {
+                WindowX = -1943, WindowY = 44, Hidden = true, Minimized = true
+            };
+            SessionStore.Save(path, migrated with
+            {
+                Windows = [first, SampleWindow()], LastActiveWindow = 1
+            });
+            using (var document = JsonDocument.Parse(File.ReadAllText(path)))
+            {
+                Equal(2, document.RootElement.GetProperty("Windows").GetArrayLength());
+                Equal(1, document.RootElement.GetProperty("LastActiveWindow").GetInt32());
+                Equal(1943, document.RootElement.GetProperty("WindowWidth").GetInt32());
+                Equal(1129, document.RootElement.GetProperty("WindowHeight").GetInt32());
+            }
+            var modern = SessionStore.Load(path, out warning);
+            Equal<string?>(null, warning);
+            Equal(2, modern.Windows.Count);
+            SameWindow(first, modern.Windows[0]);
+            SameWindow(modern.Windows[0], SessionStore.LegacyWindow(modern));
+            Equal(true, original.SequenceEqual(File.ReadAllBytes(backupPath)));
+
+            // The frozen old schema reads every old field from the first-window copy,
+            // ignores the extra windows, and loses new fields on its next serialization.
+            var oldRead = Legacy0820SessionFixture.Read(path);
+            Equal(JsonSerializer.Serialize(legacy), JsonSerializer.Serialize(oldRead));
+            var oldResaved = oldRead with { WindowWidth = 1820, Maximized = false };
+            Legacy0820SessionFixture.Resave(path, oldResaved);
+            var downgradedBytes = File.ReadAllBytes(path);
+            using (var document = JsonDocument.Parse(downgradedBytes))
+            {
+                foreach (var addedField in new[] { "Windows", "LastActiveWindow", "WindowX", "WindowY", "Hidden", "Minimized" })
+                    Equal(false, document.RootElement.TryGetProperty(addedField, out _));
+            }
+            Equal(true, original.SequenceEqual(File.ReadAllBytes(backupPath)));
+
+            var reupgraded = SessionStore.Load(path, out warning);
+            Equal<string?>(null, warning);
+            Equal(1, reupgraded.Windows.Count);
+            Equal(0, reupgraded.LastActiveWindow);
+            var restored = reupgraded.Windows[0];
+            SameWindow(first with
+            {
+                WindowWidth = 1820, Maximized = false,
+                WindowX = null, WindowY = null, Hidden = false, Minimized = false
+            }, restored);
+            Equal("en", reupgraded.Language);
+            Equal("custom", reupgraded.ColorTheme);
+            Equal(false, reupgraded.GlobalToolbarPinned);
+            Equal(true, downgradedBytes.SequenceEqual(File.ReadAllBytes(path)));
+            Equal(true, original.SequenceEqual(File.ReadAllBytes(backupPath)));
+
+            SessionStore.Save(path, reupgraded);
+            var final = SessionStore.Load(path, out warning);
+            Equal<string?>(null, warning);
+            Equal(1, final.Windows.Count);
+            SameWindow(restored, final.Windows[0]);
+            Equal(JsonSerializer.Serialize(oldResaved), JsonSerializer.Serialize(Legacy0820SessionFixture.Read(path)));
+            Equal(true, original.SequenceEqual(File.ReadAllBytes(backupPath)));
+            Equal(2, Directory.GetFiles(Path.GetDirectoryName(path)!).Length);
+        });
+    }
+
+    private static void PhysicalBoundsRoundtrip()
+    {
+        InDirectory(path =>
+        {
+            // Saved sizes are physical pixels. DPI scaling belongs only to fresh UI
+            // defaults, never session normalization, migration or later session saves.
+            File.WriteAllText(path, Legacy0820SessionFixture.Json);
+            var state = SessionStore.Load(path);
+            Equal(1943, state.Windows[0].WindowWidth);
+            Equal(1129, state.Windows[0].WindowHeight);
+            state = state with
+            {
+                Windows = [state.Windows[0] with
+                {
+                    WindowX = -2200, WindowY = -180, Maximized = false
+                }, new BrowserWindowState
+                {
+                    WindowX = 2200, WindowY = 120, WindowWidth = 1943, WindowHeight = 1129,
+                    Maximized = true, Hidden = true, Minimized = true
+                }],
+                LastActiveWindow = 1
+            };
+            var expected = SessionStore.Normalize(state);
+            for (var save = 0; save < 2; save++)
+            {
+                SessionStore.Save(path, state);
+                state = SessionStore.Load(path, out var warning);
+                Equal<string?>(null, warning);
+                Equal(2, state.Windows.Count);
+                Equal(1, state.LastActiveWindow);
+                for (var index = 0; index < state.Windows.Count; index++)
+                {
+                    Equal(1943, state.Windows[index].WindowWidth);
+                    Equal(1129, state.Windows[index].WindowHeight);
+                    SameWindow(expected.Windows[index], state.Windows[index]);
+                }
+                SameWindow(state.Windows[0], SessionStore.LegacyWindow(state));
+            }
+        });
     }
 
     private static void MigrationBackup()

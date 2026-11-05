@@ -857,7 +857,7 @@ internal static partial class Program
                 var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void Shown(object? sender, EventArgs e) { if (form.Visible) shown.TrySetResult(); }
                 form.VisibleChanged += Shown;
-                PostMessage(form.ApplicationContext.ActivationHandle, QuadExplorer.Program.ActivationMessage(session), 0, 0);
+                PostMessage((nint)0xffff, QuadExplorer.Program.ActivationMessage(session), 0, 0); // Real HWND_BROADCAST from another launch.
                 await shown.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 form.VisibleChanged -= Shown;
                 Check(form.Visible, "Win+E or a second launch shows the hidden window again");

@@ -32,6 +32,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
 
     internal string SessionPath { get; }
     internal SessionState State { get; private set; }
+    internal bool HasSavedSession { get; }
     internal IPathSearchBackend? Search { get; }
     internal List<string> Favorites { get; }
     internal List<string> DeletedFavorites { get; }
@@ -44,6 +45,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     public MainForm? LastActiveWindow { get; private set; }
     public bool StartHidden { get; init; }
     public bool StartMinimized { get; init; }
+    public bool RestorePresentation { get; init; }
     public bool RegisterStartupOnLaunch { get; init; }
     internal bool TrayIconVisible => trayIcon.Visible;
     internal nint ActivationHandle => receiver.Handle;
@@ -64,6 +66,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     {
         registeredWindows = windows.AsReadOnly();
         SessionPath = sessionPath;
+        HasSavedSession = File.Exists(sessionPath);
         Search = search;
         this.treeRoots = treeRoots;
         this.latestRelease = latestRelease;
@@ -101,7 +104,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         if (createWindows)
         {
             foreach (var state in State.Windows)
-                _ = new MainForm(this, state, windows.Count == 0 ? folders : [], treeRoots);
+                _ = new MainForm(this, state, windows.Count == 0 ? folders : [], treeRoots, useDefaultSize: !HasSavedSession);
             LastActiveWindow = windows[Math.Clamp(State.LastActiveWindow, 0, windows.Count - 1)];
         }
     }
@@ -116,7 +119,12 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     {
         if (!windows.Remove(window)) return;
         if (LastActiveWindow == window) LastActiveWindow = windows.LastOrDefault();
-        if (disposed || shuttingDown) return;
+        if (disposed) return;
+        if (shuttingDown)
+        {
+            if (windows.Count == 0) Dispose();
+            return;
+        }
         if (windows.Count == 0)
         {
             ExitThread();
@@ -136,6 +144,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
             {
                 window.StartHidden = StartHidden;
                 window.StartMinimized = StartMinimized || StartHidden;
+                window.RestorePresentation = RestorePresentation;
             }
             launchPresentationApplied = true;
         }
@@ -146,7 +155,8 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     public MainForm CreateWindow(BrowserWindowState? state = null)
     {
         if (disposed || shuttingDown) throw new ObjectDisposedException(nameof(FolderSplitterApplicationContext));
-        var window = new MainForm(this, SessionStore.NormalizeBrowserWindow(state ?? new BrowserWindowState()), [], treeRoots);
+        var window = new MainForm(this, SessionStore.NormalizeBrowserWindow(state ?? new BrowserWindowState()), [], treeRoots,
+            useDefaultSize: state is null);
         window.Show();
         window.Activate();
         ScheduleSave();
@@ -156,8 +166,17 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     public MainForm CreateWindowFromActive(MainForm source)
     {
         string path = source?.ActiveFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return CreateWindow(new BrowserWindowState { Layout = 1, LayoutTree = PaneLayout.Preset(1),
-            Panes = [new PaneState { Tabs = string.IsNullOrEmpty(path) ? [] : [path] }] });
+        var state = new BrowserWindowState { Layout = 1, LayoutTree = PaneLayout.Preset(1),
+            Panes = [new PaneState { Tabs = string.IsNullOrEmpty(path) ? [] : [path] }] };
+        if (source is not null)
+        {
+            Rectangle bounds = source.WindowState == FormWindowState.Normal ? source.Bounds : source.RestoreBounds;
+            Rectangle work = Screen.FromRectangle(bounds).WorkingArea;
+            Rectangle cascaded = BrowserWindowGeometry.Cascade(bounds, work, source.DeviceDpi);
+            state = state with { WindowX = cascaded.X, WindowY = cascaded.Y,
+                WindowWidth = cascaded.Width, WindowHeight = cascaded.Height };
+        }
+        return CreateWindow(state);
     }
 
     internal void Activated(MainForm window)
@@ -169,8 +188,23 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         }
     }
 
-    public void Summon() => LastActiveWindow?.Summon();
-    public void ToggleFromHotkey() => LastActiveWindow?.ToggleFromHotkey();
+    public void Summon()
+    {
+        MainForm? active = LastActiveWindow;
+        foreach (var window in windows.ToArray())
+            if (window != active) window.Reveal();
+        active?.Summon();
+    }
+
+    public void ToggleFromHotkey()
+    {
+        // Toggle the browser set together so hiding one browser cannot select and hide its peer next.
+        if (windows.Any(window => window.IsForegroundBrowser))
+        {
+            foreach (var window in windows.ToArray()) window.DismissFromHotkey();
+        }
+        else Summon();
+    }
 
     internal void WindowShown(MainForm window, bool registerStartup)
     {
@@ -307,6 +341,16 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
             return;
         }
         if (!CanClose(window)) { e.Cancel = true; return; }
+        if (!State.KeepInTray && windows.All(other => other == window || !other.Visible))
+        {
+            if (!SaveSession() && !ConfirmSaveFailure(window)) { e.Cancel = true; return; }
+            shuttingDown = true;
+            saveTimer.Stop();
+            foreach (var other in windows.ToArray())
+                if (other != window) other.Close();
+            ExitThread();
+            return;
+        }
         if (windows.Count == 1)
         {
             if (!SaveSession() && !ConfirmSaveFailure(window)) e.Cancel = true;
@@ -357,7 +401,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     internal void SetCloseToTray(bool enabled)
     {
         ChangeSettings(s => s with { KeepInTray = enabled });
-        if (!enabled && windows.All(window => !window.Visible)) Summon();
+        if (!enabled) Summon();
     }
 
     internal void SetGlobalHotkey(bool enabled)
@@ -454,7 +498,9 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         if (!SaveSession())
         {
             Updating = false;
+            AvailableUpdate = null;
             foreach (var window in windows.ToArray()) window.RefreshUpdate();
+            owner.SetApplicationStatus("Updated. Restart Folder Splitter to finish.");
             return;
         }
         if (Launch(exe, RestartArguments())) CloseAll();

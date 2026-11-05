@@ -134,9 +134,11 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly ToolStripMenuItem forgetVisitsItem = new();
     private (nint Header, nint List, int Column, int StartX, int StartWidth)? columnDrag;
     private readonly BrowserWindowState restoredPresentation;
+    private readonly bool useDefaultWindowSize;
     private bool maximizedPresentation;
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartMinimized { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartHidden { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool RestorePresentation { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool RegisterStartupOnLaunch { get; init; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal StartupRegistration Startup { get => application.Startup; set => application.Startup = value; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal Func<IReadOnlyList<string>, bool>? RestartLauncher { get => application.RestartLauncher; set => application.RestartLauncher = value; }
@@ -156,11 +158,12 @@ public sealed class MainForm : Form, IMessageFilter
         : this(new FolderSplitterApplicationContext(sessionPath, folders, search, treeRoots, latestRelease, createWindows: false), null, folders, treeRoots) { }
 
     internal MainForm(FolderSplitterApplicationContext application, BrowserWindowState? state,
-        IReadOnlyList<string> folders, IReadOnlyList<string>? treeRoots)
+        IReadOnlyList<string> folders, IReadOnlyList<string>? treeRoots, bool useDefaultSize = false)
     {
         this.application = application;
         search = application.Search;
         initialState = SessionStore.ProjectWindow(application.State, state ?? application.State.Windows[0]);
+        useDefaultWindowSize = useDefaultSize || (state is null && !application.HasSavedSession);
         application.Register(this);
         fontFamily = initialState.FontFamily is { } face && FontInstalled(face) ? face : null;
         textSize = initialState.TextSize;
@@ -491,22 +494,23 @@ public sealed class MainForm : Form, IMessageFilter
             PositionGlobalToolbarOverlay();
         };
         Deactivate += (_, _) => { if (!globalToolbarPinned) HideGlobalToolbarOverlay(); };
-        DpiChanged += (_, _) => RefreshGlobalToolbar();
+        DpiChanged += (_, _) => { RefreshGlobalToolbar(); UpdateMinimumSize(); };
         showSidebar = initialState.ShowSidebar;
         sidebar.Visible = initialState.ShowSidebar;
         sidebarSplitter.Visible = initialState.ShowSidebar;
-        Shown += (_, _) =>
+        Load += (_, _) =>
         {
             UpdateMinimumSize();
-            // Saved bounds are screen pixels, not design-time DIPs. Restore after WinForms' first DPI scale.
+            // Load runs after the first DPI scale, but before the HWND is visible. Saved bounds are pixels.
             Rectangle work = Screen.FromControl(this).WorkingArea;
-            int width = Math.Min(initialState.WindowWidth, work.Width);
-            int height = Math.Min(initialState.WindowHeight, work.Height);
-            Bounds = new Rectangle(Math.Clamp(restoredPresentation.WindowX ?? Left, work.Left, work.Right - width),
-                Math.Clamp(restoredPresentation.WindowY ?? Top, work.Top, work.Bottom - height), width, height);
+            Bounds = BrowserWindowGeometry.Restore(restoredPresentation, work, DeviceDpi, useDefaultWindowSize);
             if (initialState.Maximized) WindowState = FormWindowState.Maximized;
-            if (StartMinimized || restoredPresentation.Minimized) WindowState = FormWindowState.Minimized;
-            if ((StartHidden || (!StartMinimized && restoredPresentation.Hidden)) && closeToTray) BeginInvoke(Hide);
+            if (StartMinimized || StartHidden || (RestorePresentation && (restoredPresentation.Minimized || restoredPresentation.Hidden)))
+                WindowState = FormWindowState.Minimized;
+        };
+        Shown += (_, _) =>
+        {
+            if ((StartHidden || (!StartMinimized && RestorePresentation && restoredPresentation.Hidden)) && closeToTray) BeginInvoke(Hide);
             rebuilding = true;
             try { ApplySplitRatios(); }
             finally { rebuilding = false; }
@@ -1643,12 +1647,10 @@ public sealed class MainForm : Form, IMessageFilter
         application.SetStartWithWindows(enabled, this);
     }
 
-    // Win+Alt+E and Win+E bring this window forward and put it away when it is already in front.
-    internal void ToggleFromHotkey()
-    {
-        if (Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) DismissFromHotkey();
-        else Summon();
-    }
+    // The application toggles its peer windows together, rather than changing the next hotkey target.
+    internal void ToggleFromHotkey() => application.ToggleFromHotkey();
+
+    internal bool IsForegroundBrowser => Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle;
 
     // Hiding keeps the app (and the hotkey) running in the notification area; without it, minimize instead.
     internal void DismissFromHotkey()
@@ -1661,10 +1663,15 @@ public sealed class MainForm : Form, IMessageFilter
         else WindowState = FormWindowState.Minimized;
     }
 
-    internal void Summon()
+    internal void Reveal()
     {
         if (!Visible) Show();
         if (WindowState == FormWindowState.Minimized) ShowWindow(Handle, 9); // SW_RESTORE keeps a maximized window maximized
+    }
+
+    internal void Summon()
+    {
+        Reveal();
         Activate();
         SetForegroundWindow(Handle);
         Active.FocusFiles();
@@ -2019,8 +2026,9 @@ public sealed class MainForm : Form, IMessageFilter
     private void UpdateMinimumSize()
     {
         Size minimum = MinimumContentSize(layoutTree);
-        MinimumSize = new Size(Math.Max(900, minimum.Width + (showSidebar ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
-            Math.Max(600, minimum.Height + (globalToolbarPinned ? toolbar.Height : 0) + footer.Height + 12 + Height - ClientSize.Height));
+        Size scaledMinimum = BrowserWindowGeometry.MinimumSize(DeviceDpi);
+        MinimumSize = new Size(Math.Max(scaledMinimum.Width, minimum.Width + (showSidebar ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
+            Math.Max(scaledMinimum.Height, minimum.Height + (globalToolbarPinned ? toolbar.Height : 0) + footer.Height + 12 + Height - ClientSize.Height));
     }
 
     private void ApplySplitRatios()

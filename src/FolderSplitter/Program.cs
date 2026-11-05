@@ -18,7 +18,7 @@ internal static class Program
             sessionPath = Path.GetFullPath(args[sessionArgument + 1]);
         var text = new UiText(SessionStore.Load(sessionPath).Language);
         var folders = new List<string>();
-        bool toggle = false, hidden = false, minimized = false;
+        bool toggle = false, hidden = false, minimized = false, restorePresentation = false;
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--toggle")
@@ -28,7 +28,10 @@ internal static class Program
             else if (args[i] == "--minimized")
                 minimized = true;
             else if (args[i] == "--wait-pid" && i + 1 < args.Length)
+            {
+                restorePresentation = true;
                 WaitForExit(args[++i]);
+            }
             else if (args[i] == "--session" && i + 1 < args.Length)
             {
                 sessionPath = Path.GetFullPath(args[++i]);
@@ -66,7 +69,8 @@ internal static class Program
         bool registerStartup = sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase);
         using var context = new FolderSplitterApplicationContext(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync)
         {
-            StartMinimized = hidden || minimized, StartHidden = hidden, RegisterStartupOnLaunch = registerStartup
+            StartMinimized = hidden || minimized, StartHidden = hidden, RestorePresentation = restorePresentation,
+            RegisterStartupOnLaunch = registerStartup
         };
         context.ShowWindows();
         Application.Run(context);
