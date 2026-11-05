@@ -113,6 +113,12 @@ internal static partial class Program
                 Console.WriteLine($"CUSTOM_COLORS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--selection-fill"])
+            {
+                RunSelectionFillScenario(root);
+                Console.WriteLine($"SELECTION_FILL_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--convenience"])
             {
                 RunConvenienceScenario(root);
@@ -295,6 +301,7 @@ internal static partial class Program
             RunGlobalToolbarScenario(root);
             RunNativeDetailsAppearanceScenario(root, folders);
             RunNativeDetailsThemeScenario(root);
+            RunSelectionFillScenario(root);
             RunNativeGroupThemeScenario(root);
             RunNativeNavigationThemeScenario(root);
             RunNativeScrollbarScenario(root);

@@ -272,6 +272,9 @@ public sealed partial class ShellViewHost
             if (SendMessage(list, 0x108F, 0, 0) != 1) return;
             if (stage == 0x1)
             {
+                // The Shell also turns its sorted-column highlight back on through its list interface, which
+                // sends no LVM_SETSELECTEDCOLUMN to rewrite. Clear it before any row is drawn in this pass.
+                if ((int)SendMessage(list, 0x10AE, 0, 0) != -1) SendMessage(list, 0x108C, -1, 0); // LVM_GETSELECTEDCOLUMN
                 owner.sortedColumn = -1;
                 nint header = owner.detailsHeader?.Handle ?? 0;
                 int count = (int)SendMessage(header, 0x1200, 0, 0);
