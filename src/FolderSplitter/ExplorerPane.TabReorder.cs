@@ -195,10 +195,10 @@ public sealed partial class ExplorerPane
     }
 
     internal TabDropPlan? FindStripDropPlan(Point screen, FolderTab? tab, TabGroup? group,
-        IReadOnlyList<FolderTab>? movingTabs = null)
+        IReadOnlyList<FolderTab>? movingTabs = null, IReadOnlyList<string>? externalPaths = null, int minimumIndex = 0)
     {
         if (!tabStrip.RectangleToScreen(tabStrip.ClientRectangle).Contains(screen)) return null;
-        if (tab is null && group is null) return null;
+        if (tab is null && group is null && externalPaths is null) return null;
         int x = tabStrip.PointToClient(screen).X;
         int insertion = 0;
         TabGroup? joinGroup = null;
@@ -239,6 +239,7 @@ public sealed partial class ExplorerPane
         // A collapsed chip has no interior tab gaps, even when reached by an adjacent overflow edge.
         if (insertion > 0 && insertion < tabs.Count && tabs[insertion].Group is { Collapsed: true } collapsed
             && tabs[insertion - 1].Group == collapsed) insertion = GroupBoundary(insertion);
+        insertion = Math.Clamp(insertion, Math.Clamp(minimumIndex, 0, tabs.Count), tabs.Count);
         string reason = "";
         bool allowed = tab is null || (movingTabs is { Count: > 1 }
             ? CanInsertStripTabs(movingTabs, insertion, joinGroup, out joinGroup, out reason)
@@ -248,6 +249,7 @@ public sealed partial class ExplorerPane
         int markerX = StripInsertionX(insertion, joinGroup);
         var point = tabStrip.PointToScreen(new Point(markerX, 2));
         var marker = new Rectangle(point.X - 2, point.Y, Math.Max(3, (int)Math.Round(3 * DeviceDpi / 96d)), Math.Max(1, tabStrip.Height - 4));
+        if (externalPaths is not null) return PlanExternalInsertion(insertion, joinGroup, externalPaths, marker);
         return new TabDropPlan(PaneNumber - 1, null, marker, label, allowed, InsertionIndex: insertion, JoinGroup: joinGroup);
     }
 

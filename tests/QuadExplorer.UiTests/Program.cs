@@ -166,6 +166,45 @@ internal static partial class Program
                 Console.WriteLine($"EXPLORER_PARITY_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--docking"])
+            {
+                string dockingSession = Path.Combine(root, "focused-docking.json");
+                SessionStore.Save(dockingSession, new SessionState
+                {
+                    Layout = 4, ExplorerFavoritesImported = true, CheckUpdates = false,
+                    GlobalHotkey = false, KeepInTray = false, AutoRestartMemory = 0,
+                    Panes = folders.Select((folder, index) => new PaneState
+                    {
+                        Tabs = index == 0 ? [folder, folders[1]] : [folder]
+                    }).ToList()
+                });
+                RunDockingScenario(dockingSession, folders);
+                RunEmptyPaneScenario(dockingSession, folders);
+                RunBlankTabDockingScenario(root);
+                RunMultiSelectDockingScenario(root);
+                Console.WriteLine($"DOCKING_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--drop-targets"])
+            {
+                RunNativeDropTargetScenario(root, folders);
+                Console.WriteLine($"DROP_TARGETS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--open-in-tab"])
+            {
+                RunOpenInTabScenario(root);
+                RunNativeFolderTabMenuScenario(root);
+                RunHelpDialogScenario(root);
+                Console.WriteLine($"OPEN_IN_TAB_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--folder-tab-menu"])
+            {
+                RunNativeFolderTabMenuScenario(root);
+                Console.WriteLine($"FOLDER_TAB_MENU_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--native-open-selection"])
             {
                 RunNativeOpenSelectionScenario(root);
@@ -341,6 +380,8 @@ internal static partial class Program
             RunNativeNavigationThemeScenario(root);
             RunNativeScrollbarScenario(root);
             RunNativeOpenSelectionScenario(root);
+            RunOpenInTabScenario(root);
+            RunNativeFolderTabMenuScenario(root);
             RunNativeShortcutMenuScenario(root);
             RunHelpDialogScenario(root);
             RunStatusChromeScenario(root);

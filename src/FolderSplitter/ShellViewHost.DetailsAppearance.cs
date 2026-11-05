@@ -189,6 +189,7 @@ public sealed partial class ShellViewHost
 
     private void ReleaseDetailsAppearance()
     {
+        ReleaseOpenInTabMouseGesture();
         foreach (var watcher in detailsWindows)
             if (watcher.Handle != 0) watcher.ReleaseHandle();
         detailsWindows.Clear();
@@ -205,6 +206,9 @@ public sealed partial class ShellViewHost
 
         protected override void WndProc(ref Message message)
         {
+            if (kind == DetailsWindowKind.List && owner.TryFolderContextMenuKey(ref message)) return;
+            if (kind == DetailsWindowKind.List && owner.TryFolderContextMenuMessage(ref message)) return;
+            if (kind == DetailsWindowKind.List && owner.TryOpenInTabListMessage(ref message)) return;
             if (kind == DetailsWindowKind.Header && message.Msg == 0x14 && message.WParam != 0) // WM_ERASEBKGND
             {
                 DetailsNative.GetClientRect(Handle, out var background);

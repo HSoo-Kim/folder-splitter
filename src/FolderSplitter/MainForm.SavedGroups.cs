@@ -39,7 +39,11 @@ public sealed partial class MainForm
         {
             if (e.Button == MouseButtons.Left && savedGroupPlaces.IndexFromPoint(e.Location) >= 0
                 && savedGroupPlaces.SelectedItem is SavedGroupPlace item)
-                application.OpenSavedGroup(this, item.Group.Id);
+            {
+                if ((ModifierKeys & Keys.Control) != 0)
+                    Active.OpenPathsInNewTabs(item.Group.Paths, (ModifierKeys & Keys.Shift) != 0);
+                else application.OpenSavedGroup(this, item.Group.Id);
+            }
         };
         savedGroupPlaces.KeyDown += (_, e) =>
         {
@@ -53,6 +57,9 @@ public sealed partial class MainForm
         {
             if (e.Button == MouseButtons.Right)
                 savedGroupPlaces.SelectedIndex = savedGroupPlaces.IndexFromPoint(e.Location);
+            if (e.Button == MouseButtons.Middle && savedGroupPlaces.IndexFromPoint(e.Location) is int index && index >= 0
+                && savedGroupPlaces.Items[index] is SavedGroupPlace item)
+                Active.OpenPathsInNewTabs(item.Group.Paths, (ModifierKeys & (Keys.Control | Keys.Shift)) == (Keys.Control | Keys.Shift));
         };
         var menu = new ContextMenuStrip();
         void AddCommand(string key, Action<string> action)

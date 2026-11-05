@@ -486,6 +486,10 @@ public sealed partial class ShellViewHost : UserControl, IExplorerBrowserEvents
     public bool TranslateKey(ref Message message)
     {
         if (view is null || !OwnsWindow(message.HWnd)) return false;
+        if (TryFolderContextMenuKey(ref message)) return true;
+        // The message filter consumes handled keys before dispatch; the list subclass covers
+        // direct native messages, so a handled Ctrl+Enter never reaches both paths.
+        if (TryOpenInTabKey(ref message)) return true;
         var native = new NativeMessage
         {
             Window = message.HWnd, Message = (uint)message.Msg,

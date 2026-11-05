@@ -188,6 +188,7 @@ public sealed class UiText
              "输入文件夹路径，或输入部分文件/文件夹名进行搜索；Ctrl+L 选中地址",
              "フォルダーのパス、またはファイル・フォルダー名の一部で検索（Ctrl+L でアドレスを選択）"),
         ["Search failed: {0}"] = ("검색 실패: {0}", "搜索失败：{0}", "検索に失敗しました: {0}"),
+        ["Context menu command failed: {0}"] = ("컨텍스트 메뉴 명령을 실행하지 못했습니다: {0}", "快捷菜单命令执行失败：{0}", "コンテキストメニューのコマンドを実行できませんでした: {0}"),
         ["No longer available: {0}"] = ("더 이상 찾을 수 없습니다: {0}", "已不可用：{0}", "見つからなくなりました: {0}"),
         ["Sidebar"] = ("사이드바", "侧边栏", "サイドバー"),
         ["Show / hide quick access sidebar"] = ("빠른 접근 사이드바 표시 / 숨기기", "显示 / 隐藏快速访问侧边栏", "クイック アクセス サイドバーの表示 / 非表示"),
@@ -416,6 +417,10 @@ public sealed class UiText
             키보드로는 탭 우클릭 > 탭 분할을 사용하세요.
             사용하지 않는 영역은 폴더를 열 때까지 비어 있습니다.
             Ctrl+T   빈 새 탭
+            폴더 가운데 클릭 / Ctrl+더블 클릭 / Ctrl+Enter   백그라운드 탭에서 열기 (Ctrl+Shift는 앞에서 열기)
+            사이드바·폴더 트리·경로·검색 결과는 가운데 클릭 또는 Ctrl+클릭으로 새 탭에서 엽니다.
+            폴더를 탭 막대에 놓으면 새 탭에서 열고, 파일은 해당 폴더에서 선택합니다. 탭 위에 잠시 머무르면 전환합니다.
+            폴더 우클릭 > 새 탭에서 열기   선택한 폴더를 백그라운드 탭에서 열기
             Ctrl+W / 가운데 클릭   탭 닫기
             빈 영역에서 Ctrl+W를 다시 누르면 해당 분할을 닫습니다.
             Ctrl+Shift+T   마지막으로 닫은 탭 또는 빈 분할 복원
@@ -465,6 +470,10 @@ public sealed class UiText
             也可通过标签页右键菜单 > 拆分标签页操作。
             未使用的窗格保持空白，直到打开文件夹。
             Ctrl+T   新建空白标签页
+            文件夹中键点击 / Ctrl+双击 / Ctrl+Enter   在后台标签页打开（Ctrl+Shift 切换到前台）
+            侧栏、文件夹树、路径和搜索结果支持中键点击或 Ctrl+点击打开新标签页。
+            将文件夹拖到标签栏可打开新标签页；文件会在所属文件夹中选中。悬停在标签页上可切换。
+            右键点击文件夹 > 在新标签页中打开   在后台标签页打开选中的文件夹
             Ctrl+W / 中键点击   关闭标签页
             在空窗格中再次按 Ctrl+W 可关闭该窗格。
             Ctrl+Shift+T   恢复最后关闭的标签页或空窗格
@@ -514,6 +523,10 @@ public sealed class UiText
             キーボードではタブを右クリック > タブを分割 を使います。
             未使用のペインはフォルダーを開くまで空のままです。
             Ctrl+T   空の新しいタブ
+            フォルダーを中クリック / Ctrl+ダブルクリック / Ctrl+Enter   背景タブで開く（Ctrl+Shift で前面に表示）
+            サイドバー・ツリー・パンくず・検索結果は中クリックまたは Ctrl+クリックで新しいタブを開きます。
+            フォルダーをタブバーにドロップすると新しいタブで開き、ファイルは親フォルダーで選択します。タブ上で待つと切り替わります。
+            フォルダーを右クリック > 新しいタブで開く   選択したフォルダーを背景タブで開く
             Ctrl+W / 中クリック   タブを閉じる
             空のペインで Ctrl+W をもう一度押すと、そのペインを閉じます。
             Ctrl+Shift+T   最後に閉じたタブまたは空のペインを復元
@@ -565,6 +578,10 @@ public sealed class UiText
         Right-click tab > Split tab is the keyboard alternative.
         Unused panes remain empty until you open a folder.
         Ctrl+T   New blank tab
+        Folder middle-click / Ctrl+double-click / Ctrl+Enter   Open background tabs (Ctrl+Shift brings them forward)
+        Sidebar, tree, breadcrumb and search results also accept middle-click or Ctrl+click.
+        Drop folders on the tab strip to open tabs; files open their folder with the file selected. Hover over a tab to switch.
+        Folder right-click > Open in new tab   Open selected folders in background tabs
         Ctrl+W / middle-click   Close tab
         Press Ctrl+W again in an empty pane to close that split.
         Ctrl+Shift+T   Restore the last closed tab or empty pane

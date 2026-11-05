@@ -28,6 +28,8 @@
 
 A Windows file manager built on the native Shell file list (`IExplorerBrowser`). It doesn't modify or replace `explorer.exe` and runs as a separate app.
 
+Folders open in background tabs with middle-click, the native right-click menu's **Open in new tab**, Ctrl+double-click or Ctrl+Enter; add Shift to the Ctrl gesture to switch to the new tab. Sidebar, folder tree, breadcrumb and address-search entries also accept middle-click or Ctrl+click. Related tabs open after their opener and join its group while room remains. Drop folders or files onto a tab strip to open them at the insertion marker (files are selected in their folder); these drops create links to locations, never move source items. Hover over a tab while dragging to select it before dropping into its native file list.
+
 ## Key Capabilities
 
 | Feature | What it does |
