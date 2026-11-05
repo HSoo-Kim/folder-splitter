@@ -303,6 +303,14 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
             .Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path!).ToList()
     };
 
+    internal bool CanLinkSavedGroup(string id, TabGroup group)
+    {
+        foreach (var window in windows)
+            for (int index = 0; index < 4; index++)
+                if (window.GetPane(index).Groups.Any(other => other != group && other.SavedId == id)) return false;
+        return true;
+    }
+
     internal void SyncSavedGroups(ExplorerPane pane)
     {
         if (syncingSavedGroups || pane.SuppressSavedGroupSync) return;
@@ -529,7 +537,13 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     {
         if (shuttingDown) return;
         if (window == transferringSource && windows.Count > 1) return;
-        if (e.CloseReason is CloseReason.WindowsShutDown or CloseReason.TaskManagerClosing or CloseReason.ApplicationExitCall)
+        if (e.CloseReason == CloseReason.WindowsShutDown)
+        {
+            // Windows can cancel its shutdown query, so keep the application alive until the session actually ends.
+            SaveSession();
+            return;
+        }
+        if (e.CloseReason is CloseReason.TaskManagerClosing or CloseReason.ApplicationExitCall)
         {
             // The OS may close browsers one at a time. Snapshot the complete registry before the first disappears.
             SaveSession();

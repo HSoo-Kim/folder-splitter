@@ -197,23 +197,28 @@ public sealed partial class ExplorerPane
     {
         var members = GroupMembers(group);
         if (members.Count == 0) return;
+        bool wasSuppressed = SuppressSavedGroupSync;
         SuppressSavedGroupSync = true;
         int selected = ActiveTab is { } active ? members.ToList().IndexOf(active) : -1;
         var snapshot = remember ? new ClosedGroup(group.Name, group.Color,
             members.Select(tab => tab.Host?.LocationPath).ToArray(), Math.Max(0, selected), group.SavedId) : null;
-        if (selected >= 0)
+        try
         {
-            int next = FindTabOutsideGroup(group);
-            if (next >= 0) SelectTab(next);
-            else
+            if (selected >= 0)
             {
-                ActiveView?.Hide();
-                selectedIndex = -1;
+                int next = FindTabOutsideGroup(group);
+                if (next >= 0) SelectTab(next);
+                else
+                {
+                    ActiveView?.Hide();
+                    selectedIndex = -1;
+                }
             }
+            foreach (var tab in members.Reverse()) CloseTabCore(tabs.IndexOf(tab), remember: false, selectReplacement: false);
+            if (selected >= 0 && selectedIndex < 0 && tabs.Count > 0) AddBlankTab();
         }
-        foreach (var tab in members.Reverse()) CloseTabCore(tabs.IndexOf(tab), remember: false, selectReplacement: false);
-        if (selected >= 0 && selectedIndex < 0 && tabs.Count > 0) AddBlankTab();
-        SuppressSavedGroupSync = false;
+        finally { SuppressSavedGroupSync = wasSuppressed; }
+        StateChanged?.Invoke(this, EventArgs.Empty);
         if (snapshot is null) return;
         RememberClosedTab(new ClosedTabEntry(null, snapshot));
         TabClosed?.Invoke(this, EventArgs.Empty);
@@ -309,7 +314,8 @@ public sealed partial class ExplorerPane
         foreach (var entry in normalized.Groups)
         {
             var group = new TabGroup { Name = entry.Name, Color = Enum.Parse<TabGroupColor>(entry.Color),
-                Collapsed = entry.Collapsed, SavedId = entry.SavedId };
+                Collapsed = entry.Collapsed };
+            group.SavedId = ExistingSavedId(entry.SavedId, group);
             for (int index = entry.Start; index < entry.Start + entry.Count; index++) tabs[index].Group = group;
         }
         SynchronizeGroupStrip();
@@ -392,7 +398,7 @@ public sealed partial class ExplorerPane
         }
         menu.Items.Add(new ToolStripControlHost(colors) { Margin = Padding.Empty, Padding = Padding.Empty });
         menu.Items.Add(new ToolStripSeparator());
-        var save = new ToolStripMenuItem(text.T("Save group")) { Checked = ExistingSavedId(group.SavedId) is not null };
+        var save = new ToolStripMenuItem(text.T("Save group")) { Checked = ExistingSavedId(group.SavedId, group) is not null };
         save.Click += (_, _) => SaveGroupRequested?.Invoke(this, group);
         menu.Items.Add(save);
         menu.Items.Add(text.T("New tab in group"), null, (_, _) => AddTabInGroup(group));

@@ -97,6 +97,7 @@ internal static partial class Program
                 GlobalHistoryButton("Undo").PerformClick();
                 panes[0].CloseTab(1, remember: false);
                 Size startingSize = form.Size;
+                form.SaveWorkspace("Pane undo before appearance sweep");
                 foreach (string theme in new[] { "light", "dark" })
                 foreach (string size in new[] { "normal", "large" })
                 foreach (bool narrow in new[] { false, true })
@@ -196,6 +197,9 @@ internal static partial class Program
                 }
                 form.SetUiFont(null, "normal");
                 form.Size = startingSize;
+                // Re-render the saved ratios rather than comparing WinForms' rounded resize approximation.
+                form.LoadWorkspace("Pane undo before appearance sweep");
+                await MultiWindowIdle();
                 panes[0].SelectTab(0);
                 var original = form.CurrentLayout;
                 var originalSize = panes[0].Size;

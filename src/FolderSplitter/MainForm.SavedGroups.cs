@@ -20,8 +20,9 @@ public sealed partial class MainForm
         foreach (var pane in panes)
         {
             pane.SavedGroupExists = id => application.SavedGroups.Any(group => group.Id == id);
+            pane.SavedGroupLinkAvailable = application.CanLinkSavedGroup;
             foreach (var group in pane.Groups)
-                if (group.SavedId is { } id && !pane.SavedGroupExists(id)) group.SavedId = null;
+                group.SavedId = pane.ExistingSavedId(group.SavedId, group);
         }
         savedGroupsHeader = Theme.Button("", "Saved groups", () =>
         {
@@ -157,7 +158,7 @@ public sealed partial class MainForm
         Enum.TryParse<TabGroupColor>(saved.Color, out var color);
         var group = Active.AddGroup(saved.Paths, saved.Name, color);
         if (group is null) return false;
-        group.SavedId = saved.Id;
+        group.SavedId = Active.ExistingSavedId(saved.Id, group);
         ScheduleSave();
         return true;
     }

@@ -42,6 +42,8 @@ internal static partial class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        Console.WriteLine($"METRIC qa_display system_dpi={QaSystemDpi()} primary_work={Screen.PrimaryScreen?.WorkingArea}"
+            + $" virtual_bounds={SystemInformation.VirtualScreen}");
         if (args is ["--native-open-receipt", var receiptPipe])
             return RunNativeOpenReceipt(receiptPipe);
         // Design review: captures the app chrome in several themes instead of running the checks.
@@ -1284,6 +1286,7 @@ internal static partial class Program
         };
         Application.Run(form);
         Check(!SessionStore.Load(session).CheckUpdates && !SessionStore.Load(session).AutoUpdate, "update settings persist");
+        RunMultiWindowUpdateNotice(root, folder);
     }
 
     private static async Task WindowRestored(Form form, Action trigger)
@@ -2187,6 +2190,9 @@ internal static partial class Program
     }
 
     private delegate bool WindowCallback(nint window, nint parameter);
+
+    [DllImport("user32.dll", EntryPoint = "GetDpiForSystem")]
+    private static extern uint QaSystemDpi();
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

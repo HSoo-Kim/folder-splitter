@@ -82,7 +82,11 @@ internal static partial class Program
                 nint header = SendMessage(list, 0x101F, 0, 0);
                 var dateColumn = new HeaderRect();
                 HeaderItemRect(header, 0x1207, 1, ref dateColumn);
-                nint point = ((dateColumn.Top + dateColumn.Bottom) / 2 << 16) | ((dateColumn.Left + dateColumn.Right) / 2 & 0xFFFF);
+                var nameColumn = new HeaderRect();
+                HeaderItemRect(header, 0x1207, 0, ref nameColumn);
+                int dateX = (dateColumn.Left + dateColumn.Right) / 2;
+                int nameX = (nameColumn.Left + nameColumn.Right) / 2;
+                nint point = ((dateColumn.Top + dateColumn.Bottom) / 2 << 16) | (dateX & 0xFFFF);
                 SendMessage(header, 0x201, 1, point);
                 SendMessage(header, 0x202, 0, point);
                 await NativeAppearanceDispatch(host);
@@ -90,13 +94,13 @@ internal static partial class Program
                 Check(host.FirstSortColumn?.Property.PropertyId == 14, "custom-colored header still sorts through its native click handler");
                 host.SelectPaths([]);
                 using var sorted = NativeThemeCapture(list, "dark-date-sorted");
-                Check(NativeThemeDifference(sorted.GetPixel(430, sorted.Height - 20), Theme.SortColumn) < 12
-                    && NativeThemeDifference(sorted.GetPixel(200, sorted.Height - 20), Theme.ListBack) < 12,
+                Check(NativeThemeDifference(sorted.GetPixel(dateX, sorted.Height - 20), Theme.SortColumn) < 12
+                    && NativeThemeDifference(sorted.GetPixel(nameX, sorted.Height - 20), Theme.ListBack) < 12,
                     "highlight follows the new sort column without leaving the old stripe");
                 host.SelectPaths([Path.Combine(folder, "sample-00.txt"), Path.Combine(folder, "sample-02.txt")]);
                 NativeThemeSetFocus(list);
                 using var dateSelected = NativeThemeCapture(list, "dark-date-selected");
-                NativeThemeSelectionPixels(list, dateSelected, "date sort", 200);
+                NativeThemeSelectionPixels(list, dateSelected, "date sort", nameX);
                 Check(HasNativeDropTarget(host), "theme rendering preserves the native Shell drop target");
             }
             catch (Exception ex) { failure = ex; }

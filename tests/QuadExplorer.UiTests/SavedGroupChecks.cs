@@ -229,5 +229,129 @@ internal static partial class Program
                     "saved-group missing folders are still opened as tabs instead of silently omitted");
             });
         }
+        RunSavedGroupReleaseRegressions(fixture, paths);
+    }
+
+    private static int SavedGroupOwners(FolderSplitterApplicationContext context, string id) =>
+        context.Windows.Sum(window => Enumerable.Range(0, 4).Sum(index =>
+            window.GetPane(index).Groups.Count(group => group.SavedId == id)));
+
+    private static void RunSavedGroupReleaseRegressions(string fixture, string[] paths)
+    {
+        string session = Path.Combine(fixture, "release-regressions.json");
+        SessionStore.Save(session, new SessionState
+        {
+            Language = "en", GlobalHotkey = false, StartWithWindows = false, CheckUpdates = false,
+            AutoRestartMemory = 0, ExplorerFavoritesImported = true, KeepInTray = true,
+            Windows = [new() { Panes = [new() { Tabs = paths.Take(4).ToList(),
+                Groups = [new() { Name = "Complete saved group", Color = "Blue", Count = 3 }] }], ShowFolderTree = false },
+                new() { Panes = [new() { Tabs = [paths[4]] }], ShowFolderTree = false }]
+        });
+        using (var context = MultiWindowContext(session))
+        {
+            RunMultiWindowContext(context, async () =>
+            {
+                var first = context.Windows[0];
+                var second = context.Windows[1];
+                await MultiWindowReady(first);
+                await MultiWindowReady(second);
+                var pane = first.GetPane(0);
+                var group = pane.Groups.Single();
+                SavedGroupToggle(pane, group);
+                string id = group.SavedId!;
+                string[] complete = paths.Take(3).ToArray();
+                first.SaveWorkspace("Complete saved workspace");
+                second.SaveWorkspace("Replacement workspace");
+                first.LoadWorkspace("Replacement workspace");
+                Check(pane.Groups.Count == 0 && pane.CaptureState().Tabs.SequenceEqual([paths[4]])
+                    && context.SavedGroups.Single().Paths.SequenceEqual(complete),
+                    "saved-group workspace load closes every old member without shrinking the saved copy");
+                Check(context.SaveSession() && SessionStore.Load(session).SavedGroups.Single().Paths.SequenceEqual(complete),
+                    "saved-group workspace replacement persists the complete saved copy after its open group disappears");
+                first.LoadWorkspace("Complete saved workspace");
+                group = pane.Groups.Single();
+                Check(group.SavedId == id && SavedGroupOwners(context, id) == 1,
+                    "saved-group workspace restore relinks a group when no other open group owns its id");
+                var outside = pane.Tabs.Single(tab => tab.Group is null);
+                TgTabMenu(pane, outside, "Close other tabs").PerformClick();
+                Check(pane.TabCount == 1 && pane.ActiveTab == outside && pane.Groups.Count == 0
+                    && context.SavedGroups.Single().Paths.SequenceEqual(complete),
+                    "saved-group Close other tabs keeps every folder of a completely closed saved group");
+                Check(context.SaveSession() && SessionStore.Load(session).SavedGroups.Single().Paths.SequenceEqual(complete),
+                    "saved-group Close other tabs writes the complete saved copy rather than its final surviving member");
+
+                first.LoadWorkspace("Complete saved workspace");
+                group = pane.Groups.Single();
+                var members = pane.GroupMembers(group);
+                pane.SelectTab(pane.IndexOfTab(members[2]));
+                pane.CloseTabs([members[1], members[2]]);
+                Check(context.SavedGroups.Single().Paths.SequenceEqual([paths[0]]),
+                    "saved-group partial batch close updates its surviving member after the whole close settles");
+                context.MoveGroupToNewWindow(first, pane, group);
+                var movedWindow = context.Windows.Single(window => window != first && window != second);
+                await MultiWindowReady(movedWindow);
+                var movedPane = movedWindow.GetPane(0);
+                var movedGroup = movedPane.Groups.Single();
+                Check(movedGroup.SavedId == id && SavedGroupOwners(context, id) == 1,
+                    "saved-group moving the surviving group transfers its one app-wide saved link");
+                TgShortcut(first, Keys.Control | Keys.Shift | Keys.T);
+                var undone = pane.Groups.Single();
+                Check(undone.SavedId is null && pane.GroupMembers(undone).Count == 2
+                    && movedGroup.SavedId == id && SavedGroupOwners(context, id) == 1,
+                    "saved-group undo after moving the surviving members restores the closed selection unlinked");
+                pane.RenameGroup(undone, "Unlinked undo");
+                Check(context.SavedGroups.Single() is { Name: "Complete saved group" }
+                    && context.SavedGroups.Single().Paths.SequenceEqual([paths[0]]),
+                    "saved-group edits to an unlinked selection undo cannot overwrite the moved saved group");
+
+                first.LoadWorkspace("Complete saved workspace");
+                var workspaceGroup = pane.Groups.Single();
+                Check(workspaceGroup.SavedId is null && movedGroup.SavedId == id && SavedGroupOwners(context, id) == 1
+                    && pane.GroupMembers(workspaceGroup).Count == 3,
+                    "saved-group loading a linked workspace while its owner is in another window restores an unlinked group");
+                pane.SetGroupColor(workspaceGroup, TabGroupColor.Red);
+                Check(context.SavedGroups.Single().Color == "Blue"
+                    && context.SavedGroups.Single().Paths.SequenceEqual([paths[0]]),
+                    "saved-group unlinked workspace metadata and folders do not overwrite the current saved owner");
+                movedPane.CloseGroup(movedGroup);
+                first.LoadWorkspace("Complete saved workspace");
+                group = pane.Groups.Single();
+                pane.CloseGroup(group);
+                SavedGroupOpen(second);
+                var sidebarGroup = second.GetPane(0).Groups.Single();
+                TgShortcut(first, Keys.Control | Keys.Shift | Keys.T);
+                var reopened = pane.Groups.Single();
+                Check(reopened.SavedId is null && pane.GroupMembers(reopened).Count == 3
+                    && sidebarGroup.SavedId == id && SavedGroupOwners(context, id) == 1,
+                    "saved-group whole-group undo stays unlinked after the sidebar reopened its saved copy elsewhere");
+                Check(context.SaveSession() && SessionStore.Load(session).Windows.Sum(window =>
+                    window.Panes.Sum(state => state.Groups.Count(saved => saved.SavedId == id))) == 1,
+                    "saved-group undo and workspace conflicts persist exactly one linked open group across all windows");
+            });
+        }
+
+        const string duplicateId = "restore-duplicate";
+        SessionStore.Save(session, new SessionState
+        {
+            Language = "en", GlobalHotkey = false, StartWithWindows = false, CheckUpdates = false,
+            AutoRestartMemory = 0, ExplorerFavoritesImported = true, KeepInTray = true,
+            SavedGroups = [new() { Id = duplicateId, Name = "Only one owner", Paths = paths.Take(2).ToList() }],
+            Windows = [new() { Panes = [new() { Tabs = paths.Take(4).ToList(), Groups =
+                [new() { SavedId = duplicateId, Start = 0, Count = 2 },
+                    new() { SavedId = duplicateId, Start = 2, Count = 2 }] }], ShowFolderTree = false },
+                new() { Panes = [new() { Tabs = paths.Take(2).ToList(),
+                    Groups = [new() { SavedId = duplicateId, Count = 2 }] }], ShowFolderTree = false }]
+        });
+        using var restored = MultiWindowContext(session);
+        RunMultiWindowContext(restored, async () =>
+        {
+            foreach (var window in restored.Windows) await MultiWindowReady(window);
+            Check(restored.Windows.Sum(window => window.GetPane(0).Groups.Count) == 3
+                && SavedGroupOwners(restored, duplicateId) == 1,
+                "saved-group startup restores duplicate session groups intact but links at most one across panes and windows");
+            Check(restored.SaveSession() && SessionStore.Load(session).Windows.Sum(window =>
+                window.Panes.Sum(pane => pane.Groups.Count(group => group.SavedId == duplicateId))) == 1,
+                "saved-group startup removes duplicate live saved links from the next session save");
+        });
     }
 }

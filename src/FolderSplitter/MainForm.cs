@@ -1630,7 +1630,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         notice.FormClosed += (_, _) =>
         {
             if (ReferenceEquals(updateNotice, notice)) updateNotice = null;
-            if ((notice.Deferred || !Visible || WindowState == FormWindowState.Minimized) && application.NotifiedUpdateVersion == update.Version)
+            if (!notice.Dismissed && application.NotifiedUpdateVersion == update.Version)
                 application.NotifiedUpdateVersion = null;
         };
         notice.Present(this);

@@ -28,6 +28,7 @@ internal static partial class Program
                 await MsGrouping(form, pane);
                 await MsMenuScope(form, pane, paths);
                 MsCloseHistory(form, pane, paths);
+                MsCollapsedReplacement(form, pane);
             }
             catch (Exception exception) { failures++; Console.Error.WriteLine("FAIL " + exception); }
             finally { form.ExitApplication(); }
@@ -423,5 +424,90 @@ internal static partial class Program
             TgContiguous(pane, "batch capacity undo and redo");
         }
         finally { pane.TabClosed -= Closed; }
+    }
+
+    private static void MsCollapsedReplacement(MainForm form, ExplorerPane pane)
+    {
+        (string Name, int Count, int CloseStart, int[] HiddenStarts, int? Expected)[] layouts =
+        [
+            ("next visible", 6, 1, [3], 5),
+            ("previous visible", 7, 3, [1, 5], 0),
+            ("trailing removal", 5, 3, [1], 0),
+            ("collapsed-only remainder", 4, 2, [0], null)
+        ];
+        foreach (string action in new[] { "close", "move", "redo" })
+        foreach (var layout in layouts)
+        {
+            TgResetForm(form, action == "move" ? 2 : 1);
+            TgReset(pane, layout.Count);
+            FolderTab[] tabs = pane.Tabs.ToArray();
+            var groups = layout.HiddenStarts.Select(start =>
+                pane.CreateGroup(new[] { tabs[start], tabs[start + 1] })!).ToArray();
+            foreach (var group in groups) pane.SetGroupCollapsed(group, true);
+            FolderTab[] removed = [tabs[layout.CloseStart], tabs[layout.CloseStart + 1]];
+            MsClickTab(pane, removed[0]);
+            MsClickTab(pane, removed[1], Keys.Control);
+            string scenario = action + " with " + layout.Name;
+            MsSelected(pane, scenario + " fixture", removed);
+
+            if (action == "move")
+            {
+                var target = form.GetPane(1);
+                FolderTab[] before = target.Tabs.ToArray();
+                var menu = MsOpenMenu(pane, removed[0], "Move tabs to pane");
+                try
+                {
+                    var move = menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "Move tabs to pane");
+                    move.DropDownItems.OfType<ToolStripMenuItem>().Single(item => item.Text == "Pane 2").PerformClick();
+                }
+                finally { if (!menu.IsDisposed) menu.Close(); }
+                Check(target.TabCount == before.Length + 2 && target.Tabs.Take(before.Length).SequenceEqual(before)
+                    && target.ActiveTab == target.Tabs[^1] && target.SelectedTabs.Count == 1,
+                    scenario + " transfers the whole selected batch through the pane menu");
+            }
+            else
+            {
+                MsCommand(pane, removed[0], "Close 2 tabs");
+                if (action == "redo")
+                {
+                    var replacement = pane.ActiveTab;
+                    var undo = TgHistoryButton(form, pane, "Undo");
+                    Check(undo.Enabled, scenario + " offers the batch close in the real undo toolbar");
+                    undo.PerformClick();
+                    removed = pane.LastReopenedTabs.ToArray();
+                    Check(removed.Length == 2 && pane.ActiveTab == removed[1],
+                        scenario + " undo restores both selected members and their active member");
+                    if (layout.Expected is null)
+                    {
+                        // Remove the first close's spare blank so redo also has only collapsed survivors.
+                        Check(replacement is { Host: null, Group: null } && pane.Tabs.Contains(replacement),
+                            scenario + " first close supplies an ungrouped blank without opening the hidden group");
+                        if (replacement is not null) pane.CloseTab(pane.IndexOfTab(replacement), remember: false);
+                    }
+                    var redo = TgHistoryButton(form, pane, "Redo");
+                    Check(redo.Enabled, scenario + " offers the restored batch in the real redo toolbar");
+                    redo.PerformClick();
+                }
+            }
+
+            FolderTab[] survivors = tabs.Where(tab => tab != tabs[layout.CloseStart]
+                && tab != tabs[layout.CloseStart + 1]).ToArray();
+            Check(removed.All(tab => !pane.Tabs.Contains(tab))
+                && pane.Tabs.Take(survivors.Length).SequenceEqual(survivors)
+                && pane.TabCount == survivors.Length + (layout.Expected is null ? 1 : 0),
+                scenario + " removes only the batch and retains every original survivor in strip order");
+            Check(groups.All(group => group.Collapsed && pane.GroupMembers(group).Count == 2
+                    && pane.GroupMembers(group).All(tab => !tab.Button.Available)),
+                scenario + " keeps every collapsed group closed and every member hidden");
+            if (layout.Expected is { } expected)
+                Check(pane.ActiveTab == tabs[expected],
+                    scenario + " chooses the next visible tab, otherwise the nearest previous visible tab");
+            else
+                Check(pane.ActiveTab is { Host: null, Group: null } blank && !tabs.Contains(blank)
+                    && pane.Tabs[^1] == blank && blank.Button.Available,
+                    scenario + " creates and selects a visible ungrouped blank after the collapsed-only remainder");
+            if (pane.ActiveTab is { } active) MsSelected(pane, scenario + " replacement", active);
+            TgContiguous(pane, scenario);
+        }
     }
 }

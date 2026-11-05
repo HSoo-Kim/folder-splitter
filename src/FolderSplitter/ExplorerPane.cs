@@ -724,7 +724,7 @@ public sealed partial class ExplorerPane : UserControl
         }
         LastReopenedGroup = entry.Group is { } group
             ? AddGroup(group.Paths, group.Name, group.Color, selectedMember: group.SelectedMember) : null;
-        if (LastReopenedGroup is { } reopened) reopened.SavedId = ExistingSavedId(entry.Group!.SavedId);
+        if (LastReopenedGroup is { } reopened) reopened.SavedId = ExistingSavedId(entry.Group!.SavedId, reopened);
         if (entry.Group is null)
         {
             var original = entry.OriginalGroup;
@@ -1080,7 +1080,14 @@ public sealed partial class ExplorerPane : UserControl
         tabMenu.Items.Add(text.T("Close other tabs"), null, (_, _) =>
         {
             var keep = tabs[selectedIndex];
-            for (int i = tabs.Count - 1; i >= 0; i--) if (tabs[i] != keep) CloseTab(i);
+            bool wasSuppressed = SuppressSavedGroupSync;
+            SuppressSavedGroupSync = true;
+            try
+            {
+                for (int i = tabs.Count - 1; i >= 0; i--) if (tabs[i] != keep) CloseTab(i);
+            }
+            finally { SuppressSavedGroupSync = wasSuppressed; }
+            StateChanged?.Invoke(this, EventArgs.Empty);
         }).Enabled = tabs.Count > 1;
         if (keyboard) tabMenu.Show(tabStrip, new Point(tabs[index].Button.Bounds.Left, tabs[index].Button.Bounds.Bottom));
         else tabMenu.Show(Cursor.Position);
@@ -1148,21 +1155,30 @@ public sealed partial class ExplorerPane : UserControl
 
     internal void ReplaceTabs(PaneState state)
     {
-        while (tabs.Count > 0) CloseTab(tabs.Count - 1, remember: false);
-        foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
-        RestoreGroups(state.Groups);
-        if (tabs.Count == 0) return;
-        int selected = Math.Clamp(state.SelectedTab, 0, tabs.Count - 1);
-        if (tabs[selected].Group is { Collapsed: true } group)
+        bool wasSuppressed = SuppressSavedGroupSync;
+        SuppressSavedGroupSync = true;
+        try
         {
-            if (!SelectOutsideGroup(group, focus: false))
+            while (tabs.Count > 0) CloseTabCore(tabs.Count - 1, remember: false, selectReplacement: false);
+            foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
+            RestoreGroups(state.Groups);
+            if (tabs.Count > 0)
             {
-                // A saved full pane may have every group collapsed; do not expand one on restore.
-                ShowEmptyState();
-                LayoutTabs();
+                int selected = Math.Clamp(state.SelectedTab, 0, tabs.Count - 1);
+                if (tabs[selected].Group is { Collapsed: true } group)
+                {
+                    if (!SelectOutsideGroup(group, focus: false))
+                    {
+                        // A saved full pane may have every group collapsed; do not expand one on restore.
+                        ShowEmptyState();
+                        LayoutTabs();
+                    }
+                }
+                else SelectTab(selected, focus: false);
             }
         }
-        else SelectTab(selected, focus: false);
+        finally { SuppressSavedGroupSync = wasSuppressed; }
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // Path segments for the breadcrumb: the root (drive or UNC share) and each folder below it.

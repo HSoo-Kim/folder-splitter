@@ -24,7 +24,7 @@ internal sealed class UpdateNotice : Form
     private double visibility;
     private double transitionStart;
     private double transitionEnd;
-    internal bool Deferred { get; private set; }
+    internal bool Dismissed { get; private set; }
 
     internal event EventHandler? UpdateRequested;
 
@@ -44,7 +44,11 @@ internal sealed class UpdateNotice : Form
             Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft,
             Padding = new Padding(10, 4, 10, 10)
         };
-        dismiss = Theme.Button("", "", () => StartTransition(0), 100);
+        dismiss = Theme.Button("", "", () =>
+        {
+            Dismissed = true;
+            StartTransition(0);
+        }, 100);
         action = Theme.Button("", "", () => UpdateRequested?.Invoke(this, EventArgs.Empty), 140);
         dismiss.Dock = action.Dock = DockStyle.None;
         buttons.Controls.Add(dismiss);
@@ -134,7 +138,6 @@ internal sealed class UpdateNotice : Form
         if (anchor is null) return;
         if (targetBounds.IsEmpty)
         {
-            Deferred = true;
             Close();
             return;
         }

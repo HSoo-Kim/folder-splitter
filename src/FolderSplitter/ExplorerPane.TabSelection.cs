@@ -10,8 +10,13 @@ public sealed partial class ExplorerPane
     internal bool SuppressSavedGroupSync { get; private set; }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Func<string, bool>? SavedGroupExists { get; set; }
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Func<string, TabGroup, bool>? SavedGroupLinkAvailable { get; set; }
 
-    private string? ExistingSavedId(string? id) => id is not null && SavedGroupExists?.Invoke(id) == false ? null : id;
+    internal string? ExistingSavedId(string? id, TabGroup group) =>
+        id is not null && (SavedGroupExists?.Invoke(id) == false
+            || Groups.Any(other => other != group && other.SavedId == id)
+            || SavedGroupLinkAvailable?.Invoke(id, group) == false) ? null : id;
     internal event Action<ExplorerPane, IReadOnlyList<FolderTab>, int>? MoveTabsRequested;
     internal event Action<ExplorerPane, IReadOnlyList<FolderTab>>? MoveTabsToWindowRequested;
     internal event Action<ExplorerPane, TabGroup>? SaveGroupRequested;
@@ -126,15 +131,24 @@ public sealed partial class ExplorerPane
         if (members.Length == 0) return;
         var snapshot = members.Select(tab => new ClosedSelectionTab(tab.Host?.LocationPath, tabs.IndexOf(tab), tab.Group, tab == ActiveTab)).ToArray();
         var active = ActiveTab;
+        bool wasSuppressed = SuppressSavedGroupSync;
         SuppressSavedGroupSync = true;
         try
         {
             foreach (var tab in members.Reverse()) CloseTabCore(tabs.IndexOf(tab), remember: false, selectReplacement: false);
             if (active is not null && !tabs.Contains(active) && tabs.Count > 0)
-                SelectTab(Math.Min(snapshot[0].Index, tabs.Count - 1));
+            {
+                int insertion = Math.Min(snapshot[0].Index, tabs.Count);
+                int next = insertion < tabs.Count
+                    ? tabs.FindIndex(insertion, tab => tab.Group?.Collapsed != true) : -1;
+                if (next < 0 && insertion > 0)
+                    next = tabs.FindLastIndex(insertion - 1, tab => tab.Group?.Collapsed != true);
+                if (next >= 0) SelectTab(next);
+                else AddBlankTab();
+            }
             ClearTabSelection();
         }
-        finally { SuppressSavedGroupSync = false; }
+        finally { SuppressSavedGroupSync = wasSuppressed; }
         if (remember)
         {
             RememberClosedTab(new ClosedTabEntry(null, Selection: snapshot));
@@ -151,6 +165,7 @@ public sealed partial class ExplorerPane
         { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return []; }
         var copied = new List<FolderTab>();
         var groups = new Dictionary<TabGroup, TabGroup>();
+        bool wasSuppressed = SuppressSavedGroupSync;
         SuppressSavedGroupSync = true;
         try
         {
@@ -183,20 +198,21 @@ public sealed partial class ExplorerPane
             RemoveTabsForMove(copied);
             throw;
         }
-        finally { SuppressSavedGroupSync = false; }
+        finally { SuppressSavedGroupSync = wasSuppressed; }
     }
 
     private void ReopenSelection(ClosedSelectionTab[] snapshot)
     {
         var restored = new List<FolderTab>();
         FolderTab? active = null;
+        bool wasSuppressed = SuppressSavedGroupSync;
         SuppressSavedGroupSync = true;
         try
         {
             foreach (var entry in snapshot.OrderBy(entry => entry.Index))
             {
                 var group = entry.Group;
-                if (group is not null) group.SavedId = ExistingSavedId(group.SavedId);
+                if (group is not null) group.SavedId = ExistingSavedId(group.SavedId, group);
                 if (group is not null && tabs.Count(tab => tab.Group == group) >= TabGroup.MaxTabs) group = null;
                 int insertion = Math.Min(entry.Index, tabs.Count);
                 if (group is not null && Groups.Contains(group))
@@ -211,7 +227,7 @@ public sealed partial class ExplorerPane
                 if (entry.Active) active = tab;
             }
         }
-        finally { SuppressSavedGroupSync = false; }
+        finally { SuppressSavedGroupSync = wasSuppressed; }
         LastReopenedTabs = restored;
         SelectTab(tabs.IndexOf(active ?? restored[0]));
     }

@@ -206,6 +206,7 @@ internal static partial class Program
         foreach (string mode in new[] { "saved", "hidden", "minimized", "wait-pid" })
             RunMultiWindowPresentation(fixture, folders[0], mode);
         RunMultiWindowTrayRelaunch(fixture, folders[0]);
+        RunMultiWindowCancelledShutdown(fixture, folders[0]);
         RunMultiWindowRestartSuccess(fixture, folders[0]);
         RunMultiWindowReachability(fixture, folders[0]);
         RunMultiWindowSharedSearch(fixture, folders[0]);
@@ -422,6 +423,120 @@ internal static partial class Program
         Application.Idle += Idle;
         try { await drained.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
         finally { Application.Idle -= Idle; }
+    }
+
+    private static void RunMultiWindowCancelledShutdown(string fixture, string folder)
+    {
+        string session = Path.Combine(fixture, "cancelled-shutdown.json");
+        MultiWindowSeed(session, folder);
+        using var context = MultiWindowContext(session);
+        var windows = context.Windows.ToArray();
+        int exits = 0, queries = 0, closes = 0;
+        context.ThreadExit += (_, _) => exits++;
+        foreach (var window in windows)
+        {
+            window.FormClosing += (_, args) =>
+            {
+                if (args.CloseReason == CloseReason.WindowsShutDown) queries++;
+            };
+            window.FormClosed += (_, _) => closes++;
+        }
+        RunMultiWindowContext(context, async () =>
+        {
+            foreach (var window in windows)
+            {
+                await MultiWindowReady(window);
+                window.GetPane(0).AddTab(folder);
+            }
+            foreach (var window in windows)
+                Check(SendMessage(window.Handle, 0x0011, 0, 0) != 0,
+                    "a real WM_QUERYENDSESSION allows Windows to continue its shutdown query");
+            foreach (var window in windows) SendMessage(window.Handle, 0x0016, 0, 0);
+            Check(queries == windows.Length && closes == 0 && exits == 0
+                && windows.All(window => !window.IsDisposed) && context.Windows.Count == windows.Length,
+                "WM_ENDSESSION(FALSE) leaves every queried browser and the application message loop alive");
+            Check(SessionStore.Load(session).Windows.Count == windows.Length
+                && SessionStore.Load(session).Windows.All(window => window.Panes[0].Tabs.Count == 2),
+                "the shutdown query saves the complete live browser registry before Windows can end the session");
+            if (exits != 0) return;
+            await MultiWindowIdle();
+            foreach (var window in windows) window.Hide();
+            MultiWindowTrayCommand(context, "Open Folder Splitter");
+            Check(context.TrayIconVisible && windows.All(window => window.Visible),
+                "tray Open remains usable after Windows cancels shutdown");
+            // The private desktop cannot supply foreground ownership, so dismiss through the browser command first.
+            foreach (var window in windows) window.DismissFromHotkey();
+            Check(windows.All(window => !window.Visible),
+                "the hotkey dismissal command still hides every browser after a cancelled shutdown");
+            SendMessage(context.ActivationHandle, 0x0312, 0x4653, 0);
+            Check(windows.All(window => window.Visible),
+                "the real hotkey receiver still restores every browser after a cancelled shutdown");
+            MultiWindowTrayCommand(context, "New window");
+            var created = context.Windows.Single(window => !windows.Contains(window));
+            await MultiWindowReady(created);
+            Check(created.Visible && !created.IsDisposed && context.Windows.Count == windows.Length + 1,
+                "tray New window remains usable after Windows cancels shutdown");
+            created.Close();
+            // Windows queries every browser before confirming shutdown, preserving the complete final snapshot.
+            foreach (var window in windows) SendMessage(window.Handle, 0x0011, 0, 0);
+            foreach (var window in windows) SendMessage(window.Handle, 0x0016, 1, 0);
+            Check(windows.All(window => window.IsDisposed) && context.Windows.Count == 0
+                && closes == windows.Length && exits == 1,
+                "WM_ENDSESSION(TRUE) closes every browser and exits the application normally");
+        });
+        var saved = SessionStore.Load(session);
+        Check(saved.Windows.Count == windows.Length && saved.Windows.All(window => window.Panes[0].Tabs.Count == 2),
+            "confirmed end-session retains the complete snapshot saved during its shutdown query");
+    }
+
+    private static void RunMultiWindowUpdateNotice(string fixture, string folder)
+    {
+        string session = Path.Combine(fixture, "update-owner-close.json");
+        MultiWindowSeed(session, folder);
+        var latest = new ReleaseInfo(new Version(99, 0, 0), "v99.0.0",
+            "https://github.com/HSoo-Kim/folder-splitter/releases/tag/v99.0.0");
+        using var context = new FolderSplitterApplicationContext(session, [],
+            latestRelease: _ => Task.FromResult<ReleaseInfo?>(latest))
+        {
+            StartHidden = false, StartMinimized = false, RegisterStartupOnLaunch = false
+        };
+        RunMultiWindowContext(context, async () =>
+        {
+            var owner = context.Windows[0];
+            var peer = context.Windows[1];
+            await MultiWindowReady(owner);
+            await MultiWindowReady(peer);
+            peer.Hide();
+            MultiWindowActivated(owner);
+            owner.SetCheckUpdates(true);
+            await owner.CheckForUpdateAsync();
+            var interrupted = owner.OwnedForms.OfType<UpdateNotice>().SingleOrDefault();
+            Check(interrupted is { Visible: true } && context.NotifiedUpdateVersion == latest.Version,
+                "the first browser owns the shared release notification before it closes");
+            if (interrupted is null) throw new InvalidOperationException("Owner notification was not created");
+            owner.Close();
+            Check(owner.IsDisposed && interrupted.IsDisposed && context.Windows.Count == 1
+                && context.NotifiedUpdateVersion is null,
+                "closing the owning browser without dismissal releases the shared update notification marker");
+            peer.Show();
+            MultiWindowActivated(peer);
+            var resumed = peer.OwnedForms.OfType<UpdateNotice>().SingleOrDefault();
+            Check(resumed is { Visible: true } && peer.UpdateLinkShown,
+                "the same available release is notified in a surviving browser after its owner closes");
+            if (resumed is null) throw new InvalidOperationException("Surviving browser notification was not created");
+            var replacement = context.CreateWindowFromActive(peer);
+            await MultiWindowReady(replacement);
+            var dismissed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            resumed.FormClosed += (_, _) => dismissed.TrySetResult();
+            Descendants(resumed).OfType<Button>().Single(button => button.Text == "Close").PerformClick();
+            peer.Close();
+            await dismissed.Task.WaitAsync(TimeSpan.FromSeconds(8));
+            MultiWindowActivated(replacement);
+            await replacement.CheckForUpdateAsync();
+            Check(context.NotifiedUpdateVersion == latest.Version && replacement.UpdateLinkShown
+                && !replacement.OwnedForms.OfType<UpdateNotice>().Any(),
+                "explicit user dismissal remains session-wide even if its browser closes during the dismissal animation");
+        });
     }
 
     private static void RunMultiWindowTrayRelaunch(string fixture, string folder)
