@@ -110,7 +110,7 @@ internal static class Theme
     private static Palette previous = Light;
     private static readonly List<Palette> CustomPalettes = [];
     private static readonly FlatRenderer Renderer = new();
-    private readonly record struct GroupSwatch(Color Fill, Color Text);
+    private readonly record struct GroupSwatch(Color Fill, Color Text, Color Pill, Color Hover, Color Pressed, Color Border);
     private static readonly Color[] LightGroupColors =
     [
         Color.FromArgb(95, 99, 104), Color.FromArgb(26, 115, 232), Color.FromArgb(197, 34, 31),
@@ -158,9 +158,51 @@ internal static class Theme
     public static readonly object OutlineItems = new();
     // A ToolStripTextBox tagged with this is drawn as a rounded search field with a magnifier.
     public static readonly object SearchField = new();
+    internal static readonly object GroupNameField = new();
 
     internal static Color GroupColor(TabGroupColor color) => groupColors[GroupColorIndex(color)].Fill;
     internal static Color GroupTextColor(TabGroupColor color) => groupColors[GroupColorIndex(color)].Text;
+    internal static Color GroupPillColor(TabGroupColor color, bool hover = false, bool pressed = false)
+    {
+        var swatch = groupColors[GroupColorIndex(color)];
+        return pressed ? swatch.Pressed : hover ? swatch.Hover : swatch.Pill;
+    }
+    internal static Color GroupBorderColor(TabGroupColor color) => groupColors[GroupColorIndex(color)].Border;
+    internal static void PaintGroupPill(Graphics graphics, Rectangle bounds, TabGroupColor color,
+        bool hover = false, bool pressed = false)
+    {
+        var smoothing = graphics.SmoothingMode;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = Rounded(bounds, bounds.Height / 2);
+        using var fill = new SolidBrush(GroupPillColor(color, hover, pressed));
+        using var border = new Pen(GroupBorderColor(color));
+        graphics.FillPath(fill, path);
+        graphics.DrawPath(border, path);
+        graphics.SmoothingMode = smoothing;
+    }
+
+    private static Color Mix(Color background, Color foreground, double amount) => Color.FromArgb(
+        (int)Math.Round(background.R + (foreground.R - background.R) * amount),
+        (int)Math.Round(background.G + (foreground.G - background.G) * amount),
+        (int)Math.Round(background.B + (foreground.B - background.B) * amount));
+
+    internal static void PaintGroupFolder(Graphics graphics, Rectangle bounds, TabGroupColor color)
+    {
+        var smoothing = graphics.SmoothingMode;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        float x = bounds.X, y = bounds.Y, w = bounds.Width - 1, h = bounds.Height - 1;
+        using var folder = new GraphicsPath();
+        folder.AddLines([new PointF(x, y + h * .2f), new PointF(x + w * .36f, y + h * .2f),
+            new PointF(x + w * .48f, y + h * .38f), new PointF(x + w, y + h * .38f),
+            new PointF(x + w, y + h), new PointF(x, y + h)]);
+        folder.CloseFigure();
+        using var fill = new SolidBrush(GroupPillColor(color, hover: true));
+        using var pen = new Pen(GroupColor(color), Math.Max(1, bounds.Width / 16f));
+        graphics.FillPath(fill, folder);
+        graphics.DrawPath(pen, folder);
+        graphics.DrawLine(pen, x, y + h * .48f, x + w, y + h * .48f);
+        graphics.SmoothingMode = smoothing;
+    }
 
     private static int GroupColorIndex(TabGroupColor color) =>
         color is >= TabGroupColor.Grey and <= TabGroupColor.Orange ? (int)color : 0;
@@ -190,9 +232,25 @@ internal static class Theme
                     else failing = middle;
                 }
             }
-            Color text = PaletteGenerator.Contrast(Color.Black, fill) >= PaletteGenerator.Contrast(Color.White, fill)
-                ? Color.Black : Color.White;
-            result[i] = new GroupSwatch(fill, text);
+            Color pill = Mix(palette.Canvas, seed, palette.Dark ? .23 : .14);
+            Color hover = Mix(palette.Canvas, seed, palette.Dark ? .26 : .17);
+            Color pressed = Mix(palette.Canvas, seed, palette.Dark ? .29 : .20);
+            // Move toward a same-hue endpoint, never complementary black-on-vivid text.
+            Color endpointText = Math.Min(PaletteGenerator.Contrast(Color.White, pill), PaletteGenerator.Contrast(Color.White, pressed))
+                >= Math.Min(PaletteGenerator.Contrast(Color.Black, pill), PaletteGenerator.Contrast(Color.Black, pressed))
+                ? Color.White : Color.Black;
+            Color text = seed;
+            for (int step = 0; step <= 100; step++)
+            {
+                text = Mix(seed, endpointText, step / 100d);
+                if (PaletteGenerator.Contrast(text, pill) >= 4.5
+                    && PaletteGenerator.Contrast(text, hover) >= 4.5
+                    && PaletteGenerator.Contrast(text, pressed) >= 4.5) break;
+            }
+            Color border = Mix(palette.Canvas, fill, .5);
+            for (int step = 50; step <= 100 && PaletteGenerator.Contrast(border, palette.Canvas) < 1.5; step++)
+                border = Mix(palette.Canvas, fill, step / 100d);
+            result[i] = new GroupSwatch(fill, text, pill, hover, pressed, border);
         }
         return result;
 
@@ -287,6 +345,12 @@ internal static class Theme
         strip.BackColor = strip is ToolStripDropDown || strip.AccessibleName?.EndsWith(" commands") == true
             || strip.AccessibleName?.EndsWith(" breadcrumb") == true ? Surface : Canvas;
         strip.ForeColor = Text;
+        if (strip is ToolStripDropDown popup)
+        {
+            popup.DropShadowEnabled = true;
+            popup.Opened -= RoundMenu;
+            popup.Opened += RoundMenu;
+        }
         foreach (ToolStripItem item in strip.Items)
         {
             if (item is ToolStripSeparator && ReferenceEquals(strip.Tag, OutlineItems)) item.Margin = new Padding(3, 0, 3, 0);
@@ -309,6 +373,19 @@ internal static class Theme
         }
         strip.Invalidate();
     }
+    private static void RoundMenu(object? sender, EventArgs e)
+    {
+        if (sender is not ToolStripDropDown popup || !popup.IsHandleCreated) return;
+        // DWM owns the shadow and corner clipping on Windows 11; older systems keep native shadows.
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            int round = 2;
+            Native.DwmSetWindowAttribute(popup.Handle, 33, ref round, sizeof(int));
+            int border = ColorRef(Border);
+            Native.DwmSetWindowAttribute(popup.Handle, 34, ref border, sizeof(int));
+        }
+    }
+
 
     private static Color Recolor(Color value, bool foreground, Color fallback)
     {
@@ -747,7 +824,18 @@ internal static class Theme
         {
             base.OnRenderToolStripBackground(e);
             var strip = e.ToolStrip;
-            if (strip is ToolStripDropDown) return;
+            if (strip is ToolStripDropDown)
+            {
+                foreach (ToolStripItem item in strip.Items)
+                {
+                    if (!ReferenceEquals(item.Tag, GroupNameField)) continue;
+                    var field = Rectangle.Inflate(item.Bounds, Scale(7, strip.DeviceDpi), Scale(5, strip.DeviceDpi));
+                    using var shape = Rounded(field, field.Height / 2);
+                    using var fill = new SolidBrush(Hover);
+                    e.Graphics.FillPath(fill, shape);
+                }
+                return;
+            }
             int dpi = strip.DeviceDpi;
             var smoothing = e.Graphics.SmoothingMode;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -879,7 +967,9 @@ internal static class Theme
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
             bool isChecked = e.Item is ToolStripButton { Checked: true } && e.Item is not FolderTabButton;
-            e.TextColor = !e.Item.Enabled ? Muted : isChecked ? Accent : Recolor(e.Item.ForeColor, true, Text);
+            e.TextColor = !e.Item.Enabled ? Muted
+                : e.Item is ToolStripMenuItem menu && e.Text == menu.ShortcutKeyDisplayString ? Muted
+                : isChecked ? Accent : Recolor(e.Item.ForeColor, true, Text);
             base.OnRenderItemText(e);
         }
 

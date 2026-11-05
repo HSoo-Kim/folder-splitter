@@ -47,6 +47,7 @@ public sealed partial class ExplorerPane : UserControl
         public ShellViewHost? Host { get; set; }
         public FolderTabButton Button { get; } = button;
         public TabGroup? Group { get; set; }
+        public bool Pinned { get => Button.Pinned; set => Button.Pinned = value; }
         internal string? AccessibleTitle { get; set; }
         internal string? AccessibleGroupLabel { get; set; }
         internal string? AccessibleLanguage { get; set; }
@@ -542,7 +543,7 @@ public sealed partial class ExplorerPane : UserControl
         };
         var active = ActiveTab;
         int lastMember = group is null ? -1 : tabs.FindLastIndex(member => member.Group == group);
-        int insertion = insertionIndex ?? (lastMember < 0 ? tabs.Count : lastMember + 1);
+        int insertion = Math.Max(PinnedCount, insertionIndex ?? (lastMember < 0 ? tabs.Count : lastMember + 1));
         tabs.Insert(insertion, tab);
         selectedIndex = active is null ? -1 : tabs.IndexOf(active);
         if (group is null && groupChips.Count == 0)
@@ -677,7 +678,7 @@ public sealed partial class ExplorerPane : UserControl
         selectedIndex = active == tab || active is null ? -1 : tabs.IndexOf(active);
         if (tab.Group is not null || groupChips.Count > 0) SynchronizeGroupStrip();
         tabStrip.Items.Remove(tab.Button);
-        if (remember) RememberClosedTab(new ClosedTabEntry(tab.Host?.LocationPath, OriginalGroup: tab.Group));
+        if (remember) RememberClosedTab(new ClosedTabEntry(tab.Host?.LocationPath, OriginalGroup: tab.Group, Pinned: tab.Pinned));
         if (tab.Host is { } host)
         {
             contents.Controls.Remove(host);
@@ -730,7 +731,8 @@ public sealed partial class ExplorerPane : UserControl
             var original = entry.OriginalGroup;
             if (original is not null && (!groupChips.ContainsKey(original)
                 || tabs.Count(tab => tab.Group == original) >= TabGroup.MaxTabs)) original = null;
-            InsertTab(entry.Path, select: true, group: original);
+            if (InsertTab(entry.Path, select: true, group: original) is { } restored && entry.Pinned)
+                SetTabsPinned([restored], true);
         }
         LastReopenedTabs = LastReopenedGroup is { } restoredGroup ? GroupMembers(restoredGroup)
             : ActiveTab is { } restoredTab ? [restoredTab] : [];
@@ -905,7 +907,7 @@ public sealed partial class ExplorerPane : UserControl
         return new()
         {
             Tabs = saved.Select(tab => tab.Host!.LocationPath).ToList(), SelectedTab = Math.Max(0, selected),
-            Groups = CaptureGroups(saved)
+            Groups = CaptureGroups(saved), PinnedCount = saved.TakeWhile(tab => tab.Pinned).Count()
         };
     }
     internal int IndexOfTab(FolderTab tab) => tabs.IndexOf(tab);
@@ -924,7 +926,7 @@ public sealed partial class ExplorerPane : UserControl
         tabStrip.SuspendLayout();
         try
         {
-            if (groupChips.Count > 0)
+            if (groupChips.Count > 0 || PinnedCount > 0)
             {
                 LayoutGroupedTabs();
                 return;
@@ -1051,6 +1053,8 @@ public sealed partial class ExplorerPane : UserControl
         tabMenu.Items.Add(text.T("New tab"), null, (_, _) => AddBlankTab());
         tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => DuplicateTab(movingTab)).Enabled = movingTab.Host is not null;
         tabMenu.Items.Add(text.T("Reopen closed tab"), null, (_, _) => ReopenTab()).Enabled = CanReopenTab;
+        bool pin = selection.Any(tab => !tab.Pinned);
+        tabMenu.Items.Add(text.T(pin ? "Pin tab" : "Unpin tab"), null, (_, _) => SetTabsPinned(selection, pin));
         AddGroupTabMenu(tabMenu, tabs[index]);
         var move = new ToolStripMenuItem(text.T(selection.Count > 1 ? "Move tabs to pane" : "Move tab to pane"));
         for (int i = 1; i <= 4; i++)
@@ -1084,11 +1088,15 @@ public sealed partial class ExplorerPane : UserControl
             SuppressSavedGroupSync = true;
             try
             {
-                for (int i = tabs.Count - 1; i >= 0; i--) if (tabs[i] != keep) CloseTab(i);
+                for (int i = tabs.Count - 1; i >= 0; i--) if (tabs[i] != keep && !tabs[i].Pinned) CloseTab(i);
             }
             finally { SuppressSavedGroupSync = wasSuppressed; }
             StateChanged?.Invoke(this, EventArgs.Empty);
         }).Enabled = tabs.Count > 1;
+        tabMenu.Padding = new Padding(6, 6, 6, 8);
+        foreach (var item in tabMenu.Items.OfType<ToolStripMenuItem>())
+            item.Padding = new Padding(0, (int)Math.Round(5 * DeviceDpi / 96d), 4, (int)Math.Round(5 * DeviceDpi / 96d));
+        Theme.Apply(tabMenu);
         if (keyboard) tabMenu.Show(tabStrip, new Point(tabs[index].Button.Bounds.Left, tabs[index].Button.Bounds.Bottom));
         else tabMenu.Show(Cursor.Position);
     }
@@ -1162,6 +1170,13 @@ public sealed partial class ExplorerPane : UserControl
             while (tabs.Count > 0) CloseTabCore(tabs.Count - 1, remember: false, selectReplacement: false);
             foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
             RestoreGroups(state.Groups);
+            for (int index = 0; index < Math.Clamp(state.PinnedCount, 0, tabs.Count); index++)
+            {
+                tabs[index].Group = null;
+                tabs[index].Pinned = true;
+                tabs[index].AccessibleTitle = null;
+            }
+            SynchronizeGroupStrip();
             if (tabs.Count > 0)
             {
                 int selected = Math.Clamp(state.SelectedTab, 0, tabs.Count - 1);

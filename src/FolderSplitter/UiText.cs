@@ -329,12 +329,18 @@ public sealed class UiText
         ["Remove from group"] = ("그룹에서 제외", "从组中移除", "グループから削除"),
         ["A group holds up to 12 tabs."] = ("그룹에는 탭을 최대 12개까지 넣을 수 있습니다.", "每个组最多可包含 12 个标签页。", "1 つのグループには最大 12 個のタブを追加できます。"),
         ["Tab group name"] = ("탭 그룹 이름", "标签页组名称", "タブグループ名"),
-        ["New tab in group"] = ("그룹에 새 탭 열기", "在组中新建标签页", "グループ内で新しいタブを開く"),
+        ["Name this group"] = ("그룹 이름 지정", "为组命名", "グループに名前を付ける"),
+        ["Delete group"] = ("그룹 삭제", "删除组", "グループを削除"),
+        ["Pin tab"] = ("탭 고정", "固定标签页", "タブを固定"),
+        ["Unpin tab"] = ("고정 해제", "取消固定", "固定を解除"),
+        ["Pinned tab: {0}"] = ("고정된 탭: {0}", "固定的标签页：{0}", "固定されたタブ: {0}"),
+        ["The active tab is not in a group."] = ("현재 탭은 그룹에 속하지 않습니다.", "当前标签页不属于任何组。", "現在のタブはグループに属していません。"),
+        ["New tab in group"] = ("그룹에 새 탭 추가", "在组中新建标签页", "グループ内で新しいタブを開く"),
         ["Collapse group"] = ("그룹 접기", "折叠组", "グループを折りたたむ"),
         ["Expand group"] = ("그룹 펼치기", "展开组", "グループを展開"),
         ["Ungroup"] = ("그룹 해제", "取消分组", "グループを解除"),
         ["Close group"] = ("그룹 닫기", "关闭组", "グループを閉じる"),
-        ["Move group to pane"] = ("다른 영역으로 그룹 이동", "将组移至窗格", "グループを別のペインに移動"),
+        ["Move group to pane"] = ("그룹을 영역으로 이동", "将组移至窗格", "グループを別のペインに移動"),
         ["Move group to pane {0}"] = ("영역 {0}(으)로 그룹 이동", "将组移至窗格 {0}", "グループをペイン {0} に移動"),
         ["This group is no longer available."] = ("더 이상 사용할 수 없는 그룹입니다.", "此组已不可用。", "このグループは使用できなくなりました。"),
         ["Destination cannot hold this group.\nClose tabs first."] = ("대상 영역에 이 그룹을 넣을 공간이 없습니다.\n먼저 탭을 닫으세요.", "目标窗格无法容纳此组。\n请先关闭一些标签页。", "移動先のペインにこのグループを追加できません。\n先にタブを閉じてください。"),
@@ -422,6 +428,8 @@ public sealed class UiText
             Ctrl+Tab / Ctrl+Shift+Tab   탭 전환
             Ctrl+Shift+PgUp / PgDn   탭을 왼쪽 / 오른쪽으로 이동 (그룹 경계에서 그룹에 추가 / 제외)
             Ctrl+Shift+F6   탭 막대로 키보드 포커스 이동
+            Alt+Shift+C   현재 그룹에 새 탭 추가
+            Alt+Shift+W   현재 그룹 닫기
             Apps / Shift+F10   포커스된 탭 또는 그룹의 메뉴 열기
             Enter / Space   포커스된 그룹 접기 / 펼치기
 
@@ -471,6 +479,8 @@ public sealed class UiText
             Ctrl+Tab / Ctrl+Shift+Tab   切换标签页
             Ctrl+Shift+PgUp / PgDn   向左 / 向右移动标签页（在组边界加入 / 移出组）
             Ctrl+Shift+F6   将键盘焦点移到标签栏
+            Alt+Shift+C   在当前组中新建标签页
+            Alt+Shift+W   关闭当前组
             Apps / Shift+F10   打开已聚焦标签页或组的菜单
             Enter / Space   折叠 / 展开已聚焦的组
 
@@ -520,6 +530,8 @@ public sealed class UiText
             Ctrl+Tab / Ctrl+Shift+Tab   タブの切り替え
             Ctrl+Shift+PgUp / PgDn   タブを左 / 右へ移動（グループの境界で参加 / 解除）
             Ctrl+Shift+F6   タブバーにキーボードフォーカスを移動
+            Alt+Shift+C   現在のグループに新しいタブを追加
+            Alt+Shift+W   現在のグループを閉じる
             Apps / Shift+F10   フォーカス中のタブまたはグループのメニューを開く
             Enter / Space   フォーカス中のグループを折りたたむ / 展開
 
@@ -571,6 +583,8 @@ public sealed class UiText
         Ctrl+Tab / Ctrl+Shift+Tab   Switch tabs
         Ctrl+Shift+PgUp / PgDn   Move tab left / right (join / leave a group at its boundary)
         Ctrl+Shift+F6   Focus the tab strip
+        Alt+Shift+C   Add a new tab to the active group
+        Alt+Shift+W   Close the active group
         Apps / Shift+F10   Open the focused tab or group menu
         Enter / Space   Collapse / expand the focused group
 

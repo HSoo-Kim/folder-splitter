@@ -67,6 +67,19 @@ internal static partial class Program
                 Console.WriteLine($"TAB_GROUPS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--tab-chrome"])
+            {
+                RunTabStripScenario(root);
+                RunHelpDialogScenario(root);
+                Console.WriteLine($"TAB_CHROME_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--chrome-groups"])
+            {
+                RunChromeGroupScenario(root);
+                Console.WriteLine($"CHROME_GROUPS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--saved-groups"])
             {
                 RunSavedGroupScenario(root);

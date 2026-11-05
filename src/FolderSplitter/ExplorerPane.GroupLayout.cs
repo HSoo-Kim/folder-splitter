@@ -9,6 +9,20 @@ public sealed partial class ExplorerPane
         int chrome = Scaled(70), floor = Scaled(90);
         int rowHeight = Math.Max(TextRenderer.MeasureText("가Ag", tabStrip.Font).Height, Scaled(16)) + Scaled(8);
         newTab.Size = closePane.Size = tabList.Size = new Size(Scaled(30), rowHeight);
+        int pinnedWidth = Scaled(36);
+        int pinnedSpace = 0;
+        foreach (var tab in tabs.Where(tab => tab.Pinned))
+        {
+            var button = tab.Button;
+            button.Visible = true;
+            button.Size = new Size(pinnedWidth, rowHeight);
+            button.Padding = Padding.Empty;
+            button.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            button.ImageAlign = ContentAlignment.MiddleCenter;
+            button.ToolTipText = tab.Host?.LocationPath ?? text.T("New tab");
+            UpdateTabAccessibleName(tab);
+            pinnedSpace += pinnedWidth + button.Margin.Horizontal;
+        }
         var items = new List<ToolStripItem>();
         var natural = new List<int>();
         var minimum = new List<int>();
@@ -17,6 +31,9 @@ public sealed partial class ExplorerPane
         for (int tabIndex = 0; tabIndex < tabs.Count; tabIndex++)
         {
             var tab = tabs[tabIndex];
+            if (tab.Pinned) continue;
+            tab.Button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+            tab.Button.ImageAlign = ContentAlignment.MiddleLeft;
             tab.Button.Visible = false;
             if (tab.Group is { } group && group != previous)
             {
@@ -41,7 +58,7 @@ public sealed partial class ExplorerPane
         }
         int count = items.Count;
         int available = Math.Max(0, tabStrip.ClientSize.Width - tabStrip.Padding.Horizontal
-            - newTab.Width - newTab.Margin.Horizontal - closePane.Width - closePane.Margin.Horizontal - Scaled(6));
+            - newTab.Width - newTab.Margin.Horizontal - closePane.Width - closePane.Margin.Horizontal - Scaled(6) - pinnedSpace);
         int margins = items.Sum(item => item.Margin.Horizontal);
         bool showList = anyCollapsed;
         int listWidth = tabList.Width + tabList.Margin.Horizontal;
@@ -103,6 +120,7 @@ public sealed partial class ExplorerPane
         }
         foreach (var tab in tabs)
         {
+            if (tab.Pinned) continue;
             UpdateTabAccessibleName(tab);
             tab.Button.ToolTipText = (tab.Host?.LocationPath ?? text.T("New tab")) + Environment.NewLine
                 + text.T(tab == ActiveTab ? "Close current tab (Ctrl+W)" : "Select this tab, then close with Ctrl+W");
@@ -112,6 +130,7 @@ public sealed partial class ExplorerPane
         previous = null;
         foreach (var tab in tabs)
         {
+            if (tab.Pinned) continue;
             if (tab.Group is { } group && previous != group)
             {
                 string label = GroupLabel(group);

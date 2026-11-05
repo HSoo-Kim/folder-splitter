@@ -27,7 +27,8 @@ public sealed partial class ExplorerPane
         return true;
     }
 
-    internal bool ReorderTabs(IReadOnlyList<FolderTab> selection, int insertionIndex, TabGroup? joinGroup = null)
+    internal bool ReorderTabs(IReadOnlyList<FolderTab> selection, int insertionIndex, TabGroup? joinGroup = null,
+        bool preservePinned = false)
     {
         var moving = tabs.Where(selection.Contains).ToArray();
         if (moving.Length != selection.Count)
@@ -40,14 +41,20 @@ public sealed partial class ExplorerPane
             SetLocalizedStatus(reason);
             return false;
         }
+        bool pin = targetGroup is null && (insertionIndex < PinnedCount
+            || insertionIndex == PinnedCount && moving.All(tab => tab.Pinned));
         var wholeGroups = moving.Select(tab => tab.Group).OfType<TabGroup>().Distinct()
             .Where(group => GroupMembers(group).All(moving.Contains)).ToHashSet();
         var active = ActiveTab;
         int destination = insertionIndex - tabs.Take(insertionIndex).Count(moving.Contains);
         tabs.RemoveAll(moving.Contains);
-        if (targetGroup is null) destination = GroupBoundary(destination);
+        if (targetGroup is null && !pin) destination = GroupBoundary(destination);
         foreach (var member in moving)
-            member.Group = targetGroup ?? (member.Group is { } original && wholeGroups.Contains(original) ? original : null);
+        {
+            bool keepPin = pin || preservePinned && member.Pinned && targetGroup is null;
+            member.Pinned = keepPin;
+            member.Group = keepPin ? null : targetGroup ?? (member.Group is { } original && wholeGroups.Contains(original) ? original : null);
+        }
         tabs.InsertRange(destination, moving);
         if (active?.Group is { } activeGroup) activeGroup.Collapsed = false;
         FinishGroupMutation(active);
@@ -58,10 +65,11 @@ public sealed partial class ExplorerPane
     {
         if (!CanInsertStripTabs(moving, insertionIndex, joinGroup, out var group, out string reason))
         { SetLocalizedStatus(reason); return false; }
+        var anchor = insertionIndex < tabs.Count ? tabs[insertionIndex] : null;
         var copied = AddTabBatch(moving, preserveGroups: moving.Count > 1);
         if (copied.Count != moving.Count) return false;
         LastDroppedTabs = copied;
-        return ReorderTabs(copied, insertionIndex, group);
+        return ReorderTabs(copied, anchor is null ? tabs.Count : tabs.IndexOf(anchor), group, preservePinned: true);
     }
 
     internal bool ReorderTab(FolderTab tab, int insertionIndex, TabGroup? joinGroup = null)
@@ -77,10 +85,13 @@ public sealed partial class ExplorerPane
             return false;
         }
         var active = ActiveTab;
+        bool pin = group is null && (insertionIndex < PinnedCount || tab.Pinned && insertionIndex == PinnedCount);
         int old = tabs.IndexOf(tab);
         tabs.RemoveAt(old);
         int destination = insertionIndex - (old < insertionIndex ? 1 : 0);
         tab.Group = group;
+        tab.Pinned = pin;
+        if (pin) tab.Group = null;
         tabs.Insert(destination, tab);
         if (tab == active && group is not null) group.Collapsed = false;
         FinishGroupMutation(active);
@@ -91,7 +102,7 @@ public sealed partial class ExplorerPane
     {
         var members = GroupMembers(group);
         if (members.Count == 0 || insertionIndex < 0 || insertionIndex > tabs.Count) return false;
-        insertionIndex = GroupBoundary(insertionIndex);
+        insertionIndex = Math.Max(PinnedCount, GroupBoundary(insertionIndex));
         var active = ActiveTab;
         int start = tabs.IndexOf(members[0]);
         int destination = insertionIndex - Math.Clamp(insertionIndex - start, 0, members.Count);
@@ -143,9 +154,10 @@ public sealed partial class ExplorerPane
         if (tab is null) return false;
         var active = ActiveTab;
         tabs.Remove(tab);
+        tab.Pinned = group is null && (source.Pinned || insertionIndex < PinnedCount);
         tabs.Insert(insertionIndex, tab);
         FinishGroupMutation(active);
-        SelectTab(insertionIndex);
+        SelectTab(tabs.IndexOf(tab));
         return true;
     }
 
@@ -171,6 +183,7 @@ public sealed partial class ExplorerPane
                 SetLocalizedStatus("A group holds up to 12 tabs.");
                 return false;
             }
+            tab.Pinned = false;
             tab.Group = nextGroup;
             nextGroup.Collapsed = false;
         }
@@ -186,6 +199,7 @@ public sealed partial class ExplorerPane
     // Whole-group drops choose a group boundary rather than splitting another group's members.
     private int GroupBoundary(int insertionIndex)
     {
+        insertionIndex = Math.Max(PinnedCount, insertionIndex);
         if (insertionIndex <= 0 || insertionIndex >= tabs.Count
             || tabs[insertionIndex - 1].Group is not { } group || tabs[insertionIndex].Group != group)
             return insertionIndex;

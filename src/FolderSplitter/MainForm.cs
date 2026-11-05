@@ -257,6 +257,7 @@ public sealed partial class MainForm : Form, IMessageFilter
             pane.MoveGroupToWindowRequested += (source, group) => application.MoveGroupToNewWindow(this, source, group);
             pane.MoveTabsToWindowRequested += (source, tabs) => application.MoveTabsToNewWindow(this, source, tabs);
             pane.SaveGroupRequested += ToggleSavedGroup;
+            pane.DeleteSavedGroupRequested += application.DeleteSavedGroup;
             pane.GroupMoveDisabledReason = (source, group, number) =>
                 CanDockGroup(source, group, number - 1, null, out string reason) ? null : reason;
             pane.GroupDragRequested += StartGroupDrag;
@@ -2203,12 +2204,14 @@ public sealed partial class MainForm : Form, IMessageFilter
         rebuilding = true;
         try
         {
+            var anchor = drop.InsertionIndex is { } slot && slot < receiving.TabCount ? receiving.Tabs[slot] : null;
             var copied = receiving.AddTabBatch(tabs, preserveGroups: group is not null || tabs.Count > 1);
             if (copied.Count != tabs.Count) return false;
             if (group is not null) receiving.SetGroupCollapsed(copied[0].Group!, false);
             if (drop.InsertionIndex is { } insertion && !(group is not null
                 ? receiving.ReorderGroup(copied[0].Group!, insertion)
-                : receiving.ReorderTabs(copied, insertion, drop.JoinGroup)))
+                : receiving.ReorderTabs(copied, anchor is null ? receiving.TabCount : receiving.IndexOfTab(anchor),
+                    drop.JoinGroup, preservePinned: true)))
             {
                 receiving.RemoveTabsForMove(copied);
                 if (previous is not null) receiving.SelectTab(receiving.IndexOfTab(previous), focus: false);
@@ -2692,6 +2695,8 @@ public sealed partial class MainForm : Form, IMessageFilter
         {
             case Keys.Control | Keys.N: application.CreateWindowFromActive(this); break;
             case Keys.Control | Keys.T: Active.AddBlankTab(); break;
+            case Keys.Alt | Keys.Shift | Keys.C: Active.ActiveGroupCommand(close: false); break;
+            case Keys.Alt | Keys.Shift | Keys.W: Active.ActiveGroupCommand(close: true); break;
             case Keys.Control | Keys.F: Active.FocusFolderFilter(); break;
             case Keys.Control | Keys.Shift | Keys.C: Active.CopySelectionPaths(); break;
             case Keys.Control | Keys.Alt | Keys.C: TransferSelection(move: false); break;

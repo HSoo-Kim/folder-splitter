@@ -284,7 +284,8 @@ internal static partial class Program
 
     private static bool MultiWindowPaneEqual(PaneState actual, PaneState expected) =>
         (actual.Tabs.Count == 0 || actual.SelectedTab == expected.SelectedTab)
-        && actual.Tabs.SequenceEqual(expected.Tabs, StringComparer.OrdinalIgnoreCase);
+        && actual.Tabs.SequenceEqual(expected.Tabs, StringComparer.OrdinalIgnoreCase)
+        && actual.PinnedCount == expected.PinnedCount;
 
     private static void MultiWindowLegacyProjection(string path, BrowserWindowState first)
     {
@@ -589,6 +590,12 @@ internal static partial class Program
             RunMultiWindowContext(context, async () =>
             {
                 foreach (var window in windows) await MultiWindowReady(window);
+                foreach (var window in windows)
+                {
+                    var pane = window.GetPane(0);
+                    TgOpenTabMenu(pane, pane.Tabs[0]).Items.OfType<ToolStripMenuItem>()
+                        .Single(item => item.Text == "Pin tab").PerformClick();
+                }
                 windows[0].Hide();
                 windows[1].WindowState = FormWindowState.Minimized;
                 windows[2].WindowState = FormWindowState.Maximized;
@@ -637,6 +644,9 @@ internal static partial class Program
                 && restarted.Windows[2].Visible && restarted.Windows[2].WindowState == FormWindowState.Maximized
                 && ReferenceEquals(restarted.LastActiveWindow, restarted.Windows[2]),
                 "--wait-pid replacement context restores hidden, minimized and maximized peers and last-active browser");
+            Check(restarted.Windows.All(window => window.GetPane(0).PinnedCount == 1
+                && window.GetPane(0).Tabs[0].Button.Available),
+                "memory-restart replacement restores the saved pinned prefix in every peer window");
             Check(records.Select((record, index) => record.First?.State == (index == 2
                     ? FormWindowState.Maximized : FormWindowState.Minimized)
                 && record.VisibleStates.All(state => state != FormWindowState.Normal)).All(value => value),

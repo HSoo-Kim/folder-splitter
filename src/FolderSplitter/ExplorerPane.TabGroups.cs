@@ -7,6 +7,42 @@ public sealed partial class ExplorerPane
     internal IReadOnlyList<FolderTab> Tabs => tabs;
     internal IReadOnlyList<TabGroup> Groups => tabs.Select(tab => tab.Group).OfType<TabGroup>().Distinct().ToArray();
     internal IReadOnlyList<FolderTab> GroupMembers(TabGroup group) => tabs.Where(tab => tab.Group == group).ToArray();
+    internal int PinnedCount
+    {
+        get
+        {
+            int count = 0;
+            while (count < tabs.Count && tabs[count].Pinned) count++;
+            return count;
+        }
+    }
+
+    internal void SetTabsPinned(IReadOnlyList<FolderTab> selection, bool pinned)
+    {
+        var moving = tabs.Where(selection.Contains).ToArray();
+        if (moving.Length == 0) return;
+        var active = ActiveTab;
+        tabs.RemoveAll(moving.Contains);
+        foreach (var tab in moving)
+        {
+            tab.Pinned = pinned;
+            if (pinned) tab.Group = null;
+            tab.AccessibleTitle = null;
+        }
+        tabs.InsertRange(PinnedCount, moving);
+        FinishGroupMutation(active);
+    }
+
+    internal void ActiveGroupCommand(bool close)
+    {
+        if (ActiveTab?.Group is not { } group)
+        {
+            SetLocalizedStatus("The active tab is not in a group.");
+            return;
+        }
+        if (close) CloseGroup(group);
+        else AddTabInGroup(group);
+    }
 
     internal TabGroup? CreateGroup(FolderTab tab)
     {
@@ -15,6 +51,7 @@ public sealed partial class ExplorerPane
         var used = Groups.Select(group => group.Color).ToHashSet();
         var colors = Enum.GetValues<TabGroupColor>();
         var group = new TabGroup { Color = colors.FirstOrDefault(color => !used.Contains(color), colors[Groups.Count % colors.Length]) };
+        if (tab.Pinned) SetTabsPinned([tab], false);
         tab.Group = group;
         FinishGroupMutation(ActiveTab);
         return group;
@@ -32,6 +69,7 @@ public sealed partial class ExplorerPane
         var active = ActiveTab;
         tabs.Remove(tab);
         int insertion = tabs.FindLastIndex(member => member.Group == group) + 1;
+        tab.Pinned = false;
         tab.Group = group;
         tabs.Insert(insertion, tab);
         if (tab == active) group.Collapsed = false;
@@ -141,13 +179,14 @@ public sealed partial class ExplorerPane
     private void UpdateTabAccessibleName(FolderTab tab)
     {
         string? groupLabel = tab.Group is { } group ? GroupLabel(group) : null;
-        if (tab.AccessibleTitle == tab.Button.Title && tab.AccessibleGroupLabel == groupLabel
+        string title = tab.Pinned ? text.T("Pinned tab: {0}", tab.Button.Title) : tab.Button.Title;
+        if (tab.AccessibleTitle == title && tab.AccessibleGroupLabel == groupLabel
             && tab.AccessibleLanguage == text.Language) return;
-        tab.AccessibleTitle = tab.Button.Title;
+        tab.AccessibleTitle = title;
         tab.AccessibleGroupLabel = groupLabel;
         tab.AccessibleLanguage = text.Language;
-        tab.Button.AccessibleName = groupLabel is null ? $"Folder tab: {tab.Button.Title}"
-            : text.T("Folder tab: {0}, group: {1}", tab.Button.Title, groupLabel);
+        tab.Button.AccessibleName = tab.Pinned ? title : groupLabel is null ? $"Folder tab: {title}"
+            : text.T("Folder tab: {0}, group: {1}", title, groupLabel);
     }
 
     internal void FocusTabStrip()
@@ -164,7 +203,7 @@ public sealed partial class ExplorerPane
         if (tabStrip.ContainsFocus && key == Keys.Escape) { ClearTabSelection(); return true; }
         if (!tabStrip.ContainsFocus || key is not (Keys.Apps or (Keys.Shift | Keys.F10))) return false;
         var item = tabStrip.Items.Cast<ToolStripItem>().FirstOrDefault(candidate => candidate.Selected);
-        if (item is TabGroupChip chip) ShowGroupMenu(chip.Group, focusName: false);
+        if (item is TabGroupChip chip) ShowGroupMenu(chip.Group);
         else if (item is FolderTabButton button)
             ShowTabMenu(tabs.FindIndex(tab => tab.Button == button), keyboard: true);
         else return false;
@@ -236,6 +275,19 @@ public sealed partial class ExplorerPane
 
     private void FinishGroupMutation(FolderTab? active)
     {
+        // Keep pins at the front without allocating on the ordinary group-edit path.
+        int prefix = 0;
+        for (int index = 0; index < tabs.Count; index++)
+        {
+            if (!tabs[index].Pinned) continue;
+            if (index != prefix)
+            {
+                var pin = tabs[index];
+                tabs.RemoveAt(index);
+                tabs.Insert(prefix, pin);
+            }
+            prefix++;
+        }
         selectedIndex = active is null ? -1 : tabs.IndexOf(active);
         RememberGroupSelection();
         UpdateTabSelectionAppearance();
@@ -352,29 +404,135 @@ public sealed partial class ExplorerPane
         menu.Items.Add(new ToolStripSeparator());
     }
 
-    private sealed class GroupColorItem(TabGroupColor color) : ToolStripButton
+    private sealed class GroupColorItem(TabGroupColor color, int index) : ToolStripButton
     {
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
-            int size = Math.Max(8, (int)Math.Round(14 * (Owner?.DeviceDpi ?? 96) / 96d));
-            var circle = new Rectangle((Width - size) / 2, (Height - size) / 2, size, size);
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            int size = Math.Max(8, (int)Math.Round(16 * (Owner?.DeviceDpi ?? 96) / 96d));
+            int left = ((Owner?.ClientSize.Width ?? Width) - size) * index / 8 - Bounds.Left;
+            var circle = new RectangleF(left + .5f, (Height - size) / 2f + .5f, size - 1, size - 1);
             using var fill = new SolidBrush(Theme.GroupColor(color));
-            e.Graphics.FillEllipse(fill, circle);
+            int gap = Math.Max(1, (int)Math.Round(3 * (Owner?.DeviceDpi ?? 96) / 96d));
+            var center = Checked ? RectangleF.Inflate(circle, -gap, -gap) : circle;
+            e.Graphics.FillEllipse(fill, center);
             if (Checked)
             {
-                circle.Inflate(2, 2);
-                using var pen = new Pen(Theme.Text, 2);
-                e.Graphics.DrawEllipse(pen, circle);
+                using var pen = new Pen(Theme.GroupColor(color), Math.Max(1, size / 10f));
+                var ring = RectangleF.Inflate(circle, -pen.Width / 2, -pen.Width / 2);
+                e.Graphics.DrawEllipse(pen, ring);
+            }
+        }
+    }
+    internal event Action<string>? DeleteSavedGroupRequested;
+
+    // Native cue banners use the system gray even in dark themes and normally disappear on focus.
+    // Keep the native editor for selection, caret and accessibility; paint only its empty-state cue.
+    private sealed class GroupNameCue : NativeWindow, IDisposable
+    {
+        private readonly TextBox editor;
+
+        internal GroupNameCue(TextBox editor)
+        {
+            this.editor = editor;
+            SendMessage(editor.Handle, 0x1501, 0, "");
+            AssignHandle(editor.Handle);
+            editor.Invalidate();
+        }
+
+        protected override void WndProc(ref Message message)
+        {
+            base.WndProc(ref message);
+            if (message.Msg is not (0xF or 0x317 or 0x318) || editor.TextLength != 0) return;
+            using var graphics = message.Msg == 0xF ? Graphics.FromHwnd(Handle) : Graphics.FromHdc(message.WParam);
+            using var background = new SolidBrush(editor.BackColor);
+            graphics.FillRectangle(background, editor.ClientRectangle);
+            var bounds = editor.ClientRectangle;
+            bounds.X += 1;
+            bounds.Width = Math.Max(0, bounds.Width - 1);
+            TextRenderer.DrawText(graphics, editor.PlaceholderText, editor.Font, bounds, Theme.Muted,
+                TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix
+                | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        }
+
+        public void Dispose() => ReleaseHandle();
+    }
+
+    private sealed class GroupEditorMenu : ContextMenuStrip
+    {
+        protected override Padding DefaultPadding
+        {
+            get
+            {
+                int Scale(int value) => (int)Math.Round(value * DeviceDpi / 96d);
+                return new Padding(Scale(14), Scale(6), Scale(14), Scale(8));
             }
         }
     }
 
-    private void ShowGroupMenu(TabGroup group, bool focusName = true)
+    private sealed class GroupCommandItem(string label, string glyph) : ToolStripMenuItem(label)
+    {
+        private int Scale(int value) => (int)Math.Round(value * (Owner?.DeviceDpi ?? 96) / 96d);
+
+        public override Size GetPreferredSize(Size constrainingSize)
+        {
+            var preferred = base.GetPreferredSize(constrainingSize);
+            return new Size(preferred.Width + Scale(32), Math.Max(preferred.Height, Scale(32)));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            using (var background = new SolidBrush(Owner?.BackColor ?? Theme.Surface))
+                e.Graphics.FillRectangle(background, new Rectangle(Point.Empty, Size));
+            if (Enabled && (Selected || Pressed))
+                Theme.FillRounded(e.Graphics, new Rectangle(0, 0, Width, Height), Pressed ? Theme.Selected : Theme.Hover, Owner?.DeviceDpi ?? 96);
+            Color foreground = Enabled ? Theme.Text : Theme.Muted;
+            int iconWidth = Scale(18), inset = Scale(14), labelLeft = inset + Scale(28);
+            int right = (Owner?.ClientSize.Width ?? Width) - inset;
+            DrawGlyph(Checked ? "\uE73E" : glyph, new Rectangle(inset, 0, iconWidth, Height));
+            int hintWidth = string.IsNullOrEmpty(ShortcutKeyDisplayString) ? 0
+                : TextRenderer.MeasureText(ShortcutKeyDisplayString, Font, Size.Empty, TextFormatFlags.NoPadding).Width;
+            var labelBounds = Rectangle.FromLTRB(labelLeft, 0,
+                Math.Max(labelLeft, right - (hintWidth > 0 ? hintWidth + Scale(16) : HasDropDownItems ? Scale(18) : 0)), Height);
+            TextRenderer.DrawText(e.Graphics, Text, Font, labelBounds, foreground,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            if (hintWidth > 0)
+                TextRenderer.DrawText(e.Graphics, ShortcutKeyDisplayString, Font,
+                    Rectangle.FromLTRB(right - hintWidth, 0, right, Height), Theme.Muted,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            else if (HasDropDownItems) DrawGlyph("\uE76C", new Rectangle(right - Scale(10), 0, Scale(10), Height));
+
+            void DrawGlyph(string symbol, Rectangle bounds)
+            {
+                // Paths use grayscale edge coverage, avoiding ClearType's colored fringes on small icons.
+                using var font = new Font(Theme.IconFont, Scale(16), FontStyle.Regular, GraphicsUnit.Pixel);
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                path.AddString(symbol, font.FontFamily, (int)FontStyle.Regular, font.Size, Point.Empty, StringFormat.GenericTypographic);
+                var ink = path.GetBounds();
+                float scale = Math.Min(Scale(16), bounds.Width) / Math.Max(ink.Width, ink.Height);
+                using var transform = new System.Drawing.Drawing2D.Matrix(scale, 0, 0, scale,
+                    bounds.Left - ink.Left * scale, bounds.Top + (bounds.Height - ink.Height * scale) / 2 - ink.Top * scale);
+                path.Transform(transform);
+                var smoothing = e.Graphics.SmoothingMode;
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using var fill = new SolidBrush(foreground);
+                e.Graphics.FillPath(fill, path);
+                e.Graphics.SmoothingMode = smoothing;
+            }
+        }
+    }
+
+    private void ShowGroupMenu(TabGroup group)
     {
         if (!groupChips.ContainsKey(group)) return;
-        var menu = new ContextMenuStrip { ShowItemToolTips = true };
-        var name = new ToolStripTextBox { Text = group.Name, MaxLength = 40, AccessibleName = text.T("Tab group name") };
+        int Scale(int value) => (int)Math.Round(value * DeviceDpi / 96d);
+        int inset = Scale(14);
+        var menu = new GroupEditorMenu { ShowItemToolTips = true, ShowImageMargin = false, ShowCheckMargin = false,
+            Font = Font, Padding = new Padding(inset, Scale(6), inset, Scale(8)) };
+        var name = new ToolStripTextBox { Text = group.Name, MaxLength = 40, AccessibleName = text.T("Tab group name"),
+            AutoSize = false, Width = Scale(272), Margin = new Padding(Scale(7), Scale(10), Scale(7), Scale(10)),
+            BorderStyle = BorderStyle.None, Tag = Theme.GroupNameField };
+        name.TextBox.PlaceholderText = text.T("Name this group");
         name.KeyDown += (_, e) =>
         {
             if (e.KeyCode != Keys.Enter) return;
@@ -384,29 +542,33 @@ public sealed partial class ExplorerPane
         };
         menu.Items.Add(name);
         var colors = Theme.Strip();
-        colors.AutoSize = true;
+        colors.AutoSize = false;
         colors.Padding = Padding.Empty;
+        colors.CanOverflow = false;
         colors.LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow;
         foreach (var color in Enum.GetValues<TabGroupColor>())
         {
-            int size = (int)Math.Round(28 * DeviceDpi / 96d);
-            var item = new GroupColorItem(color) { Checked = group.Color == color, AutoSize = false,
+            int size = Scale(32);
+            var item = new GroupColorItem(color, colors.Items.Count) { Checked = group.Color == color, AutoSize = false,
                 Size = new Size(size, size), Margin = Padding.Empty, DisplayStyle = ToolStripItemDisplayStyle.None,
                 ToolTipText = text.T(color.ToString()), AccessibleName = text.T(color.ToString()) };
             item.Click += (_, _) => { SetGroupColor(group, color); menu.Close(); };
             colors.Items.Add(item);
         }
-        menu.Items.Add(new ToolStripControlHost(colors) { Margin = Padding.Empty, Padding = Padding.Empty });
+        var colorHost = new ToolStripControlHost(colors) { AutoSize = false, Margin = Padding.Empty, Padding = Padding.Empty };
+        menu.Items.Add(colorHost);
         menu.Items.Add(new ToolStripSeparator());
-        var save = new ToolStripMenuItem(text.T("Save group")) { Checked = ExistingSavedId(group.SavedId, group) is not null };
-        save.Click += (_, _) => SaveGroupRequested?.Invoke(this, group);
-        menu.Items.Add(save);
-        menu.Items.Add(text.T("New tab in group"), null, (_, _) => AddTabInGroup(group));
-        menu.Items.Add(text.T(group.Collapsed ? "Expand group" : "Collapse group"), null,
-            (_, _) => SetGroupCollapsed(group, !group.Collapsed));
-        menu.Items.Add(text.T("Ungroup"), null, (_, _) => Ungroup(group));
-        menu.Items.Add(text.T("Close group"), null, (_, _) => CloseGroup(group));
-        var move = new ToolStripMenuItem(text.T("Move group to pane"));
+        ToolStripMenuItem Command(string key, string glyph, Action action, string hint = "")
+        {
+            var item = new GroupCommandItem(text.T(key), glyph) { ShortcutKeyDisplayString = hint,
+                Padding = new Padding(0, Scale(5), Scale(4), Scale(5)) };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+            return item;
+        }
+        Command("New tab in group", "\uE710", () => AddTabInGroup(group), "Alt+Shift+C");
+        Command("Move group to new window", "\uE8A7", () => MoveGroupToWindowRequested?.Invoke(this, group));
+        var move = new GroupCommandItem(text.T("Move group to pane"), "\uE8DE") { Padding = new Padding(0, Scale(5), Scale(4), Scale(5)) };
         for (int number = 1; number <= 4; number++)
         {
             if (number == PaneNumber) continue;
@@ -418,14 +580,59 @@ public sealed partial class ExplorerPane
             item.ToolTipText = reason is null ? "" : text.T(reason);
         }
         menu.Items.Add(move);
-        menu.Items.Add(text.T("Move group to new window"), null,
-            (_, _) => MoveGroupToWindowRequested?.Invoke(this, group));
+        Command(group.Collapsed ? "Expand group" : "Collapse group", group.Collapsed ? "\uE70D" : "\uE70E",
+            () => SetGroupCollapsed(group, !group.Collapsed));
+        var save = Command("Save group", "\uE74E", () => SaveGroupRequested?.Invoke(this, group));
+        save.Checked = ExistingSavedId(group.SavedId, group) is not null;
+        menu.Items.Add(new ToolStripSeparator());
+        Command("Close group", "\uE8BB", () => CloseGroup(group), "Alt+Shift+W");
+        Command("Ungroup", "\uE71B", () => Ungroup(group));
+        if (ExistingSavedId(group.SavedId, group) is { } savedId)
+            Command("Delete group", "\uE74D", () =>
+            {
+                CloseGroup(group);
+                DeleteSavedGroupRequested?.Invoke(savedId);
+            });
         menu.Closing += (_, _) => RenameGroup(group, name.Text);
         // WinForms finishes native menu teardown after Closed returns.
         menu.Closed += (_, _) => menu.BeginInvoke(() => menu.Dispose());
+        int contentWidth = Math.Max(Scale(300), menu.Items.OfType<ToolStripMenuItem>()
+            .Max(item => item.GetPreferredSize(Size.Empty).Width));
+        // Menu rows paint across the native image-gutter area; hosted fields use DefaultPadding.
+        // Explicit popup width avoids the native shortcut/arrow columns adding an extra field inset.
+        foreach (var item in menu.Items.OfType<ToolStripMenuItem>())
+        {
+            int height = item.GetPreferredSize(Size.Empty).Height;
+            item.AutoSize = false;
+            item.Size = new Size(contentWidth + inset * 2, height);
+            item.Margin = Padding.Empty;
+        }
+        foreach (var separator in menu.Items.OfType<ToolStripSeparator>())
+        {
+            separator.AutoSize = false;
+            separator.Size = new Size(contentWidth, Scale(9));
+            separator.Margin = Padding.Empty;
+        }
+        name.Width = contentWidth - Scale(14);
+        colors.Size = colorHost.Size = new Size(contentWidth, Scale(32));
+        // Equal hit-target slots leave room for each complete circle instead of a dot-sized final button.
+        // The dots themselves span the row with equal gaps, including their antialiased edge and ring.
+        for (int index = 0; index < colors.Items.Count; index++)
+        {
+            int left = contentWidth * index / colors.Items.Count;
+            int right = contentWidth * (index + 1) / colors.Items.Count;
+            colors.Items[index].Size = new Size(right - left, Scale(32));
+        }
         Theme.Apply(menu);
+        menu.AutoSize = false;
+        menu.Size = new Size(contentWidth + inset * 2, menu.PreferredSize.Height);
+        name.BackColor = name.TextBox.BackColor = Theme.Hover;
+        name.ForeColor = name.TextBox.ForeColor = Theme.Text;
         var chip = groupChips[group];
         menu.Show(tabStrip, new Point(chip.Bounds.Left, chip.Bounds.Bottom));
-        if (focusName) { name.Focus(); name.SelectAll(); }
+        name.Focus();
+        name.SelectAll();
+        var cue = new GroupNameCue(name.TextBox);
+        menu.Closed += (_, _) => cue.Dispose();
     }
 }

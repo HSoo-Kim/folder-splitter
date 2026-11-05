@@ -16,8 +16,40 @@ internal static class TabGroupPersistenceTests
         ("group normalization preserves caller data and is idempotent", DoesNotMutate),
         ("groups roundtrip across active and hidden panes", SessionRoundtrip),
         ("workspace groups share session normalization and storage", WorkspaceRoundtrip),
-        ("window groups normalize and roundtrip independently with legacy projection and workspaces", WindowGroupsRoundtrip)
+        ("window groups normalize and roundtrip independently with legacy projection and workspaces", WindowGroupsRoundtrip),
+        ("pinned prefix clamps, excludes group membership and survives sessions and workspaces", PinnedPrefix)
     ];
+
+    private static void PinnedPrefix()
+    {
+        var original = new PaneState
+        {
+            Tabs = ["C:\\one", "", "C:\\two", "C:\\three"], PinnedCount = 3,
+            Groups = [new() { Start = 0, Count = 4, Name = "Overlap" }]
+        };
+        var state = SessionStore.Normalize(new SessionState
+        {
+            Panes = [original],
+            Workspaces = [new() { Name = "Pins", Panes = [original] }]
+        });
+        Equal(2, state.Panes[0].PinnedCount);
+        Equal(2, state.Panes[0].Groups.Single().Start);
+        Equal(1, state.Panes[0].Groups.Single().Count);
+        Equal(2, state.Workspaces[0].Panes[0].PinnedCount);
+        Equal(3, original.PinnedCount);
+        Equal(0, SessionStore.Normalize(new SessionState { Panes = [original with { PinnedCount = -1 }] }).Panes[0].PinnedCount);
+        Equal(3, SessionStore.Normalize(new SessionState { Panes = [original with { PinnedCount = int.MaxValue }] }).Panes[0].PinnedCount);
+        WithSessionFile(path =>
+        {
+            SessionStore.Save(path, state);
+            var loaded = SessionStore.Load(path);
+            Equal(2, loaded.Panes[0].PinnedCount);
+            Equal(2, loaded.Windows[0].Panes[0].PinnedCount);
+            Equal(2, loaded.Workspaces[0].Panes[0].PinnedCount);
+            var legacy = JsonSerializer.Deserialize<PreGroupsPaneState>(JsonSerializer.Serialize(loaded.Panes[0]));
+            Sequence(loaded.Panes[0].Tabs, legacy!.Tabs!);
+        });
+    }
 
     private static void LegacySessions()
     {
@@ -543,6 +575,7 @@ internal static class TabGroupPersistenceTests
     {
         Sequence(expected.Tabs, actual.Tabs);
         Equal(expected.SelectedTab, actual.SelectedTab);
+        Equal(expected.PinnedCount, actual.PinnedCount);
         Sequence(expected.Groups, actual.Groups);
     }
 

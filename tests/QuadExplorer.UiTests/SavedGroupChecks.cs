@@ -183,13 +183,14 @@ internal static partial class Program
                     for (int y = 0; y < Math.Min(rows.Height, capturedList.ItemHeight); y++)
                         for (int x = 0; x < Math.Min(rows.Width, capturedList.ItemHeight); x++)
                             if (rows.GetPixel(x, y).ToArgb() == dot.ToArgb()) dots++;
-                    Check(dots > 5, $"saved-group {theme} sidebar paints its group-color dot in the first visible row");
+                    Check(dots > 5, $"saved-group {theme} sidebar paints its group-color folder outline in the first visible row");
                     int countInk = 0;
                     for (int y = 0; y < Math.Min(rows.Height, capturedList.ItemHeight); y++)
                         for (int x = Math.Max(0, rows.Width - (int)Math.Round(25 * third.DeviceDpi / 96d)); x < rows.Width; x++)
-                            if (rows.GetPixel(x, y).ToArgb() == Theme.Text.ToArgb()
-                                || rows.GetPixel(x, y).ToArgb() == Theme.Accent.ToArgb()) countInk++;
+                            if (rows.GetPixel(x, y).ToArgb() == Theme.GroupTextColor(thirdGroup.Color).ToArgb()) countInk++;
                     Check(countInk > 3, $"saved-group {theme} keeps the member count visible independently of an ellipsized name");
+                    Check(TgContrast(Theme.GroupTextColor(thirdGroup.Color), Theme.GroupPillColor(thirdGroup.Color)) >= 4.5,
+                        $"saved-group {theme} colored sidebar label remains readable on its pale pill");
                     string output = Path.Combine(Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR")
                         ?? AppContext.BaseDirectory, "artifacts", "saved-groups");
                     Directory.CreateDirectory(output);

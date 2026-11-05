@@ -8,6 +8,20 @@ internal sealed class FolderTabButton : ToolStripButton
     private ToolStrip? dragOwner;
     private TabGroupColor? groupColor;
     private bool multiSelected;
+    private bool pinned;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal bool Pinned
+    {
+        get => pinned;
+        set
+        {
+            if (pinned == value) return;
+            pinned = value;
+            DisplayStyle = value ? ToolStripItemDisplayStyle.Image : ToolStripItemDisplayStyle.ImageAndText;
+            ImageAlign = value ? ContentAlignment.MiddleCenter : ContentAlignment.MiddleLeft;
+            Invalidate();
+        }
+    }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal bool MultiSelected
     {
@@ -37,8 +51,8 @@ internal sealed class FolderTabButton : ToolStripButton
     public event EventHandler? CloseRequested;
     public event EventHandler? DragRequested;
 
-    internal Rectangle CloseBounds => new(Width - CloseWidth, 0, CloseWidth, Height);
-    internal int CloseWidth => (int)Math.Round(28 * (Owner?.DeviceDpi ?? 96) / 96d);
+    internal Rectangle CloseBounds => Pinned ? Rectangle.Empty : new(Width - CloseWidth, 0, CloseWidth, Height);
+    internal int CloseWidth => Pinned ? 0 : (int)Math.Round(28 * (Owner?.DeviceDpi ?? 96) / 96d);
 
     public FolderTabButton()
     {
@@ -117,7 +131,7 @@ internal sealed class FolderTabButton : ToolStripButton
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (Checked || Selected) // the close mark shows on the viewed tab and under the pointer
+        if (!Pinned && (Checked || Selected)) // Pinned tabs deliberately keep only their folder icon.
             Theme.PaintClose(e.Graphics, CloseBounds, Selected ? Theme.Text : Theme.Muted, Owner?.DeviceDpi ?? 96);
         // Draw last: renderer early returns for selected/hovered tabs must never hide membership.
         if (GroupColor is { } color && Width > 0 && Height > 0)

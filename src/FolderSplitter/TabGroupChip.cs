@@ -1,4 +1,3 @@
-using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Text;
 
@@ -105,7 +104,7 @@ internal sealed class TabGroupChip : ToolStripButton
             measuredLabel = TextRenderer.MeasureText(label, Font, Size.Empty,
                 TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         }
-        return new Size(Math.Clamp(measuredLabel.Width + Scale(20), Scale(28), Scale(180)),
+        return new Size(Math.Clamp(measuredLabel.Width + Scale(label.Length == 0 ? 30 : 44), Scale(30), Scale(200)),
             Math.Max(Scale(28), measuredLabel.Height + Scale(12)));
     }
 
@@ -200,34 +199,15 @@ internal sealed class TabGroupChip : ToolStripButton
         var bounds = new Rectangle(inset, inset, Width - inset * 2, Height - inset * 2);
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
         if (Pressed) bounds.Offset(0, Scale(1));
-        Color fill = Theme.GroupColor(Group.Color);
+        Color fill = Theme.GroupPillColor(Group.Color, Selected, Pressed);
         Color foreground = Theme.GroupTextColor(Group.Color);
-        var smoothing = e.Graphics.SmoothingMode;
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var brush = new SolidBrush(fill))
-        {
-            if (labelText.Length == 0)
-            {
-                int diameter = Math.Min(Scale(10), Math.Min(bounds.Width, bounds.Height));
-                e.Graphics.FillEllipse(brush, bounds.Left + (bounds.Width - diameter) / 2,
-                    bounds.Top + (bounds.Height - diameter) / 2, diameter, diameter);
-            }
-            else
-            {
-                int diameter = Math.Min(bounds.Width, bounds.Height);
-                using var pill = new GraphicsPath();
-                pill.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
-                pill.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
-                pill.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-                pill.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
-                pill.CloseFigure();
-                e.Graphics.FillPath(brush, pill);
-            }
-        }
-        e.Graphics.SmoothingMode = smoothing;
+        Theme.PaintGroupPill(e.Graphics, bounds, Group.Color, Selected, Pressed);
+        int icon = Math.Min(Scale(14), bounds.Height - Scale(6));
+        var glyph = new Rectangle(bounds.Left + Scale(7), bounds.Top + (bounds.Height - icon) / 2, icon, icon);
+        Theme.PaintGroupFolder(e.Graphics, glyph, Group.Color);
         if (labelText.Length != 0)
         {
-            var label = Rectangle.Inflate(bounds, -Scale(6), 0);
+            var label = Rectangle.FromLTRB(bounds.Left + Scale(26), bounds.Top, bounds.Right - Scale(7), bounds.Bottom);
             var flags = LabelFlags;
             if (RightToLeft == RightToLeft.Yes) flags |= TextFormatFlags.RightToLeft;
             TextRenderer.DrawText(e.Graphics, labelText, Font, label, foreground, flags);

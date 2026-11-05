@@ -85,7 +85,7 @@ public sealed partial class ExplorerPane
         // A partial old group must remain one run rather than straddling the new chip.
         if (insertion > 0 && insertion < tabs.Count && tabs[insertion - 1].Group is { } before && tabs[insertion].Group == before)
             insertion = tabs.FindLastIndex(tab => tab.Group == before) + 1;
-        foreach (var member in members) member.Group = group;
+        foreach (var member in members) { member.Pinned = false; member.Group = group; }
         tabs.InsertRange(insertion, members);
         FinishGroupMutation(active);
         return group;
@@ -103,7 +103,7 @@ public sealed partial class ExplorerPane
         tabs.RemoveAll(members.Contains);
         int insertion = tabs.FindLastIndex(tab => tab.Group == group) + 1;
         if (insertion == 0) insertion = Math.Min(originalStart, tabs.Count);
-        foreach (var member in members) member.Group = group;
+        foreach (var member in members) { member.Pinned = false; member.Group = group; }
         tabs.InsertRange(insertion, members);
         if (members.Contains(active)) group.Collapsed = false;
         FinishGroupMutation(active);
@@ -129,7 +129,7 @@ public sealed partial class ExplorerPane
     {
         var members = tabs.Where(selection.Contains).ToArray();
         if (members.Length == 0) return;
-        var snapshot = members.Select(tab => new ClosedSelectionTab(tab.Host?.LocationPath, tabs.IndexOf(tab), tab.Group, tab == ActiveTab)).ToArray();
+        var snapshot = members.Select(tab => new ClosedSelectionTab(tab.Host?.LocationPath, tabs.IndexOf(tab), tab.Group, tab == ActiveTab, tab.Pinned)).ToArray();
         var active = ActiveTab;
         bool wasSuppressed = SuppressSavedGroupSync;
         SuppressSavedGroupSync = true;
@@ -189,6 +189,7 @@ public sealed partial class ExplorerPane
                     return [];
                 }
                 copied.Add(tab);
+                if (original.Pinned) SetTabsPinned([tab], true);
             }
             SelectTab(tabs.IndexOf(copied[0]));
             return copied;
@@ -223,6 +224,7 @@ public sealed partial class ExplorerPane
                 }
                 else insertion = GroupBoundary(insertion);
                 var tab = InsertTab(entry.Path, select: false, countVisit: false, group: group, insertionIndex: insertion)!;
+                if (entry.Pinned) SetTabsPinned([tab], true);
                 restored.Add(tab);
                 if (entry.Active) active = tab;
             }

@@ -3,9 +3,9 @@ namespace QuadExplorer;
 public sealed partial class ExplorerPane
 {
     private sealed record ClosedGroup(string Name, TabGroupColor Color, string?[] Paths, int SelectedMember, string? SavedId);
-    private sealed record ClosedSelectionTab(string? Path, int Index, TabGroup? Group, bool Active);
+    private sealed record ClosedSelectionTab(string? Path, int Index, TabGroup? Group, bool Active, bool Pinned);
     private sealed record ClosedTabEntry(string? Path, ClosedGroup? Group = null, TabGroup? OriginalGroup = null,
-        ClosedSelectionTab[]? Selection = null)
+        ClosedSelectionTab[]? Selection = null, bool Pinned = false)
     {
         internal int Count => Selection?.Length ?? Group?.Paths.Length ?? 1;
     }

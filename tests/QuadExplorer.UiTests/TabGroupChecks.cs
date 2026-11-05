@@ -35,6 +35,7 @@ internal static partial class Program
                     TgGroupDrags(form);
                     TgAppearance(form, pane);
                     await TgPolish(form, pane, paths);
+                    await TgChromeRefinements(form, pane, paths);
 
                     // Persist real folders through MainForm, with a blank group member omitted from disk.
                     pane.ReplaceTabs(new PaneState { Tabs = paths.Take(6).ToList() });
@@ -125,6 +126,8 @@ internal static partial class Program
             "A group holds up to 12 tabs.", "Tab group name", "New tab in group", "Collapse group",
             "Expand group", "Ungroup", "Close group", "collapsed", "expanded", "Grey", "Blue",
             "Red", "Yellow", "Green", "Pink", "Purple", "Cyan", "Orange",
+            "Name this group", "Delete group", "Pin tab", "Unpin tab", "Pinned tab: {0}",
+            "The active tab is not in a group.",
             "Move group to pane", "This group is no longer available.",
             "Destination cannot hold this group.\nClose tabs first.",
             "Maximum 4 panes.\nDrop in a pane's center to move the group instead.",
@@ -342,9 +345,13 @@ internal static partial class Program
                 pane.SetGroupColor(group, color);
                 form.Refresh();
                 var chip = TgChip(pane, group);
-                Color fill = Theme.GroupColor(color), ink = Theme.GroupTextColor(color);
-                Check(TgContrast(fill, ink) >= 4.5 && TgContrast(fill, Theme.Canvas) >= 3,
-                    $"{mode}/{color} chip text and group marker have readable contrast");
+                Color fill = Theme.GroupPillColor(color), ink = Theme.GroupTextColor(color);
+                Check(TgContrast(fill, ink) >= 4.5
+                    && TgContrast(Theme.GroupPillColor(color, hover: true), ink) >= 4.5
+                    && TgContrast(Theme.GroupPillColor(color, pressed: true), ink) >= 4.5
+                    && TgContrast(Theme.GroupBorderColor(color), Theme.Canvas) >= 1.5
+                    && TgContrast(Theme.GroupColor(color), Theme.Canvas) >= 3,
+                    $"{mode}/{color} pale pill, same-hue text, border and vivid member marker have readable contrast");
                 using var image = TgPrintStrip(pane.TabStrip);
                 Rectangle middle = Rectangle.Inflate(chip.Bounds, -6, -4);
                 Check(TgPixels(image, middle, fill) >= 20 && TgPixels(image, middle, ink) >= 2,
@@ -354,7 +361,7 @@ internal static partial class Program
                     Rectangle bounds = tab.Button.Bounds;
                     var underline = new Rectangle(bounds.Left + 6, bounds.Bottom - Math.Max(5, pane.TabStrip.DeviceDpi / 24),
                         Math.Max(1, bounds.Width - 12), Math.Max(5, pane.TabStrip.DeviceDpi / 24));
-                    Check(tab.Button.GroupColor == color && TgPixels(image, underline, fill) >= underline.Width,
+                    Check(tab.Button.GroupColor == color && TgPixels(image, underline, Theme.GroupColor(color)) >= underline.Width,
                         $"{mode}/{color} {(tab == pane.ActiveTab ? "selected" : "idle")} member retains its visible underline");
                 }
                 TgSave(image, Path.Combine(output, $"tab-groups-{mode}-{color.ToString().ToLowerInvariant()}.png"));
@@ -374,7 +381,7 @@ internal static partial class Program
         {
             Check(TgChip(pane, group).Text!.Length == 0
                 && TgPixels(unnamed, TgChip(pane, group).Bounds, Theme.GroupColor(group.Color)) > 10,
-                "PrintWindow renders an unnamed expanded group as a visible colored dot");
+                "PrintWindow renders an unnamed expanded group as a visible outlined folder glyph");
             TgSave(unnamed, Path.Combine(output, "tab-groups-unnamed.png"));
         }
     }

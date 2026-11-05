@@ -130,20 +130,19 @@ public sealed partial class MainForm
         using var background = new SolidBrush(Theme.Sidebar);
         e.Graphics.FillRectangle(background, e.Bounds);
         bool selected = e.State.HasFlag(DrawItemState.Selected);
-        if (selected) Theme.FillRounded(e.Graphics, Rectangle.Inflate(e.Bounds, -2, -2), Theme.Selected, DeviceDpi);
-        else if (hoverRows.GetValueOrDefault(savedGroupPlaces, -1) == e.Index)
-            Theme.FillRounded(e.Graphics, Rectangle.Inflate(e.Bounds, -2, -2), Theme.Hover, DeviceDpi);
         int gap = (int)Math.Round(10 * DeviceDpi / 96d);
-        int dot = (int)Math.Round(10 * DeviceDpi / 96d);
+        int dot = (int)Math.Round(16 * DeviceDpi / 96d);
         Enum.TryParse<TabGroupColor>(item.Group.Color, out var color);
-        using var brush = new SolidBrush(Theme.GroupColor(color));
-        e.Graphics.FillEllipse(brush, e.Bounds.Left + gap, e.Bounds.Top + (e.Bounds.Height - dot) / 2, dot, dot);
+        Theme.PaintGroupPill(e.Graphics, Rectangle.Inflate(e.Bounds, -2, -2), color,
+            hover: selected || hoverRows.GetValueOrDefault(savedGroupPlaces, -1) == e.Index);
+        Theme.PaintGroupFolder(e.Graphics, new Rectangle(e.Bounds.Left + gap,
+            e.Bounds.Top + (e.Bounds.Height - dot) / 2, dot, dot), color);
         string count = item.Group.Paths.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
         int countWidth = TextRenderer.MeasureText(count, Font, Size.Empty, TextFormatFlags.NoPadding).Width;
         var countBounds = new Rectangle(e.Bounds.Right - gap - countWidth, e.Bounds.Top, countWidth, e.Bounds.Height);
         var bounds = new Rectangle(e.Bounds.Left + dot + gap * 2, e.Bounds.Top,
             Math.Max(0, countBounds.Left - e.Bounds.Left - dot - gap * 3), e.Bounds.Height);
-        Color foreground = selected ? Theme.Accent : Theme.Text;
+        Color foreground = Theme.GroupTextColor(color);
         TextRenderer.DrawText(e.Graphics, SavedGroupLabel(item.Group), Font, bounds, foreground,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         TextRenderer.DrawText(e.Graphics, count, Font, countBounds, foreground,

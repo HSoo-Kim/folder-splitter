@@ -12,6 +12,7 @@ public sealed record PaneState
 {
     public List<string> Tabs { get; init; } = [];
     public int SelectedTab { get; init; }
+    public int PinnedCount { get; init; }
     public List<TabGroupState> Groups { get; init; } = [];
 }
 
@@ -247,7 +248,7 @@ public static class SessionStore
         {
             var pane = window.Panes is not null && index < window.Panes.Count ? window.Panes[index] : null;
             var tabs = new List<string>();
-            List<int>? savedTabSlots = pane?.Groups is { Count: > 0 } ? [] : null;
+            List<int> savedTabSlots = [];
             if (pane?.Tabs is not null)
             {
                 for (int slot = 0; slot < pane.Tabs.Count; slot++)
@@ -255,7 +256,7 @@ public static class SessionStore
                     string? tab = pane.Tabs[slot];
                     if (string.IsNullOrWhiteSpace(tab))
                         continue;
-                    savedTabSlots?.Add(slot);
+                    savedTabSlots.Add(slot);
                     tabs.Add(tab);
                     if (tabs.Count == 32)
                         break;
@@ -268,7 +269,9 @@ public static class SessionStore
             {
                 Tabs = tabs,
                 SelectedTab = tabs.Count == 0 ? -1 : Math.Clamp(pane?.SelectedTab ?? 0, 0, tabs.Count - 1),
-                Groups = NormalizeTabGroups(pane?.Groups, pane?.Tabs?.Count ?? 0, savedTabSlots)
+                PinnedCount = savedTabSlots.Count(slot => slot < Math.Max(0, pane?.PinnedCount ?? 0)),
+                Groups = NormalizeTabGroups(pane?.Groups, pane?.Tabs?.Count ?? 0, savedTabSlots,
+                    Math.Clamp(pane?.PinnedCount ?? 0, 0, pane?.Tabs?.Count ?? 0))
             });
         }
 
@@ -342,7 +345,7 @@ public static class SessionStore
     }
 
     private static List<TabGroupState> NormalizeTabGroups(
-        IReadOnlyList<TabGroupState>? source, int originalTabCount, IReadOnlyList<int>? savedTabSlots)
+        IReadOnlyList<TabGroupState>? source, int originalTabCount, IReadOnlyList<int>? savedTabSlots, int pinnedCount = 0)
     {
         var groups = new List<TabGroupState>();
         if (source is null || savedTabSlots is null || savedTabSlots.Count == 0)
@@ -374,7 +377,7 @@ public static class SessionStore
             for (int slot = 0; slot < savedTabSlots.Count; slot++)
             {
                 int originalSlot = savedTabSlots[slot];
-                if (originalSlot < group.Start)
+                if (originalSlot < group.Start || originalSlot < pinnedCount)
                     continue;
                 if (originalSlot >= end)
                     break;
