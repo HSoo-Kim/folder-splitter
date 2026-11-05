@@ -1013,14 +1013,15 @@ public sealed partial class ExplorerPane : UserControl
         }
     }
 
-    private string FitTitle(string title, int width)
+    private string FitTitle(string title, int width, bool pinned = false)
     {
-        if (TextWidth(title) <= width) return title;
+        int Measure(string value) => pinned ? PinnedTextWidth(value) : TextWidth(value);
+        if (Measure(title) <= width) return title;
         int low = 0, high = title.Length;
         while (low < high)
         {
             int middle = (low + high + 1) / 2;
-            if (TextWidth(title[..middle] + "\u2026") <= width) low = middle;
+            if (Measure(title[..middle] + "\u2026") <= width) low = middle;
             else high = middle - 1;
         }
         if (low > 0 && char.IsHighSurrogate(title[low - 1])) low--;
@@ -1040,6 +1041,22 @@ public sealed partial class ExplorerPane : UserControl
         }
         if (!textWidths.TryGetValue(value, out int width))
             textWidths[value] = width = TextRenderer.MeasureText(value, tabStrip.Font).Width;
+        return width;
+    }
+
+    private readonly Dictionary<string, int> pinnedTextWidths = [];
+    private Font? measuredPinnedFont;
+
+    private int PinnedTextWidth(string value)
+    {
+        if (!ReferenceEquals(measuredPinnedFont, tabStrip.Font) || pinnedTextWidths.Count > 4096)
+        {
+            pinnedTextWidths.Clear();
+            measuredPinnedFont = tabStrip.Font;
+        }
+        if (!pinnedTextWidths.TryGetValue(value, out int width))
+            pinnedTextWidths[value] = width = TextRenderer.MeasureText(value, tabStrip.Font, Size.Empty,
+                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
         return width;
     }
 

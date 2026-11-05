@@ -147,10 +147,23 @@ internal sealed class FolderTabButton : ToolStripButton
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        base.OnPaint(e);
-        if (Pinned)
+        if (Pinned && Owner is { } strip)
+        {
+            // WinForms' implicit image/text layout reserves its own padding a second time.
+            // Use the same explicit text rectangle for measuring and painting pinned names.
+            strip.Renderer.DrawButtonBackground(new ToolStripItemRenderEventArgs(e.Graphics, this));
+            int Scale(int value) => (int)Math.Round(value * strip.DeviceDpi / 96d);
+            var imageBounds = new Rectangle(Scale(6), (Height - strip.ImageScalingSize.Height) / 2,
+                strip.ImageScalingSize.Width, strip.ImageScalingSize.Height);
+            strip.Renderer.DrawItemImage(new ToolStripItemImageRenderEventArgs(e.Graphics, this, imageBounds));
+            var labelBounds = Rectangle.FromLTRB(Scale(26), 0, Math.Max(Scale(26), PinBounds.Left), Height);
+            var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter;
+            if (Text != Title) flags |= TextFormatFlags.Right;
+            strip.Renderer.DrawItemText(new ToolStripItemTextRenderEventArgs(e.Graphics, this, Text, labelBounds, Theme.Text, Font, flags));
             PaintPin(e.Graphics);
-        else if (Checked || Selected)
+        }
+        else base.OnPaint(e);
+        if (!Pinned && (Checked || Selected))
             Theme.PaintClose(e.Graphics, CloseBounds, Selected ? Theme.Text : Theme.Muted, Owner?.DeviceDpi ?? 96);
         // Pinned tabs never carry group membership, even during a strip rebuild.
         if (!Pinned && GroupColor is { } color && Width > 0 && Height > 0)
@@ -180,7 +193,7 @@ internal sealed class FolderTabButton : ToolStripButton
         // Vector coverage keeps the icon monochrome rather than adding ClearType color fringes.
         var state = graphics.Save();
         var slot = PinBounds;
-        graphics.TranslateTransform(slot.Left + slot.Width / 2f, slot.Height / 2f);
+        graphics.TranslateTransform(slot.Left + (float)Math.Round(8 * dpi / 96d) + .5f, slot.Height / 2f);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         using var fill = new SolidBrush(Checked || Selected ? Theme.Text : Theme.Muted);
         graphics.FillPath(fill, pinPath);

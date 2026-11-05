@@ -271,9 +271,7 @@ internal static partial class Program
 
     private static async Task TgNamedPins(MainForm form, ExplorerPane pane, string[] paths)
     {
-        string[] named = paths.Take(2).Select((path, index) =>
-            Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(path)!, "Pinned research folder " + index + new string('W', 24))).FullName)
-            .Concat(paths.Skip(2).Take(4)).ToArray();
+        string[] named = paths.Take(6).ToArray();
         pane.ReplaceTabs(new PaneState { Tabs = named.ToList(), PinnedCount = 2 });
         var pins = pane.Tabs.Take(2).ToArray();
         var group = pane.CreateGroup(pane.Tabs[2])!;
@@ -297,8 +295,18 @@ internal static partial class Program
                     && button.Width <= (int)Math.Round(180 * pane.TabStrip.DeviceDpi / 96d)
                     && button.Padding.Right == button.PinBounds.Width,
                     mode + " named pin keeps a fitted label before its pin-only action slot within the scaled 180-DIP maximum");
+                int Scale(int value) => (int)Math.Round(value * pane.TabStrip.DeviceDpi / 96d);
+                Check(button.Text == button.Title && button.Width == Math.Min(Scale(180),
+                    TextRenderer.MeasureText(button.Title, button.Font, Size.Empty,
+                        TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width + Scale(54)),
+                    mode + " ample strip paints each pinned folder title in full at its natural icon-name-pin width");
                 TgPinPixels(image, button, mode);
             }
+            Check(pane.Tabs.Skip(2).All(tab => tab.Button.Text == tab.Button.Title && !tab.Button.CloseBounds.IsEmpty
+                && tab.Button.Height == pins[0].Button.Height && tab.Button.Width == Math.Clamp(
+                    TextRenderer.MeasureText(tab.Button.Title, pane.TabStrip.Font).Width + (int)Math.Round(70 * pane.TabStrip.DeviceDpi / 96d),
+                    (int)Math.Round(110 * pane.TabStrip.DeviceDpi / 96d), (int)Math.Round(240 * pane.TabStrip.DeviceDpi / 96d))),
+                mode + " ordinary tabs retain their full names, natural widths, close targets and row height beside named pins");
             TgSave(image, Path.Combine(TgPolishOutput(), "named-pins-" + mode + ".png"));
         }
         form.SetColorTheme("light");
@@ -315,6 +323,15 @@ internal static partial class Program
         foreach (var (language, label) in new[] { ("ko", "고정 해제"), ("en", "Unpin tab"), ("zh-CN", "取消固定"), ("ja", "固定を解除") })
             Check(new UiText(language).T("Unpin tab") == label, language + " pin tooltip and tab menu share the localized unpin action");
 
+        named = paths.Take(2).Select((path, index) =>
+            Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(path)!, "Pinned research folder " + index + new string('W', 24))).FullName)
+            .Concat(paths.Skip(2).Take(4)).ToArray();
+        pane.ReplaceTabs(new PaneState { Tabs = named.ToList(), PinnedCount = 2 });
+        pins = pane.Tabs.Take(2).ToArray();
+        group = pane.CreateGroup(pane.Tabs[2])!;
+        pane.AddToGroup(pane.Tabs[3], group);
+        pane.RenameGroup(group, "Research");
+        pane.SelectTab(0, focus: false);
         DockStyle dock = pane.Dock;
         Rectangle bounds = pane.Bounds;
         pane.Dock = DockStyle.None;
@@ -327,7 +344,10 @@ internal static partial class Program
                 && tab.Button.Available && pane.TabStrip.ClientRectangle.Contains(tab.Button.Bounds)),
                 "crowded pinned names shrink with ellipsis before ordinary tabs and remain a visible in-bounds prefix");
             using (var image = TgPrintStrip(pane.TabStrip))
+            {
+                foreach (var tab in pins) TgPinTextGap(image, tab.Button);
                 TgSave(image, Path.Combine(TgPolishOutput(), "named-pins-crowded.png"));
+            }
             pane.Width = 420;
             pane.PerformLayout();
             await NativeAppearanceDispatch(form);
@@ -358,7 +378,7 @@ internal static partial class Program
         var slot = button.PinBounds;
         slot.Offset(button.Bounds.Location);
         // Scan only the icon interior; rounded tab edges and the divider are not icon pixels.
-        slot.Inflate(-(int)Math.Round(5 * button.Owner!.DeviceDpi / 96d), -5);
+        slot = new Rectangle(slot.Left + 1, slot.Top + 5, (int)Math.Round(18 * button.Owner!.DeviceDpi / 96d), slot.Height - 10);
         Color foreground = button.Checked || button.Selected ? Theme.Text : Theme.Muted;
         Color background = image.GetPixel(slot.Left, slot.Top);
         int dr = foreground.R - background.R, dg = foreground.G - background.G, db = foreground.B - background.B;
@@ -376,6 +396,27 @@ internal static partial class Program
             }
         Check(ink > 3 && fringes == 0 && TgContrast(foreground, background) >= 3,
             context + (button.Checked ? " active" : " inactive") + $" pin is readable monochrome text-color ink without colored fringes (ink={ink}, fringes={fringes})");
+    }
+
+    private static void TgPinTextGap(Bitmap image, FolderTabButton button)
+    {
+        int Scale(int value) => (int)Math.Round(value * button.Owner!.DeviceDpi / 96d);
+        int boundary = button.Bounds.Left + button.PinBounds.Left;
+        int lastText = -1, firstPin = int.MaxValue;
+        // Only scan the vertically centered ink run, away from the raised tab's outline.
+        for (int y = button.Bounds.Top + Scale(6); y < button.Bounds.Bottom - Scale(6); y++)
+            for (int x = button.Bounds.Left + Scale(26); x < boundary + Scale(18); x++)
+            {
+                Color pixel = image.GetPixel(x, y);
+                Color ink = x < boundary ? button.ForeColor : button.Checked || button.Selected ? Theme.Text : Theme.Muted;
+                if (Math.Abs(pixel.R - ink.R) + Math.Abs(pixel.G - ink.G) + Math.Abs(pixel.B - ink.B) > 80) continue;
+                if (x < boundary) lastText = Math.Max(lastText, x);
+                else firstPin = Math.Min(firstPin, x);
+            }
+        int gap = firstPin - lastText - 1;
+        Check(lastText >= 0 && firstPin < int.MaxValue && gap >= 0 && gap <= Scale(6),
+            "truncated pinned name uses the full text slot and ends within six DIP of the pin glyph"
+                + $" (gap={gap}, maximum={Scale(6)})");
     }
 
     private static void TgEditorColorPixels(ContextMenuStrip menu, ToolStrip colors, Bitmap image, string context)

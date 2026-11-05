@@ -15,7 +15,7 @@ public sealed partial class ExplorerPane
         int pinMargins = 0;
         for (int index = 0; index < pinCount; index++)
         {
-            pinNatural[index] = Math.Clamp(TextWidth(tabs[index].Button.Title) + pinChrome, Scaled(90), Scaled(180));
+            pinNatural[index] = Math.Min(PinnedTextWidth(tabs[index].Button.Title) + pinChrome, Scaled(180));
             pinMargins += tabs[index].Button.Margin.Horizontal;
         }
         var items = new List<ToolStripItem>();
@@ -84,8 +84,8 @@ public sealed partial class ExplorerPane
             button.Padding = new Padding(0, 0, button.ActionWidth, 0);
             button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
             button.ImageAlign = ContentAlignment.MiddleLeft;
-            button.Text = width <= compactPin || width - pinChrome < TextWidth("\u2026")
-                ? "" : FitTitle(button.Title, width - pinChrome);
+            button.Text = width <= compactPin || width - pinChrome < PinnedTextWidth("\u2026")
+                ? "" : FitTitle(button.Title, width - pinChrome, pinned: true);
             button.PathToolTip = tab.Host?.LocationPath ?? text.T("New tab");
             button.UnpinToolTip = text.T("Unpin tab");
             button.ToolTipText = button.PathToolTip;
