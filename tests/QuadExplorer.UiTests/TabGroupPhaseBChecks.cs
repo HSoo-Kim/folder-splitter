@@ -92,17 +92,7 @@ internal static partial class Program
 
     private static void TgMoveMenu(ExplorerPane pane, TabGroup group, int targetNumber)
     {
-        typeof(ExplorerPane).GetMethod("ShowGroupMenu", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(pane, [group]);
-        ContextMenuStrip? menu = null;
-        EnumThreadWindows(GetCurrentThreadId(), (window, _) =>
-        {
-            if (Control.FromHandle(window) is ContextMenuStrip { Visible: true } candidate
-                && candidate.Items.OfType<ToolStripMenuItem>().Any(item => item.Text == "Move group to pane"))
-                menu = candidate;
-            return true;
-        }, 0);
-        if (menu is null) throw new InvalidOperationException("Group chip did not open its context menu.");
+        var menu = TgOpenGroupMenu(pane, group);
         try
         {
             var move = menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "Move group to pane");
@@ -350,19 +340,15 @@ internal static partial class Program
                 "actual button drag resolves its destination through the visible overlay");
             if (markerCapture is not null)
             {
-                double opacity = overlay.Opacity;
-                // PrintWindow can return a black bitmap for layered windows on a private desktop.
-                overlay.Opacity = 1;
-                try
-                {
-                    using var image = PrintForm(overlay, 3);
-                    Rectangle strip = pane.TabStrip.RectangleToScreen(pane.TabStrip.ClientRectangle);
-                    strip.Offset(-overlay.Left, -overlay.Top);
-                    TgSave(image, markerCapture);
-                    Check(TgPixels(image, strip, Theme.Accent) >= Math.Max(4, strip.Height / 2),
-                        "PrintWindow captures the accent insertion marker on the tab strip during the intercepted drag");
-                }
-                finally { overlay.Opacity = opacity; }
+                // PrintWindow intermittently returns black for layered forms on a private desktop.
+                // DrawToBitmap sends WM_PRINT to the actual overlay's managed paint path instead.
+                using var image = new Bitmap(overlay.ClientSize.Width, overlay.ClientSize.Height);
+                overlay.DrawToBitmap(image, overlay.ClientRectangle);
+                Rectangle strip = pane.TabStrip.RectangleToScreen(pane.TabStrip.ClientRectangle);
+                strip.Offset(-overlay.Left, -overlay.Top);
+                TgSave(image, markerCapture);
+                Check(TgPixels(image, strip, Theme.Accent) >= Math.Max(4, strip.Height / 2),
+                    "rendered overlay contains the accent insertion marker on the tab strip during the intercepted drag");
             }
             if (cancel)
             {

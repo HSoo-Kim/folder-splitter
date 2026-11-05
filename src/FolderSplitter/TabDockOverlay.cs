@@ -1,7 +1,7 @@
 namespace QuadExplorer;
 
 internal sealed record TabDropPlan(int TargetPane, SplitEdge? Edge, Rectangle Preview, string Label, bool Allowed,
-    int? InsertionIndex = null);
+    int? InsertionIndex = null, TabGroup? JoinGroup = null);
 
 // Shown only while dragging one of our tabs. Native Shell file drops otherwise
 // continue to go directly to the Shell views beneath this window.

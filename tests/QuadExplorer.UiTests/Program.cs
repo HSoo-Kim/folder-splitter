@@ -1696,8 +1696,8 @@ internal static partial class Program
                         Check(menu.Items[0].Text == text.T("Refresh    F5")
                             && menu.Items[4].Text == text.T("Choose folder..."), language + " pane options translate");
                         menu.Close();
-                        typeof(ExplorerPane).GetMethod("ShowTabMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-                            .Invoke(pane, [0]);
+                        pane.SelectTab(0, focus: false);
+                        TgRightClick(pane, pane.Tabs[0].Button);
                         Check(menu.Items[0].Text == text.T("New tab")
                             && menu.Items.OfType<ToolStripMenuItem>().Any(item => item.Text == text.T("Move tab to pane")
                                 && item.DropDownItems[0].Text == text.T("Pane {0}", 2))

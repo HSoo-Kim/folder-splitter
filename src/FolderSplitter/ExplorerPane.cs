@@ -47,6 +47,9 @@ public sealed partial class ExplorerPane : UserControl
         public ShellViewHost? Host { get; set; }
         public FolderTabButton Button { get; } = button;
         public TabGroup? Group { get; set; }
+        internal string? AccessibleTitle { get; set; }
+        internal string? AccessibleGroupLabel { get; set; }
+        internal string? AccessibleLanguage { get; set; }
     }
     private readonly List<FolderTab> tabs = [];
     private readonly UiText text;
@@ -510,7 +513,8 @@ public sealed partial class ExplorerPane : UserControl
     // A tab with no folder yet: the address bar takes focus so the user can type a path or search.
     public void AddBlankTab() => InsertTab(null, select: true);
 
-    private FolderTab? InsertTab(string? path, bool select, bool countVisit = true, TabGroup? group = null)
+    private FolderTab? InsertTab(string? path, bool select, bool countVisit = true, TabGroup? group = null,
+        int? insertionIndex = null)
     {
         if (tabs.Count >= 32) { SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first."); return null; }
         if (group is not null && GroupMembers(group).Count >= TabGroup.MaxTabs)
@@ -538,10 +542,13 @@ public sealed partial class ExplorerPane : UserControl
         };
         var active = ActiveTab;
         int lastMember = group is null ? -1 : tabs.FindLastIndex(member => member.Group == group);
-        int insertion = lastMember < 0 ? tabs.Count : lastMember + 1;
+        int insertion = insertionIndex ?? (lastMember < 0 ? tabs.Count : lastMember + 1);
         tabs.Insert(insertion, tab);
         selectedIndex = active is null ? -1 : tabs.IndexOf(active);
-        SynchronizeGroupStrip();
+        if (group is null && groupChips.Count == 0)
+            tabStrip.Items.Insert(insertion + 1 < tabs.Count
+                ? tabStrip.Items.IndexOf(tabs[insertion + 1].Button) : tabStrip.Items.IndexOf(newTab), button);
+        else SynchronizeGroupStrip();
         if (path is not null) AttachHost(tab, path, countVisit);
         if (select) SelectTab(insertion);
         else LayoutTabs();
@@ -560,7 +567,7 @@ public sealed partial class ExplorerPane : UserControl
         tab.Host = host;
         var button = tab.Button;
         button.Title = host.DisplayName;
-        button.AccessibleName = $"Folder tab: {host.DisplayName}";
+        UpdateTabAccessibleName(tab);
         host.SelectionChanged += (_, _) =>
         {
             if (host != ActiveView) return;
@@ -574,7 +581,6 @@ public sealed partial class ExplorerPane : UserControl
             host.ApplyListFont();
             button.Title = host.DisplayName;
             LayoutTabs();
-            button.AccessibleName = $"Folder tab: {host.DisplayName}";
             if (host == ActiveView) { selectionSummary = null; address.Text = host.LocationPath; UpdateStatus(); ShowBreadcrumb(); }
             StateChanged?.Invoke(this, EventArgs.Empty);
         };
@@ -649,25 +655,33 @@ public sealed partial class ExplorerPane : UserControl
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public void CloseTab(int index = -1, bool remember = true)
+    public void CloseTab(int index = -1, bool remember = true) => CloseTabCore(index, remember, selectReplacement: true);
+
+    private void CloseTabCore(int index, bool remember, bool selectReplacement)
     {
         if (index < 0) index = selectedIndex;
         if (index < 0 || index >= tabs.Count) return;
         var tab = tabs[index];
+        var active = ActiveTab;
         int nextIndex = selectedIndex > index ? selectedIndex - 1 : Math.Min(selectedIndex, tabs.Count - 2);
         tabs.RemoveAt(index);
-        selectedIndex = -1;
-        SynchronizeGroupStrip();
+        selectedIndex = active == tab || active is null ? -1 : tabs.IndexOf(active);
+        if (tab.Group is not null || groupChips.Count > 0) SynchronizeGroupStrip();
         tabStrip.Items.Remove(tab.Button);
-        if (remember) RememberClosedTab(new ClosedTabEntry(tab.Host?.LocationPath));
+        if (remember) RememberClosedTab(new ClosedTabEntry(tab.Host?.LocationPath, OriginalGroup: tab.Group));
         if (tab.Host is { } host)
         {
             contents.Controls.Remove(host);
             host.Dispose();
         }
         tab.Button.Dispose();
-        selectedIndex = -1;
-        if (tabs.Count == 0) { ShowEmptyState(); LayoutTabs(); }
+        if (tabs.Count == 0) { selectedIndex = -1; ShowEmptyState(); LayoutTabs(); }
+        else if (selectedIndex >= 0)
+        {
+            UpdateStatus();
+            LayoutTabs();
+        }
+        else if (!selectReplacement) LayoutTabs();
         else
         {
             int next = Math.Max(0, nextIndex);
@@ -695,8 +709,10 @@ public sealed partial class ExplorerPane : UserControl
             ? AddGroup(group.Paths, group.Name, group.Color, selectedMember: group.SelectedMember) : null;
         if (entry.Group is null)
         {
-            if (entry.Path is { } path) AddTab(path);
-            else AddBlankTab();
+            var original = entry.OriginalGroup;
+            if (original is not null && (!groupChips.ContainsKey(original)
+                || tabs.Count(tab => tab.Group == original) >= TabGroup.MaxTabs)) original = null;
+            InsertTab(entry.Path, select: true, group: original);
         }
         TabReopened?.Invoke(this, EventArgs.Empty);
     }
@@ -938,6 +954,7 @@ public sealed partial class ExplorerPane : UserControl
                 button.Text = FitTitle(button.Title, widths[i] - chrome);
                 button.ToolTipText = (tabs[i].Host?.LocationPath ?? text.T("New tab")) + Environment.NewLine
                     + text.T(i == selectedIndex ? "Close current tab (Ctrl+W)" : "Select this tab, then close with Ctrl+W");
+                UpdateTabAccessibleName(tabs[i]);
                 button.Visible = i >= first && i < first + shown;
             }
             tabList.Visible = shown < count;
@@ -1004,13 +1021,13 @@ public sealed partial class ExplorerPane : UserControl
         return true;
     }
 
-    private void ShowTabMenu(int index)
+    private void ShowTabMenu(int index, bool keyboard = false)
     {
         if (index < 0) return;
         SelectTab(index, focus: false);
         tabMenu.Items.Clear();
         tabMenu.Items.Add(text.T("New tab"), null, (_, _) => AddBlankTab());
-        tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => AddTab(CurrentPath)).Enabled = ActiveView is not null;
+        tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => DuplicateTab(tabs[index])).Enabled = ActiveView is not null;
         tabMenu.Items.Add(text.T("Reopen closed tab"), null, (_, _) => ReopenTab()).Enabled = CanReopenTab;
         AddGroupTabMenu(tabMenu, tabs[index]);
         var move = new ToolStripMenuItem(text.T("Move tab to pane"));
@@ -1039,7 +1056,8 @@ public sealed partial class ExplorerPane : UserControl
             var keep = tabs[selectedIndex];
             for (int i = tabs.Count - 1; i >= 0; i--) if (tabs[i] != keep) CloseTab(i);
         }).Enabled = tabs.Count > 1;
-        tabMenu.Show(Cursor.Position);
+        if (keyboard) tabMenu.Show(tabStrip, new Point(tabs[index].Button.Bounds.Left, tabs[index].Button.Bounds.Bottom));
+        else tabMenu.Show(Cursor.Position);
     }
 
     private void ShowOptions()
@@ -1107,7 +1125,18 @@ public sealed partial class ExplorerPane : UserControl
         while (tabs.Count > 0) CloseTab(tabs.Count - 1, remember: false);
         foreach (string path in state.Tabs) AddTab(path, select: false, countVisit: false);
         RestoreGroups(state.Groups);
-        if (tabs.Count > 0) SelectTab(Math.Clamp(state.SelectedTab, 0, tabs.Count - 1), focus: false);
+        if (tabs.Count == 0) return;
+        int selected = Math.Clamp(state.SelectedTab, 0, tabs.Count - 1);
+        if (tabs[selected].Group is { Collapsed: true } group)
+        {
+            if (!SelectOutsideGroup(group, focus: false))
+            {
+                // A saved full pane may have every group collapsed; do not expand one on restore.
+                ShowEmptyState();
+                LayoutTabs();
+            }
+        }
+        else SelectTab(selected, focus: false);
     }
 
     // Path segments for the breadcrumb: the root (drive or UNC share) and each folder below it.

@@ -1,5 +1,6 @@
 using System.Drawing.Drawing2D;
 using System.Globalization;
+using System.Text;
 
 namespace QuadExplorer;
 
@@ -12,6 +13,17 @@ internal sealed class TabGroupChip : ToolStripButton
     private bool dragged;
     private Point pressPosition;
     private ToolStrip? dragOwner;
+    private string? labelName;
+    private string? labelLanguage;
+    private int labelCount = -1;
+    private bool labelCollapsed;
+    private TabGroupColor labelColor;
+    private Color labelFill;
+    private readonly string?[] memberTitles = new string?[TabGroup.MaxTabs];
+    private string? measuredText;
+    private Font? measuredFont;
+    private int measuredDpi;
+    private Size measuredLabel;
     internal event Action? DragRequested;
 
     internal TabGroup Group { get; }
@@ -28,29 +40,81 @@ internal sealed class TabGroupChip : ToolStripButton
         Padding = Padding.Empty;
     }
 
-    internal void RefreshLabel(UiText text, int count)
+    internal int MinimumLabelWidth => Math.Min(GetPreferredSize(Size.Empty).Width,
+        Scale(28));
+
+    internal void RefreshLabel(UiText text, IReadOnlyList<ExplorerPane.FolderTab> members, int first, int count)
     {
         string name = Group.Name;
-        if (Group.Collapsed)
+        bool labelChanged = labelName != name || labelLanguage != text.Language || labelCount != count
+            || labelCollapsed != Group.Collapsed || labelColor != Group.Color;
+        if (labelChanged)
         {
-            string number = count.ToString(CultureInfo.GetCultureInfo(text.Language));
-            Text = name.Length == 0 ? number : $"{name} {number}";
+            labelName = name;
+            labelLanguage = text.Language;
+            labelCount = count;
+            labelCollapsed = Group.Collapsed;
+            labelColor = Group.Color;
+            string label = name;
+            if (Group.Collapsed)
+            {
+                string number = count.ToString(CultureInfo.GetCultureInfo(text.Language));
+                label = name.Length == 0 ? number : $"{name} {number}";
+            }
+            if (Text != label) Text = label;
+            string displayName = name.Length == 0 ? text.T(Group.Color.ToString()) : name;
+            string accessibleName = text.T("Tab group: {0}, {1} tabs, {2}", displayName, count,
+                text.T(Group.Collapsed ? "collapsed" : "expanded"));
+            if (AccessibleName != accessibleName) AccessibleName = accessibleName;
         }
-        else Text = name;
-        string displayName = name.Length == 0 ? text.T(Group.Color.ToString()) : name;
-        AccessibleName = text.T("Tab group: {0}, {1} tabs, {2}", displayName, count,
-            text.T(Group.Collapsed ? "collapsed" : "expanded"));
-        ToolTipText = AccessibleName;
-        ForeColor = Theme.GroupTextColor(Group.Color);
-        Invalidate();
+        bool tooltipChanged = labelChanged;
+        int titleCount = Math.Min(count, TabGroup.MaxTabs);
+        for (int index = 0; index < titleCount; index++)
+        {
+            string title = members[first + index].Button.Title;
+            if (memberTitles[index] == title) continue;
+            memberTitles[index] = title;
+            tooltipChanged = true;
+        }
+        if (tooltipChanged)
+        {
+            var tooltip = new StringBuilder(AccessibleName);
+            for (int index = 0; index < titleCount; index++)
+                tooltip.AppendLine().Append(memberTitles[index]);
+            ToolTipText = tooltip.ToString();
+        }
+        Color foreground = Theme.GroupTextColor(Group.Color);
+        if (ForeColor != foreground) ForeColor = foreground;
+        Color fill = Theme.GroupColor(Group.Color);
+        if (labelFill != fill)
+        {
+            labelFill = fill;
+            Invalidate();
+        }
     }
 
     public override Size GetPreferredSize(Size constrainingSize)
     {
-        Size label = TextRenderer.MeasureText(Text, Font, Size.Empty,
-            TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
-        return new Size(Math.Max(Scale(28), label.Width + Scale(20)),
-            Math.Max(Scale(28), label.Height + Scale(12)));
+        int dpi = Owner?.DeviceDpi ?? 96;
+        string label = Text ?? "";
+        if (measuredText != label || !ReferenceEquals(measuredFont, Font) || measuredDpi != dpi)
+        {
+            measuredText = label;
+            measuredFont = Font;
+            measuredDpi = dpi;
+            measuredLabel = TextRenderer.MeasureText(label, Font, Size.Empty,
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        }
+        return new Size(Math.Clamp(measuredLabel.Width + Scale(20), Scale(28), Scale(180)),
+            Math.Max(Scale(28), measuredLabel.Height + Scale(12)));
+    }
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new GroupAccessibleObject(this);
+
+    private sealed class GroupAccessibleObject(TabGroupChip owner) : ToolStripItemAccessibleObject(owner)
+    {
+        public override AccessibleStates State => base.State
+            | (owner.Group.Collapsed ? AccessibleStates.Collapsed : AccessibleStates.Expanded);
     }
 
     protected override bool ProcessDialogKey(Keys keyData)

@@ -114,9 +114,11 @@ Constantly changing system folders (Windows, `ProgramData`, `AppData` and so on)
 - **1 to 4 panes**: Switch from the top bar or with `Ctrl+1`–`Ctrl+4`. Three panes can also be arranged 2:1 side by side or top and bottom.
 - **Resizing**: Drag the dividers; `Equal size` evens them out again.
 - **Tabs per pane**: Each pane has its own tabs. `+` or `Ctrl+T` opens a blank tab ready for typing; to open the same folder again, right-click the tab → `Duplicate tab`. Closed tabs can be reopened.
-- **Tab groups**: Right-click a tab to create or join a named, colored group (up to 12 tabs). Click its chip, or press Enter/Space while the chip is focused, to collapse or expand it. Collapsed groups remain reachable from the tab list; Ctrl+Tab and the mouse wheel skip their hidden tabs. Group names, colors and collapsed state restore with sessions and workspaces. The chip menu also renames, recolors, ungroups, moves and closes groups. Closing a group is one undoable action; undo restores its members, name, color and selected tab together.
+- **Tab groups**: Right-click a tab to create or join a named, colored group (up to 12 tabs); a new group opens its name editor immediately. Click its chip, or press Enter/Space while the chip is focused, to collapse or expand it. Collapsed groups remain reachable from the tab list; Ctrl+Tab and the mouse wheel skip their hidden tabs. Group names, colors and collapsed state restore with sessions and workspaces. The chip menu also renames, recolors, ungroups, moves and closes groups; unavailable move targets explain why in a tooltip. Closing a group is one undoable action; undo restores its members, name, color and selected tab together. A single reopened tab rejoins its original group if that group still exists and has room.
 - **Tab width and tab list**: Tabs grow and shrink with the folder name, and a lone tab shows more of a long name. With many tabs they shrink evenly; when they still do not fit, the `▾` button next to `+` lists every tab.
-- **Drag tabs into place**: Drag a tab or group chip along its own strip to reorder it; an insertion marker shows the position. A tab dropped between group members joins that group, while a group chip always moves its members together. Drop near a file-list edge to split in that direction, or in another pane's center to move there. Empty panes accept tabs and groups too. Press Esc to cancel a drag.
+- **Drag tabs into place**: Drag a tab or group chip along any pane's strip; an insertion marker shows the destination. A tab dropped between group members, or immediately right of an expanded chip, joins that group. A group chip always moves its members together. Drop near a file-list edge to split in that direction, or in another pane's center to move there. Empty panes accept tabs and groups too. Press Esc to cancel a drag.
+- **Keyboard tab access**: `Ctrl+Shift+F6` focuses the active pane's tab strip. Arrow keys reach tabs and group chips; Enter/Space selects a tab or toggles a chip. Apps or `Shift+F10` opens the focused item's menu below it. `Ctrl+Shift+PageUp` / `Ctrl+Shift+PageDown` moves the current tab left/right, entering or leaving groups at their boundaries. Existing `F6` / `Shift+F6` pane navigation is unchanged.
+- **Related tabs**: Duplicating a tab puts its copy immediately after it in the same group. Folder-tree “Open in new tab” does the same for the active tab's group; favorites and places still open ungrouped tabs at the end. When a group is full, the related tab opens ungrouped immediately after that group.
 - **Empty panes**: New split panes start empty. Type an address or click a sidebar shortcut to open a folder.
 - **Keep the pane you are using**: Switching to one pane keeps the active pane; if it has no tabs, a visible pane with tabs is kept instead. Hidden panes retain their tabs.
 - **Moving between panes**: `F6` goes to the next pane and `Shift+F6` to the previous one, wrapping around. `Alt+1` to `Alt+4` jump straight to that pane; if it isn't open, the status line says so.
@@ -223,6 +225,10 @@ The two apps find files in different ways.
 | `Ctrl+W` in a pane with no tabs | Close that split (keep at least one pane) |
 | `Ctrl+Shift+T` | Restore the last closed tab or empty split |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next/previous tab |
+| `Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` | Move the current tab left/right, across group boundaries |
+| `Ctrl+Shift+F6` | Focus the active pane's tab strip; arrows reach tabs and chips |
+| Apps, `Shift+F10` on a focused tab/chip | Open that item's context menu |
+| Enter, Space on a focused chip | Collapse / expand its group |
 | Mouse wheel or wheel tilt over the tab row | Previous/next tab |
 | `Ctrl+L`, `Alt+D` | Select the address bar |
 | `Ctrl+F` | Filter in this folder (opens a filter box when the command bar is hidden) |
@@ -252,6 +258,8 @@ The two apps find files in different ways.
 - The settings path is unchanged so tabs and favorites from earlier QuadExplorer versions carry over.
 - Run only one app instance at a time against the same settings file.
 - Limits: up to 32 tabs per pane and 100 favorites.
+- If all other tabs are collapsed and a full pane has no room for the blank tab needed outside the active group, that last collapse is refused until a tab is closed.
+- Tab-group metadata is optional: sessions with no groups load unchanged, and unknown group fields are ignored. Versions before tab groups (including 0.8.20) retain the folder tabs but ignore groups and discard their metadata when saving.
 - Frequently opened folders: to rank search results, the app counts how often you open each folder. Only folder paths and counts are kept (at most 100 folders, stored in the settings file, and counts fade over time). Clear them with `Settings` → `Forget frequently opened folders`. Earlier versions ignore this entry.
 - For a disconnected drive or a folder that no longer exists, the app shows an error and you can pick another folder from the address bar.
 - Deleting, overwriting, and conflict handling are delegated to the Windows Shell. The app itself never recursively deletes user files.

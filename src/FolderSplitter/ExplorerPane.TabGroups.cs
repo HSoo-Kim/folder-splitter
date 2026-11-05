@@ -80,17 +80,94 @@ public sealed partial class ExplorerPane
     internal void SetGroupCollapsed(TabGroup group, bool collapsed)
     {
         if (!groupChips.ContainsKey(group) || group.Collapsed == collapsed) return;
+        bool keepStripFocus = tabStrip.ContainsFocus;
         group.Collapsed = collapsed;
-        if (collapsed && ActiveTab?.Group == group)
+        if (collapsed && ActiveTab?.Group == group && !SelectOutsideGroup(group, focus: !keepStripFocus))
         {
-            int first = tabs.FindIndex(tab => tab.Group == group);
-            int last = tabs.FindLastIndex(tab => tab.Group == group);
-            int next = last + 1 < tabs.Count ? last + 1 : first - 1;
-            if (next >= 0) SelectTab(next);
-            else AddBlankTab();
+            // A completely grouped, full pane cannot make room for the visible blank tab.
+            group.Collapsed = false;
+            SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first.");
         }
         LayoutTabs();
+        if (keepStripFocus && groupChips.TryGetValue(group, out var chip) && chip.Available) chip.Select();
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private int FindTabOutsideGroup(TabGroup group)
+    {
+        int first = tabs.FindIndex(tab => tab.Group == group);
+        int last = tabs.FindLastIndex(tab => tab.Group == group);
+        if (first < 0) return -1;
+        int next = last + 1 < tabs.Count
+            ? tabs.FindIndex(last + 1, tab => tab.Group?.Collapsed != true) : -1;
+        return next >= 0 || first == 0 ? next
+            : tabs.FindLastIndex(first - 1, tab => tab.Group?.Collapsed != true);
+    }
+
+    private bool SelectOutsideGroup(TabGroup group, bool focus = true)
+    {
+        int next = FindTabOutsideGroup(group);
+        if (next >= 0) { SelectTab(next, focus); return true; }
+        int insertion = tabs.FindLastIndex(tab => tab.Group == group) + 1;
+        var blank = InsertTab(null, select: false, insertionIndex: insertion);
+        if (blank is null) return false;
+        SelectTab(tabs.IndexOf(blank), focus);
+        return true;
+    }
+
+    internal void AddRelatedTab(string path)
+    {
+        if (ActiveTab is not { } active) { AddTab(path); return; }
+        InsertRelatedTab(active, path);
+    }
+
+    private void DuplicateTab(FolderTab original)
+    {
+        if (original.Host is { } host) InsertRelatedTab(original, host.LocationPath);
+    }
+
+    private void InsertRelatedTab(FolderTab original, string path)
+    {
+        var group = original.Group;
+        int insertion = tabs.IndexOf(original) + 1;
+        if (group is not null && tabs.Count(tab => tab.Group == group) >= TabGroup.MaxTabs)
+        {
+            insertion = tabs.FindLastIndex(tab => tab.Group == group) + 1;
+            group = null;
+        }
+        InsertTab(path, select: true, group: group, insertionIndex: insertion);
+    }
+
+    private void UpdateTabAccessibleName(FolderTab tab)
+    {
+        string? groupLabel = tab.Group is { } group ? GroupLabel(group) : null;
+        if (tab.AccessibleTitle == tab.Button.Title && tab.AccessibleGroupLabel == groupLabel
+            && tab.AccessibleLanguage == text.Language) return;
+        tab.AccessibleTitle = tab.Button.Title;
+        tab.AccessibleGroupLabel = groupLabel;
+        tab.AccessibleLanguage = text.Language;
+        tab.Button.AccessibleName = groupLabel is null ? $"Folder tab: {tab.Button.Title}"
+            : text.T("Folder tab: {0}, group: {1}", tab.Button.Title, groupLabel);
+    }
+
+    internal void FocusTabStrip()
+    {
+        tabStrip.Focus();
+        ToolStripItem? item = ActiveTab?.Button;
+        if (item?.Available != true)
+            item = tabStrip.Items.Cast<ToolStripItem>().FirstOrDefault(candidate => candidate.Available && candidate.CanSelect);
+        item?.Select();
+    }
+
+    internal bool HandleTabStripKey(Keys key)
+    {
+        if (!tabStrip.ContainsFocus || key is not (Keys.Apps or (Keys.Shift | Keys.F10))) return false;
+        var item = tabStrip.Items.Cast<ToolStripItem>().FirstOrDefault(candidate => candidate.Selected);
+        if (item is TabGroupChip chip) ShowGroupMenu(chip.Group, focusName: false);
+        else if (item is FolderTabButton button)
+            ShowTabMenu(tabs.FindIndex(tab => tab.Button == button), keyboard: true);
+        else return false;
+        return true;
     }
 
     internal bool AddTabInGroup(TabGroup group)
@@ -122,7 +199,18 @@ public sealed partial class ExplorerPane
         int selected = ActiveTab is { } active ? members.ToList().IndexOf(active) : -1;
         var snapshot = remember ? new ClosedGroup(group.Name, group.Color,
             members.Select(tab => tab.Host?.LocationPath).ToArray(), Math.Max(0, selected)) : null;
-        foreach (var tab in members.Reverse()) CloseTab(tabs.IndexOf(tab), remember: false);
+        if (selected >= 0)
+        {
+            int next = FindTabOutsideGroup(group);
+            if (next >= 0) SelectTab(next);
+            else
+            {
+                ActiveView?.Hide();
+                selectedIndex = -1;
+            }
+        }
+        foreach (var tab in members.Reverse()) CloseTabCore(tabs.IndexOf(tab), remember: false, selectReplacement: false);
+        if (selected >= 0 && selectedIndex < 0 && tabs.Count > 0) AddBlankTab();
         if (snapshot is null) return;
         RememberClosedTab(new ClosedTabEntry(null, snapshot));
         TabClosed?.Invoke(this, EventArgs.Empty);
@@ -217,7 +305,10 @@ public sealed partial class ExplorerPane
     private void AddGroupTabMenu(ContextMenuStrip menu, FolderTab tab)
     {
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(text.T("Add tab to new group"), null, (_, _) => CreateGroup(tab));
+        menu.Items.Add(text.T("Add tab to new group"), null, (_, _) =>
+        {
+            if (CreateGroup(tab) is { } group) BeginInvoke(() => ShowGroupMenu(group));
+        });
         var add = new ToolStripMenuItem(text.T("Add tab to group"));
         foreach (var group in Groups.Where(group => group != tab.Group))
         {
@@ -254,7 +345,7 @@ public sealed partial class ExplorerPane
         }
     }
 
-    private void ShowGroupMenu(TabGroup group)
+    private void ShowGroupMenu(TabGroup group, bool focusName = true)
     {
         if (!groupChips.ContainsKey(group)) return;
         var menu = new ContextMenuStrip { ShowItemToolTips = true };
@@ -292,15 +383,19 @@ public sealed partial class ExplorerPane
         {
             if (number == PaneNumber) continue;
             int target = number;
-            move.DropDownItems.Add(text.T("Pane {0}", target), null,
+            string? reason = GroupMoveDisabledReason?.Invoke(this, group, target);
+            var item = move.DropDownItems.Add(text.T("Pane {0}", target), null,
                 (_, _) => MoveGroupRequested?.Invoke(this, group, target));
+            item.Enabled = reason is null;
+            item.ToolTipText = reason is null ? "" : text.T(reason);
         }
         menu.Items.Add(move);
         menu.Closing += (_, _) => RenameGroup(group, name.Text);
         // WinForms finishes native menu teardown after Closed returns.
         menu.Closed += (_, _) => BeginInvoke(() => menu.Dispose());
         Theme.Apply(menu);
-        menu.Show(Cursor.Position);
-        name.Focus();
+        var chip = groupChips[group];
+        menu.Show(tabStrip, new Point(chip.Bounds.Left, chip.Bounds.Bottom));
+        if (focusName) { name.Focus(); name.SelectAll(); }
     }
 }

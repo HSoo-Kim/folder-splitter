@@ -3,7 +3,7 @@ namespace QuadExplorer;
 public sealed partial class ExplorerPane
 {
     private sealed record ClosedGroup(string Name, TabGroupColor Color, string?[] Paths, int SelectedMember);
-    private sealed record ClosedTabEntry(string? Path, ClosedGroup? Group = null)
+    private sealed record ClosedTabEntry(string? Path, ClosedGroup? Group = null, TabGroup? OriginalGroup = null)
     {
         internal int Count => Group?.Paths.Length ?? 1;
     }

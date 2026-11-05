@@ -284,6 +284,8 @@ public sealed class MainForm : Form, IMessageFilter
             pane.TabDragRequested += StartTabDrag;
             pane.SplitTabRequested += (source, tab, edge) => DockTab(source, tab, source.PaneNumber - 1, edge);
             pane.MoveGroupRequested += (source, group, number) => DockGroup(source, group, number - 1, null);
+            pane.GroupMoveDisabledReason = (source, group, number) =>
+                CanDockGroup(source, group, number - 1, null, out string reason) ? null : reason;
             pane.GroupDragRequested += StartGroupDrag;
             pane.TransferRequested += (source, move) => { ActivatePane(Array.IndexOf(panes, source)); TransferSelection(move); };
             pane.OpenInOtherPaneRequested += source => { ActivatePane(Array.IndexOf(panes, source)); OpenFolderInOtherPane(); };
@@ -1970,7 +1972,7 @@ public sealed class MainForm : Form, IMessageFilter
         switch (target)
         {
             case FolderTreeTarget.CurrentPane: Active.Navigate(path); break;
-            case FolderTreeTarget.NewTab: Active.AddTab(path); break;
+            case FolderTreeTarget.NewTab: Active.AddRelatedTab(path); break;
             case FolderTreeTarget.NewPane:
                 if (visiblePanes.Length == 4)
                 { Active.SetLocalizedStatus("Maximum 4 panes. Close a pane first."); return; }
@@ -2303,8 +2305,14 @@ public sealed class MainForm : Form, IMessageFilter
         if (effect != DragDropEffects.Move || overlay.Result is not { } drop || IsDisposed) return;
         if (drop.InsertionIndex is { } insertion)
         {
-            if (group is not null) source.ReorderGroup(group, insertion);
-            else if (tab is not null) source.ReorderTab(tab, insertion);
+            var receiving = panes[drop.TargetPane];
+            if (ReferenceEquals(receiving, source))
+            {
+                if (group is not null) source.ReorderGroup(group, insertion);
+                else if (tab is not null) source.ReorderTab(tab, insertion, drop.JoinGroup);
+            }
+            else if (group is not null) DockGroup(source, group, drop.TargetPane, null, insertion);
+            else if (tab is not null) DockTab(source, tab, drop.TargetPane, null, insertion, drop.JoinGroup);
         }
         else if (group is not null) DockGroup(source, group, drop.TargetPane, drop.Edge);
         else if (tab is not null) DockTab(source, tab, drop.TargetPane, drop.Edge);
@@ -2324,7 +2332,16 @@ public sealed class MainForm : Form, IMessageFilter
 
     private TabDropPlan? FindStripOrDockPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab? tab, TabGroup? group)
     {
-        if (source.FindStripDropPlan(screen, tab, group) is { } strip) return strip;
+        foreach (int target in visiblePanes)
+        {
+            if (panes[target].FindStripDropPlan(screen, tab, group) is not { } strip) continue;
+            if (ReferenceEquals(panes[target], source)) return strip;
+            string reason;
+            bool allowed = group is not null
+                ? CanDockGroup(source, group, target, null, out reason)
+                : CanDockTab(source, tab!, target, null, out reason);
+            return allowed ? strip : strip with { Allowed = false, Label = text.T(reason) };
+        }
         foreach (int target in visiblePanes)
         {
             Rectangle full = panes[target].RectangleToScreen(panes[target].ClientRectangle);
@@ -2380,7 +2397,8 @@ public sealed class MainForm : Form, IMessageFilter
         return true;
     }
 
-    internal bool DockTab(ExplorerPane source, ExplorerPane.FolderTab tab, int target, SplitEdge? edge)
+    internal bool DockTab(ExplorerPane source, ExplorerPane.FolderTab tab, int target, SplitEdge? edge,
+        int? insertionIndex = null, TabGroup? joinGroup = null)
     {
         if (!CanDockTab(source, tab, target, edge, out string reason))
         { source.SetLocalizedStatus(() => text.T(reason).Replace("\n", " ")); return false; }
@@ -2402,7 +2420,11 @@ public sealed class MainForm : Form, IMessageFilter
             RenderLayout(layoutTree.Split(target, destination, splitEdge));
         }
         var receiving = panes[destination];
-        if (path is null) receiving.AddBlankTab();
+        if (insertionIndex is { } insertion)
+        {
+            if (!receiving.InsertDroppedTab(tab, insertion, joinGroup)) return false;
+        }
+        else if (path is null) receiving.AddBlankTab();
         else receiving.AddTab(path, countVisit: false);
         bool emptyPane = source.TabCount == 1;
         source.CloseTab(source.IndexOfTab(tab), remember: false);
@@ -2433,7 +2455,7 @@ public sealed class MainForm : Form, IMessageFilter
         return true;
     }
 
-    internal bool DockGroup(ExplorerPane source, TabGroup group, int target, SplitEdge? edge)
+    internal bool DockGroup(ExplorerPane source, TabGroup group, int target, SplitEdge? edge, int? insertionIndex = null)
     {
         if (!CanDockGroup(source, group, target, edge, out string reason))
         { source.SetLocalizedStatus(() => text.T(reason).Replace("\n", " ")); return false; }
@@ -2461,8 +2483,9 @@ public sealed class MainForm : Form, IMessageFilter
                 for (int i = 0; i < members.Count; i++)
                     if (ReferenceEquals(members[i], source.ActiveTab)) { selected = i; break; }
                 var paths = members.Select(tab => tab.Host?.LocationPath).ToArray();
-                if (receiving.AddGroup(paths, group.Name, group.Color, collapsed: false, selectedMember: selected) is null)
-                    return false;
+                var moved = receiving.AddGroup(paths, group.Name, group.Color, collapsed: false, selectedMember: selected);
+                if (moved is null) return false;
+                if (insertionIndex is { } insertion) receiving.ReorderGroup(moved, insertion);
                 InvalidateRedo();
                 source.CloseGroup(group, remember: false);
                 var nextLayout = layoutTree;
@@ -2541,9 +2564,10 @@ public sealed class MainForm : Form, IMessageFilter
             Keys key = (Keys)(int)m.WParam | ModifierKeys;
             if (key != (Keys.Alt | Keys.P) && key != (Keys.Control | Keys.Shift | Keys.F11) &&
                 (previewWindow?.ContainsFocus == true || ShellNative.IsChild(previewPane.Handle, m.HWnd))) return false;
+            if (Active.HandleTabStripKey(key)) return true;
             if (!AltGrDown(key) && HandleShortcut(key)) return true;
         }
-        if (toolbar.ContainsFocus) return false; // Let ToolStrip handle Enter, Space and arrow navigation.
+        if (toolbar.ContainsFocus || Active.TabStrip.ContainsFocus) return false; // Let native strips handle navigation.
         if (m.Msg >= 0x100 && m.Msg <= 0x109) return Active.ActiveView?.TranslateKey(ref m) ?? false;
         return false;
     }
@@ -2830,6 +2854,9 @@ public sealed class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.Shift | Keys.F11: SetGlobalToolbarPinned(!globalToolbarPinned); break;
             case Keys.Control | Keys.Tab: Active.SelectAdjacentTab(1); break;
             case Keys.Control | Keys.Shift | Keys.Tab: Active.SelectAdjacentTab(-1); break;
+            case Keys.Control | Keys.Shift | Keys.PageUp: Active.MoveCurrentTab(-1); break;
+            case Keys.Control | Keys.Shift | Keys.PageDown: Active.MoveCurrentTab(1); break;
+            case Keys.Control | Keys.Shift | Keys.F6: Active.FocusTabStrip(); break;
             case Keys.Control | Keys.D1: ApplyLayout(1); break;
             case Keys.Control | Keys.D2: ApplyLayout(2); break;
             case Keys.Control | Keys.D3: ApplyLayout(3); break;

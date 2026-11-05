@@ -2,9 +2,17 @@ namespace QuadExplorer;
 
 public sealed partial class ExplorerPane
 {
-    internal bool ReorderTab(FolderTab tab, int insertionIndex)
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Func<ExplorerPane, TabGroup, int, string?>? GroupMoveDisabledReason { get; set; }
+
+    internal bool ReorderTab(FolderTab tab, int insertionIndex, TabGroup? joinGroup = null)
     {
-        if (!CanReorderTab(tab, insertionIndex, out var group, out string reason))
+        if (!tabs.Contains(tab))
+        {
+            SetLocalizedStatus("This tab is no longer available.");
+            return false;
+        }
+        if (!CanInsertStripTab(tab, insertionIndex, joinGroup, out var group, out string reason))
         {
             SetLocalizedStatus(reason);
             return false;
@@ -34,20 +42,85 @@ public sealed partial class ExplorerPane
         return true;
     }
 
-    private bool CanReorderTab(FolderTab tab, int insertionIndex, out TabGroup? group, out string reason)
+    private bool CanInsertStripTab(FolderTab tab, int insertionIndex, TabGroup? joinGroup,
+        out TabGroup? group, out string reason)
     {
-        group = null;
+        group = joinGroup;
         reason = "This tab is no longer available.";
-        if (!tabs.Contains(tab) || insertionIndex < 0 || insertionIndex > tabs.Count) return false;
-        if (insertionIndex > 0 && insertionIndex < tabs.Count
+        if (insertionIndex < 0 || insertionIndex > tabs.Count) return false;
+        if (group is null && insertionIndex > 0 && insertionIndex < tabs.Count
             && tabs[insertionIndex - 1].Group is { } before && tabs[insertionIndex].Group == before)
             group = before;
-        if (group is not null && tab.Group != group && GroupMembers(group).Count >= TabGroup.MaxTabs)
+        if (group is not null)
         {
-            reason = "A group holds up to 12 tabs.";
+            var targetGroup = group;
+            int start = tabs.FindIndex(member => member.Group == targetGroup);
+            int end = tabs.FindLastIndex(member => member.Group == targetGroup) + 1;
+            if (start < 0 || insertionIndex < start || insertionIndex > end) return false;
+            if (tab.Group != group && GroupMembers(group).Count >= TabGroup.MaxTabs)
+            {
+                reason = "A group holds up to 12 tabs.";
+                return false;
+            }
+        }
+        if (!tabs.Contains(tab) && tabs.Count >= 32)
+        {
+            reason = "Destination has 32 tabs.\nClose a tab first.";
             return false;
         }
         reason = "";
+        return true;
+    }
+
+    // The insertion index is relative to the receiving strip before the new tab exists.
+    internal bool InsertDroppedTab(FolderTab source, int insertionIndex, TabGroup? joinGroup)
+    {
+        if (!CanInsertStripTab(source, insertionIndex, joinGroup, out var group, out string reason))
+        {
+            SetLocalizedStatus(reason);
+            return false;
+        }
+        var tab = InsertTab(source.Host?.LocationPath, select: false, countVisit: false, group: group);
+        if (tab is null) return false;
+        var active = ActiveTab;
+        tabs.Remove(tab);
+        tabs.Insert(insertionIndex, tab);
+        FinishGroupMutation(active);
+        SelectTab(insertionIndex);
+        return true;
+    }
+
+    internal bool MoveCurrentTab(int direction)
+    {
+        if (ActiveTab is not { } tab || direction == 0) return false;
+        direction = Math.Sign(direction);
+        int index = tabs.IndexOf(tab);
+        int adjacent = index + direction;
+        if (tab.Group is { } currentGroup
+            && (adjacent < 0 || adjacent >= tabs.Count || tabs[adjacent].Group != currentGroup))
+        {
+            // Leaving a group crosses its chip/underline boundary, not the adjacent tab.
+            tab.Group = null;
+            FinishGroupMutation(tab);
+            return true;
+        }
+        if (adjacent < 0 || adjacent >= tabs.Count) return false;
+        if (tab.Group is null && tabs[adjacent].Group is { } nextGroup)
+        {
+            if (GroupMembers(nextGroup).Count >= TabGroup.MaxTabs)
+            {
+                SetLocalizedStatus("A group holds up to 12 tabs.");
+                return false;
+            }
+            tab.Group = nextGroup;
+            nextGroup.Collapsed = false;
+        }
+        else
+        {
+            tabs.RemoveAt(index);
+            tabs.Insert(adjacent, tab);
+        }
+        FinishGroupMutation(tab);
         return true;
     }
 
@@ -65,9 +138,10 @@ public sealed partial class ExplorerPane
     internal TabDropPlan? FindStripDropPlan(Point screen, FolderTab? tab, TabGroup? group)
     {
         if (!tabStrip.RectangleToScreen(tabStrip.ClientRectangle).Contains(screen)) return null;
-        if (tab is null && (group is null || !groupChips.ContainsKey(group))) return null;
+        if (tab is null && group is null) return null;
         int x = tabStrip.PointToClient(screen).X;
-        int insertion = tabs.Count;
+        int insertion = 0;
+        TabGroup? joinGroup = null;
         foreach (ToolStripItem item in tabStrip.Items)
         {
             if (!item.Available) continue;
@@ -76,14 +150,13 @@ public sealed partial class ExplorerPane
                 int start = tabs.FindIndex(member => member.Group == chip.Group);
                 if (x < item.Bounds.Left + item.Width / 2)
                 {
+                    joinGroup = null;
                     insertion = start;
                     break;
                 }
-                if (x <= item.Bounds.Right)
-                {
-                    insertion = chip.Group.Collapsed ? tabs.FindLastIndex(member => member.Group == chip.Group) + 1 : start;
-                    break;
-                }
+                insertion = chip.Group.Collapsed ? tabs.FindLastIndex(member => member.Group == chip.Group) + 1 : start;
+                joinGroup = chip.Group.Collapsed ? null : chip.Group;
+                if (x <= item.Bounds.Right) break;
             }
             else if (item is FolderTabButton button)
             {
@@ -93,27 +166,30 @@ public sealed partial class ExplorerPane
                     insertion = index;
                     break;
                 }
-                if (x <= item.Bounds.Right)
-                {
-                    insertion = index + 1;
-                    break;
-                }
+                joinGroup = null;
+                insertion = index + 1;
+                if (x <= item.Bounds.Right) break;
             }
         }
-        if (group is not null) insertion = GroupBoundary(insertion);
+        if (group is not null)
+        {
+            insertion = GroupBoundary(insertion);
+            joinGroup = null;
+        }
         // A collapsed chip has no interior tab gaps, even when reached by an adjacent overflow edge.
         if (insertion > 0 && insertion < tabs.Count && tabs[insertion].Group is { Collapsed: true } collapsed
             && tabs[insertion - 1].Group == collapsed) insertion = GroupBoundary(insertion);
-        bool allowed = tab is null || CanReorderTab(tab, insertion, out _, out _);
-        string label = allowed ? text.T(group is null ? "Reorder tab" : "Reorder group") : text.T("A group holds up to 12 tabs.");
-        if (!allowed) SetLocalizedStatus("A group holds up to 12 tabs.");
-        int markerX = StripInsertionX(insertion);
+        string reason = "";
+        bool allowed = tab is null || CanInsertStripTab(tab, insertion, joinGroup, out joinGroup, out reason);
+        if (!allowed) SetLocalizedStatus(reason);
+        string label = allowed ? text.T(group is null ? "Reorder tab" : "Reorder group") : text.T(reason);
+        int markerX = StripInsertionX(insertion, joinGroup);
         var point = tabStrip.PointToScreen(new Point(markerX, 2));
         var marker = new Rectangle(point.X - 2, point.Y, Math.Max(3, (int)Math.Round(3 * DeviceDpi / 96d)), Math.Max(1, tabStrip.Height - 4));
-        return new TabDropPlan(PaneNumber - 1, null, marker, label, allowed, InsertionIndex: insertion);
+        return new TabDropPlan(PaneNumber - 1, null, marker, label, allowed, InsertionIndex: insertion, JoinGroup: joinGroup);
     }
 
-    private int StripInsertionX(int insertion)
+    private int StripInsertionX(int insertion, TabGroup? joinGroup)
     {
         int fallback = tabStrip.Padding.Left;
         foreach (ToolStripItem item in tabStrip.Items)
@@ -122,7 +198,8 @@ public sealed partial class ExplorerPane
             if (item is TabGroupChip chip)
             {
                 int start = tabs.FindIndex(tab => tab.Group == chip.Group);
-                if (insertion <= start) return item.Bounds.Left;
+                if (insertion <= start)
+                    return insertion == start && joinGroup == chip.Group ? item.Bounds.Right : item.Bounds.Left;
                 if (chip.Group.Collapsed && insertion == tabs.FindLastIndex(tab => tab.Group == chip.Group) + 1)
                     fallback = item.Bounds.Right;
             }

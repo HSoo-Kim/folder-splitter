@@ -221,6 +221,7 @@ public sealed class UiText
         ["Close tab"] = ("탭 닫기", "关闭标签页", "タブを閉じる"),
         ["Close pane (Ctrl+W when empty)"] = ("영역 닫기 (빈 영역: Ctrl+W)", "关闭窗格（空窗格：Ctrl+W）", "ペインを閉じる（空のペイン: Ctrl+W）"),
         ["Select this tab, then close with Ctrl+W"] = ("이 탭을 선택한 뒤 Ctrl+W로 닫기", "选中此标签页后按 Ctrl+W 关闭", "このタブを選択して Ctrl+W で閉じる"),
+        ["Folder tab: {0}, group: {1}"] = ("폴더 탭: {0}, 그룹: {1}", "文件夹标签页：{0}，组：{1}", "フォルダータブ: {0}、グループ: {1}"),
         ["Undo tab or pane close in any pane (Ctrl+Shift+T)"] = ("전체 탭·영역 닫기 되돌리기 (Ctrl+Shift+T)", "撤销所有窗格中的标签页或窗格关闭 (Ctrl+Shift+T)", "全ペインのタブ・ペインを閉じる操作を元に戻す (Ctrl+Shift+T)"),
         ["Redo tab or pane close in any pane"] = ("전체 탭·영역 닫기 다시 실행", "重做所有窗格中的标签页或窗格关闭", "全ペインのタブ・ペインを閉じる操作をやり直す"),
         ["Undo tab close in this pane"] = ("이 영역의 탭 닫기 되돌리기", "撤销此窗格中的标签页关闭", "このペインのタブを閉じる操作を元に戻す"),
@@ -395,6 +396,10 @@ public sealed class UiText
             빈 영역에서 Ctrl+W를 다시 누르면 해당 분할을 닫습니다.
             Ctrl+Shift+T   마지막으로 닫은 탭 또는 빈 분할 복원
             Ctrl+Tab / Ctrl+Shift+Tab   탭 전환
+            Ctrl+Shift+PgUp / PgDn   탭을 왼쪽 / 오른쪽으로 이동 (그룹 경계에서 그룹에 추가 / 제외)
+            Ctrl+Shift+F6   탭 막대로 키보드 포커스 이동
+            Apps / Shift+F10   포커스된 탭 또는 그룹의 메뉴 열기
+            Enter / Space   포커스된 그룹 접기 / 펼치기
 
             탐색
             Ctrl+L / Alt+D   주소창
@@ -440,6 +445,10 @@ public sealed class UiText
             在空窗格中再次按 Ctrl+W 可关闭该窗格。
             Ctrl+Shift+T   恢复最后关闭的标签页或空窗格
             Ctrl+Tab / Ctrl+Shift+Tab   切换标签页
+            Ctrl+Shift+PgUp / PgDn   向左 / 向右移动标签页（在组边界加入 / 移出组）
+            Ctrl+Shift+F6   将键盘焦点移到标签栏
+            Apps / Shift+F10   打开已聚焦标签页或组的菜单
+            Enter / Space   折叠 / 展开已聚焦的组
 
             导航
             Ctrl+L / Alt+D   地址栏
@@ -485,6 +494,10 @@ public sealed class UiText
             空のペインで Ctrl+W をもう一度押すと、そのペインを閉じます。
             Ctrl+Shift+T   最後に閉じたタブまたは空のペインを復元
             Ctrl+Tab / Ctrl+Shift+Tab   タブの切り替え
+            Ctrl+Shift+PgUp / PgDn   タブを左 / 右へ移動（グループの境界で参加 / 解除）
+            Ctrl+Shift+F6   タブバーにキーボードフォーカスを移動
+            Apps / Shift+F10   フォーカス中のタブまたはグループのメニューを開く
+            Enter / Space   フォーカス中のグループを折りたたむ / 展開
 
             ナビゲーション
             Ctrl+L / Alt+D   アドレス バー
@@ -532,6 +545,10 @@ public sealed class UiText
         Press Ctrl+W again in an empty pane to close that split.
         Ctrl+Shift+T   Restore the last closed tab or empty pane
         Ctrl+Tab / Ctrl+Shift+Tab   Switch tabs
+        Ctrl+Shift+PgUp / PgDn   Move tab left / right (join / leave a group at its boundary)
+        Ctrl+Shift+F6   Focus the tab strip
+        Apps / Shift+F10   Open the focused tab or group menu
+        Enter / Space   Collapse / expand the focused group
 
         NAVIGATION
         Ctrl+L / Alt+D   Address bar

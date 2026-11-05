@@ -1,10 +1,13 @@
 using QuadExplorer;
+using System.Text.Json;
 
 internal static class TabGroupPersistenceTests
 {
     public static (string Name, Action Run)[] Cases =
     [
         ("legacy sessions retain tabs and selection without groups", LegacySessions),
+        ("sessions ignore unknown group fields without losing metadata or workspace groups", ForwardCompatibleSessions),
+        ("pre-groups pane records read current sessions and discard only group metadata on resave", DowngradeSessions),
         ("null group data loads without losing otherwise valid panes", NullGroupData),
         ("group ranges reject invalid bounds and overlaps in original slot order", InvalidRanges),
         ("group ranges follow surviving tabs when blank slots are removed", BlankSlotRemapping),
@@ -40,6 +43,155 @@ internal static class TabGroupPersistenceTests
             var restored = SessionStore.Load(path);
             EqualPane(state.Panes[0], restored.Panes[0]);
             EqualPane(state.Workspaces[0].Panes[0], restored.Workspaces[0].Panes[0]);
+        });
+    }
+
+    private static void ForwardCompatibleSessions()
+    {
+        WithSessionFile(path =>
+        {
+            File.WriteAllText(path, """
+                {
+                  "FutureSession":{"Version":2},
+                  "Panes":[{
+                    "Tabs":["Z:\\offline","Z:\\offline","C:\\outside"],
+                    "SelectedTab":2,
+                    "FuturePane":[1,null,{"Enabled":true}],
+                    "Groups":[
+                      {"Name":"Research","Color":"Purple","Collapsed":true,"Start":0,"Count":1,
+                       "FutureGroup":{"Start":99,"Count":99,"Children":[null,{"Name":"ignored"}]}},
+                      {"Name":"Research","Color":"Purple","Collapsed":true,"Start":1,"Count":1,
+                       "FutureFlag":true,"FutureLabel":"new","FutureCount":42,"FutureNull":null}
+                    ]
+                  }],
+                  "Workspaces":[{
+                    "Name":"Future workspace",
+                    "Panes":[{
+                      "Tabs":["C:\\work","C:\\reference"],
+                      "SelectedTab":1,
+                      "Groups":[
+                        {"Name":"Workspace group","Color":"Cyan","Collapsed":true,"Start":0,"Count":2,
+                         "FutureGroup":[{"Color":"unknown"},false,null]}
+                      ]
+                    }]
+                  }]
+                }
+                """);
+            var state = SessionStore.Load(path, out var warning);
+            Equal<string?>(null, warning);
+            var pane = new PaneState
+            {
+                Tabs = [@"Z:\offline", @"Z:\offline", @"C:\outside"],
+                SelectedTab = 2,
+                Groups =
+                [
+                    new() { Name = "Research", Color = "Purple", Collapsed = true, Start = 0, Count = 1 },
+                    new() { Name = "Research", Color = "Purple", Collapsed = true, Start = 1, Count = 1 }
+                ]
+            };
+            var workspacePane = new PaneState
+            {
+                Tabs = [@"C:\work", @"C:\reference"],
+                SelectedTab = 1,
+                Groups = [new() { Name = "Workspace group", Color = "Cyan", Collapsed = true, Start = 0, Count = 2 }]
+            };
+            EqualPane(pane, state.Panes[0]);
+            Equal(1, state.Workspaces.Count);
+            Equal("Future workspace", state.Workspaces[0].Name);
+            EqualPane(workspacePane, state.Workspaces[0].Panes[0]);
+
+            SessionStore.Save(path, state);
+            var restored = SessionStore.Load(path, out warning);
+            Equal<string?>(null, warning);
+            EqualPane(pane, restored.Panes[0]);
+            EqualPane(workspacePane, restored.Workspaces[0].Panes[0]);
+        });
+    }
+
+    private static void DowngradeSessions()
+    {
+        WithSessionFile(path =>
+        {
+            var source = new SessionState
+            {
+                Layout = 1,
+                Panes =
+                [
+                    new()
+                    {
+                        Tabs = [@"Z:\offline", @"Z:\offline", @"C:\outside"],
+                        SelectedTab = 2,
+                        Groups = [new() { Name = "Research", Color = "Blue", Collapsed = true, Start = 0, Count = 2 }]
+                    },
+                    new() { Tabs = [], SelectedTab = -1 },
+                    new() { Tabs = [@"C:\alone"] },
+                    new()
+                    {
+                        Tabs = [@"C:\hidden", @"C:\hidden-selected"],
+                        SelectedTab = 1,
+                        Groups = [new() { Name = "Hidden", Color = "Orange", Start = 0, Count = 2 }]
+                    }
+                ],
+                Workspaces =
+                [
+                    new()
+                    {
+                        Name = "Saved groups",
+                        LayoutTree = PaneLayout.Leaf(3),
+                        ActivePane = 3,
+                        Panes =
+                        [
+                            new() { Tabs = [], SelectedTab = -1 },
+                            new() { Tabs = [@"C:\workspace-hidden"] },
+                            new() { Tabs = [], SelectedTab = -1 },
+                            new()
+                            {
+                                Tabs = [@"C:\work", @"C:\reference"],
+                                SelectedTab = 1,
+                                Groups = [new() { Name = "Workspace group", Color = "Cyan", Collapsed = true, Start = 0, Count = 2 }]
+                            }
+                        ]
+                    }
+                ]
+            };
+            var expected = SessionStore.Normalize(source);
+            SessionStore.Save(path, source);
+            string serialized = File.ReadAllText(path);
+            using var document = JsonDocument.Parse(serialized);
+            Equal(1, document.RootElement.GetProperty("Panes")[0].GetProperty("Groups").GetArrayLength());
+            Equal(1, document.RootElement.GetProperty("Workspaces")[0]
+                .GetProperty("Panes")[3].GetProperty("Groups").GetArrayLength());
+
+            var legacy = JsonSerializer.Deserialize<PreGroupsSession>(serialized)
+                ?? throw new InvalidOperationException("The current session did not deserialize into pre-groups records.");
+            Equal(expected.Layout, legacy.Layout);
+            Equal(expected.LayoutTree, legacy.LayoutTree);
+            Equal(expected.ActivePane, legacy.ActivePane);
+            Equal(expected.Panes.Count, legacy.Panes.Count);
+            for (int index = 0; index < expected.Panes.Count; index++)
+                EqualPane(expected.Panes[index], legacy.Panes[index]);
+            Equal(1, legacy.Workspaces.Count);
+            var expectedWorkspace = expected.Workspaces[0];
+            var legacyWorkspace = legacy.Workspaces[0];
+            Equal(expectedWorkspace.Name, legacyWorkspace.Name);
+            Equal(expectedWorkspace.LayoutTree, legacyWorkspace.LayoutTree);
+            Equal(expectedWorkspace.ActivePane, legacyWorkspace.ActivePane);
+            Equal(expectedWorkspace.Panes.Count, legacyWorkspace.Panes.Count);
+            for (int index = 0; index < expectedWorkspace.Panes.Count; index++)
+                EqualPane(expectedWorkspace.Panes[index], legacyWorkspace.Panes[index]);
+
+            File.WriteAllText(path, JsonSerializer.Serialize(legacy));
+            var restored = SessionStore.Load(path, out var warning);
+            Equal<string?>(null, warning);
+            for (int index = 0; index < expected.Panes.Count; index++)
+                EqualPane(expected.Panes[index] with { Groups = [] }, restored.Panes[index]);
+            Equal(expected.LayoutTree, restored.LayoutTree);
+            Equal(expected.ActivePane, restored.ActivePane);
+            Equal(expectedWorkspace.Name, restored.Workspaces[0].Name);
+            Equal(expectedWorkspace.LayoutTree, restored.Workspaces[0].LayoutTree);
+            Equal(expectedWorkspace.ActivePane, restored.Workspaces[0].ActivePane);
+            for (int index = 0; index < expectedWorkspace.Panes.Count; index++)
+                EqualPane(expectedWorkspace.Panes[index] with { Groups = [] }, restored.Workspaces[0].Panes[index]);
         });
     }
 
@@ -314,6 +466,36 @@ internal static class TabGroupPersistenceTests
         });
         Equal(5, workspace.Panes[0].Tabs.Count);
         Equal("  Research  ", workspace.Panes[0].Groups[1].Name);
+    }
+
+    // The pane and workspace shapes before tab groups; the envelope contains the fields under test.
+    private sealed record PreGroupsPaneState
+    {
+        public List<string> Tabs { get; init; } = [];
+        public int SelectedTab { get; init; }
+    }
+
+    private sealed record PreGroupsWorkspace
+    {
+        public string Name { get; init; } = "";
+        public PaneLayout? LayoutTree { get; init; }
+        public List<PreGroupsPaneState> Panes { get; init; } = [];
+        public int ActivePane { get; init; }
+    }
+
+    private sealed record PreGroupsSession
+    {
+        public int Layout { get; init; } = 1;
+        public PaneLayout? LayoutTree { get; init; }
+        public List<PreGroupsPaneState> Panes { get; init; } = [];
+        public int ActivePane { get; init; }
+        public List<PreGroupsWorkspace> Workspaces { get; init; } = [];
+    }
+
+    private static void EqualPane(PaneState expected, PreGroupsPaneState actual)
+    {
+        Sequence(expected.Tabs, actual.Tabs);
+        Equal(expected.SelectedTab, actual.SelectedTab);
     }
 
     private static PaneState NormalizePane(PaneState pane) =>

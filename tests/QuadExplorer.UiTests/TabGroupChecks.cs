@@ -1,4 +1,3 @@
-using System.Reflection;
 using QuadExplorer;
 using FolderTab = QuadExplorer.ExplorerPane.FolderTab;
 
@@ -35,6 +34,7 @@ internal static partial class Program
                     TgGroupMoves(form, paths);
                     TgGroupDrags(form);
                     TgAppearance(form, pane);
+                    await TgPolish(form, pane, paths);
 
                     // Persist real folders through MainForm, with a blank group member omitted from disk.
                     pane.ReplaceTabs(new PaneState { Tabs = paths.Take(6).ToList() });
@@ -115,6 +115,7 @@ internal static partial class Program
             };
             Application.Run(reopened);
         }
+        RunTabGroupRestartScenario(root, paths);
         Theme.Set("light");
     }
 
@@ -331,7 +332,7 @@ internal static partial class Program
         string output = Path.Combine(Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR")
             ?? AppContext.BaseDirectory, "artifacts", "tab-groups");
         Directory.CreateDirectory(output);
-        foreach (string mode in new[] { "light", "dark", "custom-light", "custom-dark" })
+        foreach (string mode in SessionStore.ColorThemes.Concat(new[] { "custom-light", "custom-dark" }))
         {
             if (mode == "custom-light") form.SetCustomColors(Color.FromArgb(0, 139, 139), Color.FromArgb(247, 243, 232));
             else if (mode == "custom-dark") form.SetCustomColors(Color.FromArgb(202, 77, 140), Color.FromArgb(24, 38, 56));
@@ -387,24 +388,23 @@ internal static partial class Program
 
     private static ToolStripMenuItem TgTabMenu(ExplorerPane pane, FolderTab tab, string key)
     {
-        typeof(ExplorerPane).GetMethod("ShowTabMenu", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(pane, [pane.IndexOfTab(tab)]);
-        var menu = (ContextMenuStrip)typeof(ExplorerPane).GetField("tabMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(pane)!;
+        var menu = TgOpenTabMenu(pane, tab);
         var item = menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == new UiText("en").T(key));
         menu.Close();
         return item;
     }
 
-    private static void TgShortcut(MainForm form, Keys keys) =>
-        Check((bool)typeof(MainForm).GetMethod("HandleShortcut", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, [keys])!,
-            keys + " is handled by MainForm's real shortcut dispatcher");
+    private static void TgShortcut(MainForm form, Keys keys)
+    {
+        if (!form.ContainsFocus) form.GetPane(form.CurrentLayout.GetPanes()[0]).FocusAddress();
+        TgKey(form, keys);
+    }
 
     private static void TgChipKey(TabGroupChip chip, Keys key)
     {
         chip.Owner!.Focus();
         chip.Select();
-        Check((bool)typeof(TabGroupChip).GetMethod("ProcessDialogKey", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(chip, [key])!, key + " is consumed by the focused group chip");
+        TgKey(chip.Owner, key);
     }
 
     private static void TgContiguous(ExplorerPane pane, string operation)
