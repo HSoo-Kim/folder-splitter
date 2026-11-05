@@ -26,6 +26,7 @@ internal static partial class Program
     private static async Task TgChromeRefinements(MainForm form, ExplorerPane pane, string[] paths)
     {
         TgResetForm(form);
+        await TgNamedPins(form, pane, paths);
         pane.ReplaceTabs(new PaneState { Tabs = paths.Take(6).ToList() });
         var tabs = pane.Tabs.ToArray();
         var group = pane.CreateGroup(tabs[2])!;
@@ -34,9 +35,10 @@ internal static partial class Program
         Check(pane.PinnedCount == 1 && pane.Tabs[0] == tabs[2] && tabs[2].Group is null
             && pane.GroupMembers(group).SequenceEqual(new[] { tabs[3] }),
             "pin menu removes a grouped tab from its group and inserts it in the pinned prefix");
-        Check(tabs[2].Button.DisplayStyle == ToolStripItemDisplayStyle.Image && tabs[2].Button.CloseBounds.IsEmpty
+        Check(tabs[2].Button.DisplayStyle == ToolStripItemDisplayStyle.ImageAndText && tabs[2].Button.Text!.Length > 0
+            && !tabs[2].Button.PinBounds.IsEmpty && tabs[2].Button.CloseBounds.IsEmpty
             && tabs[2].Button.ToolTipText == paths[2] && tabs[2].Button.AccessibleName!.Contains("Pinned"),
-            "pinned tab is compact icon-only, has no close hit target, and exposes its path and pinned accessible name");
+            "pinned tab shows its fitted folder name and trailing pin, has no close hit target, and exposes its path and pinned accessible name");
         pane.SelectTabWithModifiers(tabs[0], Keys.None);
         pane.SelectTabWithModifiers(tabs[1], Keys.Control);
         TgRightClick(pane, tabs[1].Button);
@@ -265,6 +267,115 @@ internal static partial class Program
         }
         finally { blankTabDrop = null; transport.Unpatch(method, HarmonyLib.HarmonyPatchType.All, transport.Id); }
         TgResetForm(form);
+    }
+
+    private static async Task TgNamedPins(MainForm form, ExplorerPane pane, string[] paths)
+    {
+        string[] named = paths.Take(2).Select((path, index) =>
+            Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(path)!, "Pinned research folder " + index + new string('W', 24))).FullName)
+            .Concat(paths.Skip(2).Take(4)).ToArray();
+        pane.ReplaceTabs(new PaneState { Tabs = named.ToList(), PinnedCount = 2 });
+        var pins = pane.Tabs.Take(2).ToArray();
+        var group = pane.CreateGroup(pane.Tabs[2])!;
+        pane.AddToGroup(pane.Tabs[3], group);
+        pane.RenameGroup(group, "Research");
+        pane.SelectTab(0, focus: false);
+        foreach (string mode in new[] { "light", "dark", "custom-light", "custom-dark" })
+        {
+            if (mode == "custom-light") form.SetCustomColors(Color.FromArgb(0, 139, 139), Color.FromArgb(247, 243, 232));
+            else if (mode == "custom-dark") form.SetCustomColors(Color.FromArgb(202, 77, 140), Color.FromArgb(24, 38, 56));
+            else form.SetColorTheme(mode);
+            await NativeAppearanceDispatch(form);
+            // Move native hover off the strip so active and inactive glyph colors are distinct.
+            SendMessage(pane.TabStrip.Handle, 0x2A3, 0, 0);
+            using var image = TgPrintStrip(pane.TabStrip);
+            foreach (var tab in pins)
+            {
+                var button = tab.Button;
+                Check(button.Available && button.Text!.Length > 0 && button.DisplayStyle == ToolStripItemDisplayStyle.ImageAndText
+                    && button.CloseBounds.IsEmpty && !button.PinBounds.IsEmpty && tab.Group is null
+                    && button.Width <= (int)Math.Round(180 * pane.TabStrip.DeviceDpi / 96d)
+                    && button.Padding.Right == button.PinBounds.Width,
+                    mode + " named pin keeps a fitted label before its pin-only action slot within the scaled 180-DIP maximum");
+                TgPinPixels(image, button, mode);
+            }
+            TgSave(image, Path.Combine(TgPolishOutput(), "named-pins-" + mode + ".png"));
+        }
+        form.SetColorTheme("light");
+        var inactive = pins[1];
+        TgPinMouse(pane, inactive.Button, action: false);
+        Check(pane.ActiveTab == inactive && inactive.Pinned, "native click on a pinned name selects the tab without unpinning");
+        TgPinMouse(pane, inactive.Button, action: true, hoverOnly: true);
+        Check(inactive.Button.ToolTipText == "Unpin tab", "native pointer over the pin shows the localized unpin action tooltip");
+        TgPinMouse(pane, inactive.Button, action: true);
+        Check(!inactive.Pinned && pane.PinnedCount == 1 && pane.Tabs[1] == inactive
+            && !inactive.Button.CloseBounds.IsEmpty && inactive.Button.PinBounds.IsEmpty,
+            "native click on the pin unpins into the first position after the prefix and restores its close target");
+        pane.SetTabsPinned([inactive], true);
+        foreach (var (language, label) in new[] { ("ko", "고정 해제"), ("en", "Unpin tab"), ("zh-CN", "取消固定"), ("ja", "固定を解除") })
+            Check(new UiText(language).T("Unpin tab") == label, language + " pin tooltip and tab menu share the localized unpin action");
+
+        DockStyle dock = pane.Dock;
+        Rectangle bounds = pane.Bounds;
+        pane.Dock = DockStyle.None;
+        try
+        {
+            pane.Width = 760;
+            pane.PerformLayout();
+            await NativeAppearanceDispatch(form);
+            Check(pins.All(tab => tab.Button.Text!.EndsWith('\u2026') && tab.Button.Text.Length > 1
+                && tab.Button.Available && pane.TabStrip.ClientRectangle.Contains(tab.Button.Bounds)),
+                "crowded pinned names shrink with ellipsis before ordinary tabs and remain a visible in-bounds prefix");
+            using (var image = TgPrintStrip(pane.TabStrip))
+                TgSave(image, Path.Combine(TgPolishOutput(), "named-pins-crowded.png"));
+            pane.Width = 420;
+            pane.PerformLayout();
+            await NativeAppearanceDispatch(form);
+            Check(pins.All(tab => tab.Button.Available && tab.Button.Text == "" && !tab.Button.PinBounds.IsEmpty
+                && pane.TabStrip.ClientRectangle.Contains(tab.Button.Bounds)
+                && tab.Button.Width >= tab.Button.ActionWidth + pane.TabStrip.ImageScalingSize.Width),
+                "narrowest strip collapses pinned names to a complete folder icon plus pin without overflowing the prefix");
+            using (var image = TgPrintStrip(pane.TabStrip))
+                TgSave(image, Path.Combine(TgPolishOutput(), "named-pins-icon-pin.png"));
+        }
+        finally { pane.Dock = dock; pane.Bounds = bounds; form.PerformLayout(); }
+        TgResetForm(form);
+    }
+
+    private static void TgPinMouse(ExplorerPane pane, FolderTabButton button, bool action, bool hoverOnly = false)
+    {
+        var slot = action ? button.PinBounds : new Rectangle(0, 0, button.Width - button.ActionWidth, button.Height);
+        var point = new Point(button.Bounds.Left + slot.Left + slot.Width / 2, button.Bounds.Top + slot.Height / 2);
+        nint packed = (nint)((point.Y << 16) | (point.X & 0xffff));
+        SendMessage(pane.TabStrip.Handle, 0x200, 0, packed);
+        if (hoverOnly) return;
+        SendMessage(pane.TabStrip.Handle, 0x201, 1, packed);
+        SendMessage(pane.TabStrip.Handle, 0x202, 0, packed);
+    }
+
+    private static void TgPinPixels(Bitmap image, FolderTabButton button, string context)
+    {
+        var slot = button.PinBounds;
+        slot.Offset(button.Bounds.Location);
+        // Scan only the icon interior; rounded tab edges and the divider are not icon pixels.
+        slot.Inflate(-(int)Math.Round(5 * button.Owner!.DeviceDpi / 96d), -5);
+        Color foreground = button.Checked || button.Selected ? Theme.Text : Theme.Muted;
+        Color background = image.GetPixel(slot.Left, slot.Top);
+        int dr = foreground.R - background.R, dg = foreground.G - background.G, db = foreground.B - background.B;
+        int channel = Math.Abs(dr) >= Math.Abs(dg) && Math.Abs(dr) >= Math.Abs(db) ? 0 : Math.Abs(dg) >= Math.Abs(db) ? 1 : 2;
+        int delta = channel == 0 ? dr : channel == 1 ? dg : db;
+        int ink = 0, fringes = 0;
+        for (int y = slot.Top; y < slot.Bottom; y++)
+            for (int x = slot.Left; x < slot.Right; x++)
+            {
+                Color pixel = image.GetPixel(x, y);
+                double coverage = (channel == 0 ? pixel.R - background.R : channel == 1 ? pixel.G - background.G : pixel.B - background.B) / (double)delta;
+                if (coverage >= .75) ink++;
+                if (coverage < -.02 || coverage > 1.02 || Math.Abs(pixel.R - (background.R + dr * coverage)) > 3
+                    || Math.Abs(pixel.G - (background.G + dg * coverage)) > 3 || Math.Abs(pixel.B - (background.B + db * coverage)) > 3) fringes++;
+            }
+        Check(ink > 3 && fringes == 0 && TgContrast(foreground, background) >= 3,
+            context + (button.Checked ? " active" : " inactive") + $" pin is readable monochrome text-color ink without colored fringes (ink={ink}, fringes={fringes})");
     }
 
     private static void TgEditorColorPixels(ContextMenuStrip menu, ToolStrip colors, Bitmap image, string context)

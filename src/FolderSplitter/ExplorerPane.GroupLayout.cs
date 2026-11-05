@@ -6,22 +6,17 @@ public sealed partial class ExplorerPane
     private void LayoutGroupedTabs()
     {
         int Scaled(int value) => (int)Math.Round(value * tabStrip.DeviceDpi / 96d);
-        int chrome = Scaled(70), floor = Scaled(90);
+        int chrome = Scaled(70), pinChrome = Scaled(54), floor = Scaled(90);
         int rowHeight = Math.Max(TextRenderer.MeasureText("가Ag", tabStrip.Font).Height, Scaled(16)) + Scaled(8);
         newTab.Size = closePane.Size = tabList.Size = new Size(Scaled(30), rowHeight);
-        int pinnedWidth = Scaled(36);
+        int pinCount = PinnedCount;
         int pinnedSpace = 0;
-        foreach (var tab in tabs.Where(tab => tab.Pinned))
+        int[] pinNatural = new int[pinCount];
+        int pinMargins = 0;
+        for (int index = 0; index < pinCount; index++)
         {
-            var button = tab.Button;
-            button.Visible = true;
-            button.Size = new Size(pinnedWidth, rowHeight);
-            button.Padding = Padding.Empty;
-            button.DisplayStyle = ToolStripItemDisplayStyle.Image;
-            button.ImageAlign = ContentAlignment.MiddleCenter;
-            button.ToolTipText = tab.Host?.LocationPath ?? text.T("New tab");
-            UpdateTabAccessibleName(tab);
-            pinnedSpace += pinnedWidth + button.Margin.Horizontal;
+            pinNatural[index] = Math.Clamp(TextWidth(tabs[index].Button.Title) + pinChrome, Scaled(90), Scaled(180));
+            pinMargins += tabs[index].Button.Margin.Horizontal;
         }
         var items = new List<ToolStripItem>();
         var natural = new List<int>();
@@ -57,11 +52,47 @@ public sealed partial class ExplorerPane
             previous = tab.Group;
         }
         int count = items.Count;
-        int available = Math.Max(0, tabStrip.ClientSize.Width - tabStrip.Padding.Horizontal
-            - newTab.Width - newTab.Margin.Horizontal - closePane.Width - closePane.Margin.Horizontal - Scaled(6) - pinnedSpace);
+        int totalAvailable = Math.Max(0, tabStrip.ClientSize.Width - tabStrip.Padding.Horizontal
+            - newTab.Width - newTab.Margin.Horizontal - closePane.Width - closePane.Margin.Horizontal - Scaled(6));
         int margins = items.Sum(item => item.Margin.Horizontal);
         bool showList = anyCollapsed;
         int listWidth = tabList.Width + tabList.Margin.Horizontal;
+        // Shrink pinned names first, keeping their readable floor until even an ordinary overflow
+        // window cannot coexist with it. Only that narrowest case reduces pins to icon and pin.
+        int pinFloor = Scaled(110), compactPin = Scaled(54);
+        int pinBudget = Math.Clamp(totalAvailable - natural.Sum() - margins - (showList ? listWidth : 0) - pinMargins,
+            Math.Min(pinNatural.Sum(), pinCount * pinFloor), pinNatural.Sum());
+        int normalWindow = count == 0 ? 0 : floor + listWidth + Scaled(2);
+        if (pinBudget + pinMargins + normalWindow > totalAvailable)
+            pinBudget = Math.Max(0, totalAvailable - pinMargins - normalWindow);
+        pinBudget = Math.Min(pinBudget, Math.Max(0, totalAvailable - pinMargins));
+        int lowPin = 0, highPin = Scaled(180);
+        while (lowPin < highPin)
+        {
+            int middle = (lowPin + highPin + 1) / 2, used = 0;
+            for (int index = 0; index < pinCount; index++) used += Math.Min(pinNatural[index], middle);
+            if (used <= pinBudget) lowPin = middle;
+            else highPin = middle - 1;
+        }
+        for (int index = 0; index < pinCount; index++)
+        {
+            var tab = tabs[index];
+            var button = tab.Button;
+            int width = Math.Max(1, Math.Min(pinNatural[index], lowPin));
+            button.Visible = true;
+            button.Size = new Size(width, rowHeight);
+            button.Padding = new Padding(0, 0, button.ActionWidth, 0);
+            button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+            button.ImageAlign = ContentAlignment.MiddleLeft;
+            button.Text = width <= compactPin || width - pinChrome < TextWidth("\u2026")
+                ? "" : FitTitle(button.Title, width - pinChrome);
+            button.PathToolTip = tab.Host?.LocationPath ?? text.T("New tab");
+            button.UnpinToolTip = text.T("Unpin tab");
+            button.ToolTipText = button.PathToolTip;
+            UpdateTabAccessibleName(tab);
+            pinnedSpace += width + button.Margin.Horizontal;
+        }
+        int available = Math.Max(0, totalAvailable - pinnedSpace);
         int room = Math.Max(0, available - (showList ? listWidth : 0));
         bool overflow = minimum.Sum() + margins > room;
         if (overflow && !showList)
@@ -82,6 +113,10 @@ public sealed partial class ExplorerPane
         }
         int first = 0, end = count;
         var widths = natural.ToArray();
+        // Constant-time window queries keep a resize linear in the number of tabs.
+        int[] windowPrefix = new int[count + 1];
+        for (int index = 0; index < count; index++)
+            windowPrefix[index + 1] = windowPrefix[index] + minimum[index] + items[index].Margin.Horizontal;
         if (overflow && count > 0)
         {
             widths = minimum.ToArray();
@@ -173,12 +208,7 @@ public sealed partial class ExplorerPane
         }
 
         int WindowWidth(int start, int stop)
-        {
-            int width = 0;
-            for (int index = start; index < stop; index++)
-                width += widths[index] + items[index].Margin.Horizontal;
-            return width;
-        }
+            => windowPrefix[stop] - windowPrefix[start];
         int FitEnd(int start)
         {
             int stop = start;

@@ -536,6 +536,7 @@ public sealed partial class ExplorerPane : UserControl
         };
         var tab = new FolderTab(button) { Group = group };
         button.CloseRequested += (_, _) => CloseTab(tabs.IndexOf(tab));
+        button.UnpinRequested += (_, _) => SetTabsPinned([tab], false);
         button.DragRequested += (_, _) => TabDragRequested?.Invoke(this, tab);
         button.Click += (_, _) => SelectTabWithModifiers(tab, ModifierKeys);
         button.MouseDown += (_, e) =>
