@@ -10,7 +10,9 @@ public sealed class MainForm : Form, IMessageFilter
 {
     private readonly ToolStripButton undoClose = new CloseHistoryButton(false) { AutoSize = false },
         redoClose = new CloseHistoryButton(true) { AutoSize = false };
-    private readonly string sessionPath;
+    private string sessionPath => application.SessionPath;
+    private readonly FolderSplitterApplicationContext application;
+    internal FolderSplitterApplicationContext ApplicationContext => application;
     private readonly UiText text;
     private readonly IPathSearchBackend? search;
     private readonly ShellIconCache placeIcons = new();
@@ -34,25 +36,21 @@ public sealed class MainForm : Form, IMessageFilter
         Dock = DockStyle.Bottom, Height = 6, Cursor = Cursors.HSplit, AccessibleName = "Resize favorites and folder tree"
     };
     private int folderTreeHeight;
-    private const int HotkeyId = 0x4653; // "FS"
-    private readonly uint activationMessage;
     private readonly ToolStripMenuItem hotkeyItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem winEItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem startupItem = new() { CheckOnClick = true };
-    private bool startWithWindows;
-    private readonly WinEShortcut winE = WinEShortcut.ForCurrentUser();
-    private bool globalHotkey;
-    private readonly NotifyIcon trayIcon = new() { Text = "Folder Splitter" };
+    private bool startWithWindows { get => application.State.StartWithWindows; set => application.ChangeState(s => s with { StartWithWindows = value }); }
+    private WinEShortcut winE => application.WinE;
+    private bool globalHotkey { get => application.State.GlobalHotkey; set => application.ChangeState(s => s with { GlobalHotkey = value }); }
     private readonly ToolStripMenuItem trayItem = new() { CheckOnClick = true };
-    private bool closeToTray;
-    private bool exiting;
-    private bool trayNoticeShown;
+    private bool closeToTray => application.State.KeepInTray;
     private readonly ToolStripDropDownButton themeButton = new() { AccessibleName = "Color theme" };
-    private string colorTheme;
-    private string? customAccent, customBackground;
-    private List<CustomColorPair> recentCustomColors;
-    private List<string> pickerColors;
-    private string activePaneColor;
+    private string colorTheme => application.State.ColorTheme;
+    private string? customAccent => application.State.CustomAccent;
+    private string? customBackground => application.State.CustomBackground;
+    private List<CustomColorPair> recentCustomColors => application.State.RecentCustomColors;
+    private List<string> pickerColors => application.State.PickerColors;
+    private string activePaneColor => application.State.ActivePaneColor;
     private bool showFolderTree;
     private readonly List<Action> languageBindings = [];
     private readonly ToolStripComboBox languageSelector = new()
@@ -74,14 +72,15 @@ public sealed class MainForm : Form, IMessageFilter
     private readonly Panel sidebar;
     private readonly Splitter sidebarSplitter;
     private readonly ToolStripButton sidebarButton = new("Sidebar") { AccessibleName = "Sidebar" };
+    private bool showSidebar;
     private int sidebarWidth;
-    private readonly List<string> deletedFavorites;
-    private bool explorerFavoritesImported;
+    private List<string> deletedFavorites => application.DeletedFavorites;
+    private bool explorerFavoritesImported { get => application.State.ExplorerFavoritesImported; set => application.ChangeState(s => s with { ExplorerFavoritesImported = value }); }
     private readonly ListBox places;
     private readonly ListBox favoritePlaces;
     private readonly Button favoritesHeader;
     private bool favoritesExpanded;
-    private readonly List<string> favorites;
+    private List<string> favorites => application.Favorites;
     private readonly ToolStrip toolbar = Theme.Strip(outlineItems: true);
     private readonly ToolStripButton toolbarPin = new()
     {
@@ -117,47 +116,38 @@ public sealed class MainForm : Form, IMessageFilter
         ForeColor = Theme.Muted, BackColor = Theme.Canvas, Padding = new Padding(0, 4, 12, 4),
         AccessibleName = "Author", Text = "Made by HSoo-Kim (github.com/HSoo-Kim)"
     };
-    private readonly Func<CancellationToken, Task<ReleaseInfo?>>? latestRelease;
-    private readonly System.Windows.Forms.Timer updateTimer = new() { Interval = 60 * 60 * 1000 };
-    private static readonly TimeSpan UpdateRecheckAfter = TimeSpan.FromMinutes(15);
-    private readonly CancellationTokenSource updateCancellation = new();
     private readonly ToolStripMenuItem updateItem = new() { CheckOnClick = true };
-    private ReleaseInfo? availableUpdate;
-    private Version? notifiedUpdateVersion;
+    private ReleaseInfo? availableUpdate => application.AvailableUpdate;
     private UpdateNotice? updateNotice;
-    private bool checkUpdates;
+    private bool checkUpdates => application.State.CheckUpdates;
     private readonly ToolStripMenuItem autoUpdateItem = new() { CheckOnClick = true };
-    private bool autoUpdate;
-    private bool updating;
+    private bool autoUpdate => application.State.AutoUpdate;
+    private bool updating => application.Updating;
     private readonly ToolStripButton[] layoutButtons = new ToolStripButton[4];
-    private readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 800 };
     private readonly ToolTip tips = new() { ShowAlways = true, AutoPopDelay = 10000 };
     private int activePane;
     private int previousPane = -1;
     private readonly List<(Form Window, PreviewPane Pane)> previewWindows = [];
-    private int autoRestartMemory;
-    private long memoryBaseline;
-    private bool restarting;
-    private readonly DateTime startedAt = DateTime.UtcNow;
-    private readonly System.Windows.Forms.Timer memoryTimer = new() { Interval = 5 * 60 * 1000 };
+    private int autoRestartMemory => application.State.AutoRestartMemory;
     private readonly ToolStripMenuItem memoryMenu = new();
-    private readonly FolderVisits folderVisits;
+    private FolderVisits folderVisits => application.FolderVisits;
     private readonly ToolStripMenuItem forgetVisitsItem = new();
     private (nint Header, nint List, int Column, int StartX, int StartWidth)? columnDrag;
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartMinimized { get; init; }
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartHidden { get; init; }
+    private readonly BrowserWindowState restoredPresentation;
+    private readonly bool useDefaultWindowSize;
+    private bool maximizedPresentation;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartMinimized { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool StartHidden { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool RestorePresentation { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal bool RegisterStartupOnLaunch { get; init; }
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal StartupRegistration Startup { get; set; }
-    // Tests replace the process launch; it receives the arguments and reports whether a new instance started.
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal Func<IReadOnlyList<string>, bool>? RestartLauncher { get; set; }
-    private readonly List<Workspace> workspaces;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal StartupRegistration Startup { get => application.Startup; set => application.Startup = value; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal Func<IReadOnlyList<string>, bool>? RestartLauncher { get => application.RestartLauncher; set => application.RestartLauncher = value; }
+    private List<Workspace> workspaces => application.Workspaces;
     private readonly ToolStripDropDownButton workspaceButton = new() { AccessibleName = "Workspaces" };
     internal event Action<bool, string?>? FileOperationFinished;
     private bool ready;
-    private bool saving;
     private bool rebuilding;
     private bool tabDragging;
-    private string? saveError;
     private readonly record struct Place(string Label, string Path, bool Favorite = false)
     {
         public override string ToString() => Label;
@@ -165,42 +155,25 @@ public sealed class MainForm : Form, IMessageFilter
 
     public MainForm(string sessionPath, IReadOnlyList<string> folders, IPathSearchBackend? search = null,
         IReadOnlyList<string>? treeRoots = null, Func<CancellationToken, Task<ReleaseInfo?>>? latestRelease = null)
+        : this(new FolderSplitterApplicationContext(sessionPath, folders, search, treeRoots, latestRelease, createWindows: false), null, folders, treeRoots) { }
+
+    internal MainForm(FolderSplitterApplicationContext application, BrowserWindowState? state,
+        IReadOnlyList<string> folders, IReadOnlyList<string>? treeRoots, bool useDefaultSize = false)
     {
-        this.search = search;
-        this.latestRelease = latestRelease;
-        this.sessionPath = sessionPath;
-        Startup = StartupRegistration.ForCurrentUser(sessionPath);
-        initialState = SessionStore.Normalize(SessionStore.Load(sessionPath));
-        colorTheme = initialState.ColorTheme;
-        customAccent = initialState.CustomAccent;
-        customBackground = initialState.CustomBackground;
-        recentCustomColors = [.. initialState.RecentCustomColors];
-        pickerColors = [.. initialState.PickerColors];
-        activePaneColor = initialState.ActivePaneColor;
+        this.application = application;
+        search = application.Search;
+        initialState = SessionStore.ProjectWindow(application.State, state ?? application.State.Windows[0]);
+        useDefaultWindowSize = useDefaultSize || (state is null && !application.HasSavedSession);
+        application.Register(this);
         fontFamily = initialState.FontFamily is { } face && FontInstalled(face) ? face : null;
         textSize = initialState.TextSize;
         globalToolbarPinned = initialState.GlobalToolbarPinned;
         showFolderTree = initialState.ShowFolderTree;
         folderTreeHeight = initialState.FolderTreeHeight;
-        globalHotkey = initialState.GlobalHotkey;
-        startWithWindows = initialState.StartWithWindows;
-        closeToTray = initialState.KeepInTray;
-        trayNoticeShown = initialState.TrayNoticeShown;
-        checkUpdates = initialState.CheckUpdates;
-        autoUpdate = initialState.AutoUpdate;
-        activationMessage = Program.ActivationMessage(sessionPath);
-        ApplyColorTheme();
         text = new UiText(initialState.Language);
         layoutTree = initialState.LayoutTree!;
         visiblePanes = layoutTree.GetPanes().Order().ToArray();
         activePane = initialState.ActivePane;
-        favorites = [.. initialState.Favorites];
-        deletedFavorites = [.. initialState.DeletedFavorites];
-        workspaces = [.. initialState.Workspaces];
-        folderVisits = new FolderVisits(initialState.FrequentFolders);
-        autoRestartMemory = initialState.AutoRestartMemory;
-        memoryTimer.Tick += (_, _) => CheckMemory();
-        explorerFavoritesImported = initialState.ExplorerFavoritesImported;
         sidebarWidth = initialState.SidebarWidth;
         favoritesExpanded = initialState.FavoritesExpanded;
         Text = "Folder Splitter";
@@ -209,6 +182,14 @@ public sealed class MainForm : Form, IMessageFilter
         MinimumSize = new Size(900, 600);
         Size = new Size(initialState.WindowWidth, initialState.WindowHeight);
         StartPosition = FormStartPosition.CenterScreen;
+        var restored = state ?? application.State.Windows[0];
+        if (restored.WindowX is { } x && restored.WindowY is { } y)
+        {
+            StartPosition = FormStartPosition.Manual;
+            Location = new Point(x, y);
+        }
+        maximizedPresentation = restored.Maximized;
+        restoredPresentation = restored;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font(UiFace, UiPoints);
@@ -225,13 +206,6 @@ public sealed class MainForm : Form, IMessageFilter
         using (var sourceIcon = new Icon(iconStream))
             appIcon = (Icon)sourceIcon.Clone();
         Icon = appIcon;
-        var trayMenu = new ContextMenuStrip();
-        BindText(trayMenu.Items.Add("", null, (_, _) => Summon()), "Open Folder Splitter");
-        BindText(trayMenu.Items.Add("", null, (_, _) => ExitApplication()), "Exit");
-        trayIcon.Icon = appIcon;
-        trayIcon.ContextMenuStrip = trayMenu;
-        trayIcon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) Summon(); };
-        trayIcon.Visible = closeToTray;
 
         panes = Enumerable.Range(0, 4).Select(i => new ExplorerPane(i + 1, initialState.Panes[i], text,
             search, SearchRoots)).ToArray();
@@ -247,17 +221,12 @@ public sealed class MainForm : Form, IMessageFilter
             pane.SetDetailsAppearance(showVerticalSeparators, comfortableRows, highlightSortedColumn);
             pane.CommandBarToggled += (_, _) =>
             {
-                showCommandBar = !showCommandBar;
-                foreach (var target in panes) target.SetCommandBarVisible(showCommandBar);
-                ScheduleSave();
+                application.ChangeSettings(s => s with { ShowCommandBar = !s.ShowCommandBar });
             };
             pane.DetailsAppearanceRequested += (separators, comfortable, highlight) =>
             {
-                showVerticalSeparators = separators;
-                comfortableRows = comfortable;
-                highlightSortedColumn = highlight;
-                foreach (var target in panes) target.SetDetailsAppearance(separators, comfortable, highlight);
-                ScheduleSave();
+                application.ChangeSettings(s => s with { ShowVerticalSeparators = separators,
+                    ComfortableRows = comfortable, HighlightSortedColumn = highlight });
             };
             pane.Activated += (_, _) => ActivatePane(Array.IndexOf(panes, pane));
             pane.TabClosed += (_, _) => RememberClosed(pane.PaneNumber - 1, null);
@@ -293,7 +262,7 @@ public sealed class MainForm : Form, IMessageFilter
             pane.BulkRenameRequested += (_, _) => OpenBulkRename(pane);
             pane.CompareRequested += (_, _) => OpenCompare(pane);
             pane.DetailsPaneToggled += (_, _) => SetDetailsPaneVisible(!(showDetails && showPreview));
-            pane.ShellSettingsChanged += (_, _) => { foreach (var each in panes) each.RefreshViews(); };
+            pane.ShellSettingsChanged += (_, _) => application.RefreshShellViews();
             pane.DetailsPaneShown = () => showDetails && showPreview;
         }
 
@@ -529,30 +498,23 @@ public sealed class MainForm : Form, IMessageFilter
             PositionGlobalToolbarOverlay();
         };
         Deactivate += (_, _) => { if (!globalToolbarPinned) HideGlobalToolbarOverlay(); };
-        DpiChanged += (_, _) => RefreshGlobalToolbar();
+        DpiChanged += (_, _) => { RefreshGlobalToolbar(); UpdateMinimumSize(); };
+        showSidebar = initialState.ShowSidebar;
         sidebar.Visible = initialState.ShowSidebar;
         sidebarSplitter.Visible = initialState.ShowSidebar;
-        saveTimer.Tick += (_, _) => { saveTimer.Stop(); SaveSession(); };
-        Load += (_, _) => { if (StartMinimized) WindowState = FormWindowState.Minimized; };
+        Load += (_, _) =>
+        {
+            UpdateMinimumSize();
+            // Load runs after the first DPI scale, but before the HWND is visible. Saved bounds are pixels.
+            Rectangle work = Screen.FromControl(this).WorkingArea;
+            Bounds = BrowserWindowGeometry.Restore(restoredPresentation, work, DeviceDpi, useDefaultWindowSize);
+            if (initialState.Maximized) WindowState = FormWindowState.Maximized;
+            if (StartMinimized || StartHidden || (RestorePresentation && (restoredPresentation.Minimized || restoredPresentation.Hidden)))
+                WindowState = FormWindowState.Minimized;
+        };
         Shown += (_, _) =>
         {
-            if (StartHidden && closeToTray) BeginInvoke(Hide);
-            if (RegisterStartupOnLaunch && startWithWindows && Startup.IsSupported)
-            {
-                try { Startup.EnsureRegistered(); }
-                catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
-            }
-            memoryTimer.Start();
-            if (initialState.Maximized && !StartMinimized) WindowState = FormWindowState.Maximized;
-            UpdateMinimumSize();
-            if (WindowState == FormWindowState.Normal)
-            {
-                Rectangle work = Screen.FromControl(this).WorkingArea;
-                int width = Math.Min(Width, work.Width);
-                int height = Math.Min(Height, work.Height);
-                Bounds = new Rectangle(Math.Clamp(Left, work.Left, work.Right - width),
-                    Math.Clamp(Top, work.Top, work.Bottom - height), width, height);
-            }
+            if ((StartHidden || (!StartMinimized && RestorePresentation && restoredPresentation.Hidden)) && closeToTray) BeginInvoke(Hide);
             rebuilding = true;
             try { ApplySplitRatios(); }
             finally { rebuilding = false; }
@@ -563,12 +525,14 @@ public sealed class MainForm : Form, IMessageFilter
             if (folders.Count > 0 && !File.Exists(sessionPath)) Active.CloseTab(remember: false);
             foreach (string folder in folders) Active.AddTab(folder);
             Active.FocusFiles();
-            ShowPendingUpdateNotice();
-            updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
-            updateTimer.Enabled = checkUpdates && latestRelease is not null;
-            _ = CheckForStaleUpdateAsync();
+            application.WindowShown(this, RegisterStartupOnLaunch);
         };
         ResizeEnd += (_, _) => ScheduleSave();
+        SizeChanged += (_, _) =>
+        {
+            if (WindowState != FormWindowState.Minimized) maximizedPresentation = WindowState == FormWindowState.Maximized;
+            ScheduleSave();
+        };
         RenderLayout(layoutTree);
         Application.AddMessageFilter(this);
         ApplyAppearance();
@@ -587,14 +551,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetLanguage(string language)
     {
-        text.SetLanguage(language);
-        int index = Array.IndexOf(new[] { "ko", "en", "zh-CN", "ja" }, text.Language);
-        if (languageSelector.SelectedIndex != index) languageSelector.SelectedIndex = index;
-        foreach (var refresh in languageBindings) refresh();
-        foreach (var pane in panes) pane.RefreshLanguage();
-        folderTree.RefreshLanguage();
-        ReloadPlaces();
-        ScheduleSave();
+        application.ChangeSettings(s => s with { Language = SessionStore.NormalizeLanguage(language) });
     }
 
     private void BindText(Control control, string key)
@@ -849,8 +806,6 @@ public sealed class MainForm : Form, IMessageFilter
             startupItem.Checked = Startup.IsEnabled;
             startupItem.Enabled = Startup.IsSupported;
         };
-        try { winE.UpgradeLegacy(); }
-        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
         settings.DropDownItems.Add(hotkeyItem);
         settings.DropDownItems.Add(winEItem);
         settings.DropDownItems.Add(startupItem);
@@ -877,11 +832,13 @@ public sealed class MainForm : Form, IMessageFilter
         BindText(forgetVisitsItem, "Forget frequently opened folders");
         forgetVisitsItem.Click += (_, _) =>
         {
-            folderVisits.Clear();
-            ScheduleSave();
+            application.ClearVisits();
             Active.SetLocalizedStatus("Frequently opened folders were cleared.");
         };
         settings.DropDownItems.Add(forgetVisitsItem);
+        settings.DropDownItems.Add(new ToolStripSeparator());
+        BindText(settings.DropDownItems.Add("", null, (_, _) => application.CreateWindowFromActive(this)), "New window");
+        BindText(settings.DropDownItems.Add("", null, (_, _) => ExitApplication()), "Exit");
         toolbar.Items.Add(settings);
         toolbar.Items.Add(redoClose);
         toolbar.Items.Add(undoClose);
@@ -926,6 +883,7 @@ public sealed class MainForm : Form, IMessageFilter
         if (!pinned && mouseClick) toolbarPointerInside = true;
         if (!pinned) ScheduleToolbarHide();
         ScheduleSave();
+        application.ChangeSettings(s => s with { GlobalToolbarPinned = pinned });
     }
 
     private static GraphicsPath CreateToolbarPinPath()
@@ -1077,30 +1035,17 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetColorTheme(string mode)
     {
-        colorTheme = string.Equals(mode?.Trim(), SessionStore.CustomTheme, StringComparison.OrdinalIgnoreCase)
-            && customAccent is not null && customBackground is not null
-            ? SessionStore.CustomTheme : SessionStore.NormalizeColorTheme(mode);
-        ApplyColorTheme();
-        ApplyAppearance();
-        ScheduleSave();
+        application.ChangeSettings(s => s with { ColorTheme = string.Equals(mode?.Trim(), SessionStore.CustomTheme, StringComparison.OrdinalIgnoreCase)
+            && customAccent is not null && customBackground is not null ? SessionStore.CustomTheme : SessionStore.NormalizeColorTheme(mode) }, theme: true);
     }
 
-    private void ApplyColorTheme()
-    {
-        if (colorTheme == SessionStore.CustomTheme && customAccent is not null && customBackground is not null)
-            Theme.SetCustom(SessionStore.ParseColor(customAccent), SessionStore.ParseColor(customBackground));
-        else Theme.Set(colorTheme);
-    }
 
     internal void SetCustomColors(Color accent, Color background)
     {
-        customAccent = SessionStore.FormatColor(accent);
-        customBackground = SessionStore.FormatColor(background);
-        recentCustomColors = SessionStore.RememberCustomColors(recentCustomColors, background, accent);
-        colorTheme = SessionStore.CustomTheme;
-        ApplyColorTheme();
-        ApplyAppearance();
-        ScheduleSave();
+        application.ChangeSettings(s => s with { CustomAccent = SessionStore.FormatColor(accent),
+            CustomBackground = SessionStore.FormatColor(background),
+            RecentCustomColors = SessionStore.RememberCustomColors(s.RecentCustomColors, background, accent),
+            ColorTheme = SessionStore.CustomTheme }, theme: true);
     }
 
     private void ShowCustomColors()
@@ -1111,7 +1056,7 @@ public sealed class MainForm : Form, IMessageFilter
             recentCustomColors.Select(pair => (SessionStore.ParseColor(pair.Background!), SessionStore.ParseColor(pair.Accent!))).ToArray(),
             pickerColors);
         var result = dialog.ShowDialog(this);
-        pickerColors = [.. dialog.PickerColors];
+        application.ChangeState(s => s with { PickerColors = [.. dialog.PickerColors] });
         if (result == DialogResult.OK) SetCustomColors(dialog.Accent, dialog.Background);
         // Picker slots are a separate tool: cancelling the theme preview must not discard them.
         SaveSession();
@@ -1134,9 +1079,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetActivePaneColor(string color)
     {
-        activePaneColor = SessionStore.NormalizeActivePaneColor(color);
-        foreach (var pane in panes) pane.SetActivePaneColor(activePaneColor);
-        ScheduleSave();
+        application.ChangeSettings(s => s with { ActivePaneColor = SessionStore.NormalizeActivePaneColor(color) });
     }
 
     private void RefreshThemeButton()
@@ -1184,14 +1127,8 @@ public sealed class MainForm : Form, IMessageFilter
     // A family that is not installed falls back to the standard font; the choice applies to every pane at once.
     internal void SetUiFont(string? family, string size)
     {
-        fontFamily = family is not null && FontInstalled(family) ? family : null;
-        textSize = size is "small" or "large" ? size : "normal";
-        Font = new Font(UiFace, UiPoints);
-        favoritesHeader.Font = treeHeader.Font = HeaderFont();
-        if (sideTitleLabel is not null) sideTitleLabel.Font = HeaderFont();
-        Theme.ListFont = ListFontChoice();
-        ApplyAppearance();
-        ScheduleSave();
+        application.ChangeSettings(s => s with { FontFamily = family is not null && FontInstalled(family) ? family : null,
+            TextSize = size is "small" or "large" ? size : "normal" }, theme: true);
     }
 
     private void BuildFontMenu()
@@ -1248,7 +1185,6 @@ public sealed class MainForm : Form, IMessageFilter
         previewSplitter.BackColor = Theme.Border;
         RefreshThemeButton();
         for (int i = 0; i < panes.Length; i++) panes[i].SetActive(i == activePane);
-        Theme.EndTransition();
     }
 
     // The other pane is the one used just before the active pane, or else the first other visible pane (lowest number).
@@ -1615,18 +1551,10 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetGlobalHotkey(bool enabled)
     {
-        globalHotkey = enabled;
-        hotkeyItem.Checked = enabled;
-        if (IsHandleCreated)
-        {
-            UnregisterHotKey(Handle, HotkeyId);
-            if (enabled && !RegisterHotKey(Handle, HotkeyId, 0x4000 | 0x0008 | 0x0001, (uint)Keys.E)) // NOREPEAT|WIN|ALT
-                Active.SetLocalizedStatus("Win+Alt+E is already used by another program.");
-        }
-        ScheduleSave();
+        application.SetGlobalHotkey(enabled);
     }
 
-    internal bool TrayIconVisible => trayIcon.Visible;
+    internal bool TrayIconVisible => application.TrayIconVisible;
     internal string VersionText => versionLabel.Text;
     internal bool UpdateLinkShown => versionLabel.LinkArea.Length > 0;
 
@@ -1634,119 +1562,35 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetAutoUpdate(bool enabled)
     {
-        autoUpdate = enabled;
-        autoUpdateItem.Checked = enabled;
-        UpdateVersionText();
-        ScheduleSave();
+        application.ChangeSettings(s => s with { AutoUpdate = enabled });
     }
 
     private bool CanInstallUpdate(ReleaseInfo update) => autoUpdate && update.PackageUrl is not null && update.PackageSha256 is not null;
 
     private async Task OpenAvailableUpdateAsync()
     {
-        if (availableUpdate is not { } update || updating) return;
-        if (CanInstallUpdate(update) && UpdateInstaller.InstallablePath() is { } exe) await InstallUpdateAsync(update, exe);
-        else OpenReleasePage(update);
+        await application.OpenAvailableUpdateAsync(this);
     }
 
-    private void OpenReleasePage(ReleaseInfo update)
-    {
-        try { Process.Start(new ProcessStartInfo(update.Url) { UseShellExecute = true }); }
-        catch (Win32Exception error) { Active.SetStatus(error.Message); }
-    }
-
-    // The new process waits for this one to exit before it takes the single-instance lock and the search index.
-    private async Task InstallUpdateAsync(ReleaseInfo update, string exe)
-    {
-        if (FileOperations.InProgress)
-        {
-            Active.SetLocalizedStatus("Wait for the file operation to finish or cancel it before restarting or updating.");
-            return;
-        }
-        updating = true;
-        UpdateVersionText();
-        try { await UpdateInstaller.InstallAsync(update, exe, UpdateInstaller.DownloadAsync, updateCancellation.Token); }
-        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or IOException
-            or UnauthorizedAccessException or InvalidDataException)
-        {
-            updating = false;
-            UpdateVersionText();
-            Active.SetLocalizedStatus("Automatic update failed: {0}", error.Message);
-            OpenReleasePage(update);
-            return;
-        }
-        // An operation may have started while the package was downloading. The new executable is already in
-        // place, but this process must stay alive until its native file operations have finished.
-        if (FileOperations.InProgress)
-        {
-            updating = false;
-            availableUpdate = null;
-            UpdateVersionText();
-            Active.SetLocalizedStatus("Updated. Wait for the file operation to finish, then restart Folder Splitter.");
-            return;
-        }
-        saveTimer.Stop();
-        SaveSession();
-        var restart = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! };
-        restart.ArgumentList.Add("--wait-pid");
-        restart.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        if (!sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase))
-        {
-            restart.ArgumentList.Add("--session");
-            restart.ArgumentList.Add(sessionPath);
-        }
-        try { Process.Start(restart); }
-        catch (Win32Exception)
-        {
-            updating = false;
-            availableUpdate = null;
-            UpdateVersionText();
-            Active.SetLocalizedStatus("Updated. Restart Folder Splitter to finish.");
-            return;
-        }
-        ExitApplication();
-    }
 
     internal void SetCheckUpdates(bool enabled)
     {
-        checkUpdates = enabled;
-        updateItem.Checked = enabled;
-        updateTimer.Enabled = enabled && latestRelease is not null;
-        if (!enabled) availableUpdate = null;
-        UpdateVersionText();
-        if (enabled) _ = CheckForUpdateAsync();
-        ScheduleSave();
+        application.SetCheckUpdates(enabled);
     }
 
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal DateTime LastUpdateCheck { get; set; } = DateTime.MinValue;
-    internal TimeSpan UpdateCheckInterval => TimeSpan.FromMilliseconds(updateTimer.Interval);
-
-    // Unauthenticated GitHub API calls share 60 requests per hour per IP address. Besides the hourly
-    // timer, showing the window again re-checks only when the last check is 15 minutes old.
-    internal Task CheckForStaleUpdateAsync() =>
-        DateTime.UtcNow - LastUpdateCheck >= UpdateRecheckAfter ? CheckForUpdateAsync() : Task.CompletedTask;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)] internal DateTime LastUpdateCheck { get => application.LastUpdateCheck; set => application.LastUpdateCheck = value; }
+    internal TimeSpan UpdateCheckInterval => application.UpdateCheckInterval;
+    internal Task CheckForStaleUpdateAsync() => application.CheckForStaleUpdateAsync();
 
     protected override void OnActivated(EventArgs e)
     {
         base.OnActivated(e);
-        ShowPendingUpdateNotice();
-        _ = CheckForStaleUpdateAsync();
+        application.Activated(this);
+        if (ready) { ShowPendingUpdateNotice(); _ = CheckForStaleUpdateAsync(); }
     }
 
     // Offline, blocked or rate-limited networks simply leave the version label unchanged.
-    internal async Task CheckForUpdateAsync()
-    {
-        if (!checkUpdates || latestRelease is null || updateCancellation.IsCancellationRequested) return;
-        LastUpdateCheck = DateTime.UtcNow;
-        ReleaseInfo? latest;
-        try { latest = await latestRelease(updateCancellation.Token); }
-        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or OperationCanceledException
-            or System.Text.Json.JsonException or IOException or InvalidOperationException or KeyNotFoundException) { return; }
-        if (IsDisposed || !checkUpdates) return;
-        availableUpdate = latest is not null && latest.Version > UpdateChecker.Current ? latest : null;
-        UpdateVersionText();
-        ShowPendingUpdateNotice();
-    }
+    internal Task CheckForUpdateAsync() => application.CheckForUpdateAsync();
 
     private void UpdateVersionText()
     {
@@ -1770,109 +1614,73 @@ public sealed class MainForm : Form, IMessageFilter
     private void ShowPendingUpdateNotice()
     {
         if (!ready || !Visible || WindowState == FormWindowState.Minimized || updating ||
-            availableUpdate is not { } update || notifiedUpdateVersion == update.Version ||
+            availableUpdate is not { } update || application.NotifiedUpdateVersion == update.Version ||
             !UpdateNotice.OwnerVisibleAtNotice(this)) return;
         updateNotice?.Close();
-        notifiedUpdateVersion = update.Version;
+        application.NotifiedUpdateVersion = update.Version;
         var notice = new UpdateNotice(text, Font, update, CanInstallUpdate(update));
         updateNotice = notice;
         notice.UpdateRequested += async (_, _) => await OpenAvailableUpdateAsync();
         notice.FormClosed += (_, _) =>
         {
             if (ReferenceEquals(updateNotice, notice)) updateNotice = null;
-            if ((notice.Deferred || !Visible || WindowState == FormWindowState.Minimized) && notifiedUpdateVersion == update.Version)
-                notifiedUpdateVersion = null;
+            if ((notice.Deferred || !Visible || WindowState == FormWindowState.Minimized) && application.NotifiedUpdateVersion == update.Version)
+                application.NotifiedUpdateVersion = null;
         };
         notice.Present(this);
     }
-    internal bool TrayNoticeShown => trayNoticeShown;
+    internal bool TrayNoticeShown => application.State.TrayNoticeShown;
 
     internal void SetCloseToTray(bool enabled)
     {
-        closeToTray = enabled;
-        trayItem.Checked = enabled;
-        trayIcon.Visible = enabled;
-        ScheduleSave();
+        application.SetCloseToTray(enabled);
     }
 
     internal void ExitApplication()
     {
-        exiting = true;
-        Close();
+        application.ExitApplication();
     }
 
     private void SetWinEShortcut(bool enabled)
     {
-        try
-        {
-            if (enabled) winE.Enable();
-            else winE.Disable();
-        }
-        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
-        {
-            Active.SetLocalizedStatus("Could not change the Win+E setting: {0}", error.Message);
-        }
-        winEItem.Checked = winE.IsEnabled;
+        application.SetWinEShortcut(enabled, this);
     }
 
     internal void SetStartWithWindows(bool enabled)
     {
-        startWithWindows = enabled;
-        try
-        {
-            try
-            {
-                if (enabled) Startup.Enable();
-                else Startup.Disable();
-            }
-            finally { startupItem.Checked = Startup.IsEnabled; }
-        }
-        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
-        {
-            Active.SetLocalizedStatus("Could not change the startup setting: {0}", error.Message);
-        }
-        ScheduleSave();
+        application.SetStartWithWindows(enabled, this);
     }
 
-    // Win+Alt+E and Win+E bring this window forward and put it away when it is already in front.
-    internal void ToggleFromHotkey()
-    {
-        if (Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle) DismissFromHotkey();
-        else Summon();
-    }
+    // The application toggles its peer windows together, rather than changing the next hotkey target.
+    internal void ToggleFromHotkey() => application.ToggleFromHotkey();
+
+    internal bool IsForegroundBrowser => Visible && WindowState != FormWindowState.Minimized && GetForegroundWindow() == Handle;
 
     // Hiding keeps the app (and the hotkey) running in the notification area; without it, minimize instead.
     internal void DismissFromHotkey()
     {
         if (closeToTray)
         {
-            saveTimer.Stop();
-            SaveSession();
             Hide();
+            SaveSession();
         }
         else WindowState = FormWindowState.Minimized;
     }
 
-    internal void Summon()
+    internal void Reveal()
     {
         if (!Visible) Show();
         if (WindowState == FormWindowState.Minimized) ShowWindow(Handle, 9); // SW_RESTORE keeps a maximized window maximized
+    }
+
+    internal void Summon()
+    {
+        Reveal();
         Activate();
         SetForegroundWindow(Handle);
         Active.FocusFiles();
     }
 
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        if (globalHotkey) RegisterHotKey(Handle, HotkeyId, 0x4000 | 0x0008 | 0x0001, (uint)Keys.E);
-    }
-
-    protected override void OnHandleDestroyed(EventArgs e)
-    {
-        UnregisterHotKey(Handle, HotkeyId);
-        base.OnHandleDestroyed(e);
-    }
 
     protected override void WndProc(ref Message m)
     {
@@ -1902,13 +1710,6 @@ public sealed class MainForm : Form, IMessageFilter
             toolbarRevealTimer.Stop();
             ScheduleToolbarHide();
         }
-        if (m.Msg == 0x0312 && m.WParam == HotkeyId) { ToggleFromHotkey(); return; } // WM_HOTKEY
-        if (activationMessage != 0 && m.Msg == (int)activationMessage) // wParam 1: Win+E toggles like Win+Alt+E
-        {
-            if (m.WParam == 1) ToggleFromHotkey();
-            else Summon();
-            return;
-        }
         base.WndProc(ref m);
     }
 
@@ -1923,12 +1724,6 @@ public sealed class MainForm : Form, IMessageFilter
     [DllImport("user32.dll")]
     private static extern bool TrackMouseEvent(ref MouseTrack track);
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-    private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-    private static extern bool UnregisterHotKey(nint window, int id);
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -2005,6 +1800,7 @@ public sealed class MainForm : Form, IMessageFilter
 
     internal void SetSidebarVisible(bool visible)
     {
+        showSidebar = visible;
         sidebar.Visible = visible;
         sidebarSplitter.Visible = visible;
         sidebarButton.Checked = visible;
@@ -2027,7 +1823,7 @@ public sealed class MainForm : Form, IMessageFilter
             added++;
         }
         explorerFavoritesImported = result.Warning is null || result.Paths.Count > 0;
-        ReloadPlaces();
+        application.RefreshFavorites();
         Active.SetLocalizedStatus(() => text.T("Imported {0} favorites from File Explorer.", added)
             + (result.Warnings.Count > 0 ? " " + string.Join(" ", result.Warnings.Select(w => text.T(w))) : ""));
         ScheduleSave();
@@ -2039,7 +1835,7 @@ public sealed class MainForm : Form, IMessageFilter
         deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
         deletedFavorites.Insert(0, path);
         if (deletedFavorites.Count > 100) deletedFavorites.RemoveAt(100);
-        ReloadPlaces();
+        application.RefreshFavorites();
         ScheduleSave();
     }
 
@@ -2126,7 +1922,7 @@ public sealed class MainForm : Form, IMessageFilter
         if (favorites.Count >= 100) { Active.SetLocalizedStatus("Maximum 100 favorites."); return; }
         favorites.Add(path);
         deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
-        ReloadPlaces();
+        application.RefreshFavorites();
         Active.SetLocalizedStatus("Added to favorites.");
         ScheduleSave();
     }
@@ -2234,8 +2030,9 @@ public sealed class MainForm : Form, IMessageFilter
     private void UpdateMinimumSize()
     {
         Size minimum = MinimumContentSize(layoutTree);
-        MinimumSize = new Size(Math.Max(900, minimum.Width + (sidebar.Visible ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
-            Math.Max(600, minimum.Height + (globalToolbarPinned ? toolbar.Height : 0) + footer.Height + 12 + Height - ClientSize.Height));
+        Size scaledMinimum = BrowserWindowGeometry.MinimumSize(DeviceDpi);
+        MinimumSize = new Size(Math.Max(scaledMinimum.Width, minimum.Width + (showSidebar ? sidebar.Width : 0) + 8 + Width - ClientSize.Width),
+            Math.Max(scaledMinimum.Height, minimum.Height + (globalToolbarPinned ? toolbar.Height : 0) + footer.Height + 12 + Height - ClientSize.Height));
     }
 
     private void ApplySplitRatios()
@@ -2462,8 +2259,8 @@ public sealed class MainForm : Form, IMessageFilter
         int sourceId = source.PaneNumber - 1;
         var members = source.GroupMembers(group);
         bool wholePane = source.TabCount == members.Count;
-        bool wasSaving = saving;
-        saving = true;
+        bool wasRebuilding = rebuilding;
+        rebuilding = true;
         try
         {
             if (edge is { } side && target != sourceId && wholePane)
@@ -2500,7 +2297,7 @@ public sealed class MainForm : Form, IMessageFilter
                 receiving.FocusFiles();
             }
         }
-        finally { saving = wasSaving; }
+        finally { rebuilding = wasRebuilding; }
         ScheduleSave();
         return true;
     }
@@ -2647,29 +2444,12 @@ public sealed class MainForm : Form, IMessageFilter
     internal static bool ShouldRestartForMemory(long growth, int thresholdMb, TimeSpan uptime, bool unobtrusive) =>
         thresholdMb > 0 && uptime >= TimeSpan.FromMinutes(30) && unobtrusive && growth > thresholdMb * 1024L * 1024L;
 
-    private void CheckMemory()
-    {
-        if (restarting || updating || autoRestartMemory == 0) return;
-        long current;
-        using (var process = Process.GetCurrentProcess()) current = process.PrivateMemorySize64;
-        var uptime = DateTime.UtcNow - startedAt;
-        if (memoryBaseline == 0)
-        {
-            // The search index fills memory once at startup; measure growth from after that.
-            if (uptime >= TimeSpan.FromMinutes(5) && search?.IsReady != false) memoryBaseline = current;
-            return;
-        }
-        bool unobtrusive = (!Visible || WindowState == FormWindowState.Minimized) && previewWindows.Count == 0
-            && !tabDragging && columnDrag is null && OwnedForms.All(form => !form.Visible || form == previewWindow);
-        if (ShouldRestartForMemory(current - memoryBaseline, autoRestartMemory, uptime, unobtrusive)) RestartApplication();
-    }
 
     internal int AutoRestartMemory => autoRestartMemory;
 
     internal void SetAutoRestartMemory(int megabytes)
     {
-        autoRestartMemory = megabytes is 0 or 100 or 200 or 300 or 500 ? megabytes : 100;
-        ScheduleSave();
+        application.ChangeSettings(s => s with { AutoRestartMemory = megabytes is 0 or 100 or 200 or 300 or 500 ? megabytes : 100 });
     }
 
     private void BuildMemoryMenu()
@@ -2694,41 +2474,14 @@ public sealed class MainForm : Form, IMessageFilter
     // Saves the session and starts a fresh instance in the same state (hidden, minimized or shown).
     internal void RestartApplication()
     {
-        if (restarting || updating) return;
-        if (FileOperations.InProgress)
-        {
-            if (Visible && WindowState != FormWindowState.Minimized)
-                Active.SetLocalizedStatus("Wait for the file operation to finish or cancel it before restarting or updating.");
-            return;
-        }
-        var arguments = new List<string> { "--wait-pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) };
-        if (!sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase)) arguments.AddRange(["--session", sessionPath]);
-        if (!Visible) arguments.Add("--hidden");
-        else if (WindowState == FormWindowState.Minimized) arguments.Add("--minimized");
-        saveTimer.Stop();
-        SaveSession();
-        bool started;
-        if (RestartLauncher is { } launch) started = launch(arguments);
-        else
-        {
-            try
-            {
-                string exe = Environment.ProcessPath!;
-                var info = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! };
-                foreach (string argument in arguments) info.ArgumentList.Add(argument);
-                started = Process.Start(info) is not null;
-            }
-            catch (Win32Exception) { started = false; }
-        }
-        if (!started) { Active.SetLocalizedStatus("Could not restart Folder Splitter."); return; }
-        restarting = true;
-        ExitApplication();
+        application.RestartApplication(this);
     }
 
     private nint lastColumnHeader;
 
     private bool IsColumnHeader(nint window)
     {
+        if (!IsHandleCreated || !ShellNative.IsChild(Handle, window)) return false;
         if (window == lastColumnHeader) return true;
         var name = new System.Text.StringBuilder(16);
         if (GetClassName(window, name, name.Capacity) == 0 || name.ToString() != "SysHeader32") return false;
@@ -2836,6 +2589,7 @@ public sealed class MainForm : Form, IMessageFilter
     {
         switch (key)
         {
+            case Keys.Control | Keys.N: application.CreateWindowFromActive(this); break;
             case Keys.Control | Keys.T: Active.AddBlankTab(); break;
             case Keys.Control | Keys.F: Active.FocusFolderFilter(); break;
             case Keys.Control | Keys.Shift | Keys.C: Active.CopySelectionPaths(); break;
@@ -2881,85 +2635,14 @@ public sealed class MainForm : Form, IMessageFilter
 
     private void ScheduleSave()
     {
-        if (!ready || saving || rebuilding) return;
-        saveTimer.Stop();
-        saveTimer.Start();
+        if (ready && !rebuilding) application.ScheduleSave();
     }
 
-    private void SaveSession()
-    {
-        if (!ready) return;
-        saving = true;
-        try
-        {
-            Rectangle bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
-            SessionStore.Save(sessionPath, new SessionState
-            {
-                Layout = visiblePanes.Length, LayoutTree = layoutTree,
-                Language = text.Language,
-                ColorTheme = colorTheme, ShowDetails = showDetails, FontFamily = fontFamily, TextSize = textSize, ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
-                CustomAccent = customAccent, CustomBackground = customBackground, RecentCustomColors = recentCustomColors,
-                PickerColors = pickerColors,
-                ActivePaneColor = activePaneColor,
-                GlobalHotkey = globalHotkey, KeepInTray = closeToTray, ShowPreview = showPreview, PreviewWidth = previewWidth, TrayNoticeShown = trayNoticeShown,
-                CheckUpdates = checkUpdates, AutoUpdate = autoUpdate, ShowCommandBar = showCommandBar,
-                StartWithWindows = startWithWindows,
-                GlobalToolbarPinned = globalToolbarPinned,
-                ShowVerticalSeparators = showVerticalSeparators, ComfortableRows = comfortableRows, HighlightSortedColumn = highlightSortedColumn,
-                ActivePane = activePane, Panes = panes.Select(p => p.CaptureState()).ToList(),
-                Favorites = [.. favorites], ShowSidebar = sidebar.Visible, Workspaces = [.. workspaces],
-                FrequentFolders = [.. folderVisits.Entries],
-                FavoritesExpanded = favoritesExpanded,
-                SidebarWidth = sidebarWidth, DeletedFavorites = [.. deletedFavorites],
-                ExplorerFavoritesImported = explorerFavoritesImported,
-                WindowWidth = bounds.Width, WindowHeight = bounds.Height,
-                Maximized = WindowState == FormWindowState.Maximized,
-                ColumnRatio = layoutTree.Ratio, AutoRestartMemory = autoRestartMemory,
-                LeftRowRatio = layoutTree.First?.Ratio ?? .5, RightRowRatio = layoutTree.Second?.Ratio ?? .5
-            });
-            saveError = null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            saveError = ex.Message;
-            Active.SetLocalizedStatus("Session could not be saved: {0}", ex.Message);
-        }
-        finally { saving = false; }
-    }
+    private void SaveSession() => application.SaveSession();
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        saveTimer.Stop();
-        SaveSession();
-        // Closing the window keeps the app (and Win+Alt+E) alive in the notification area when enabled.
-        if (closeToTray && !exiting && e.CloseReason == CloseReason.UserClosing)
-        {
-            e.Cancel = true;
-            Hide();
-            if (!trayNoticeShown)
-            {
-                trayNoticeShown = true;
-                trayIcon.ShowBalloonTip(8000, "Folder Splitter", text.T("Folder Splitter keeps running in the notification area. Press Win+Alt+E or click its icon to reopen it; right-click the icon and choose Exit to quit. You can turn this off in Settings."), ToolTipIcon.Info);
-                SaveSession();
-            }
-            base.OnFormClosing(e);
-            return;
-        }
-        if (e.CloseReason == CloseReason.UserClosing && FileOperations.InProgress)
-        {
-            e.Cancel = true;
-            exiting = false;
-            if (!Visible || WindowState == FormWindowState.Minimized) Summon();
-            MessageBox.Show(this, text.T("A file operation is still in progress. Wait for it to finish or cancel it before exiting."),
-                "Folder Splitter", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            base.OnFormClosing(e);
-            return;
-        }
-        if (saveError is not null && e.CloseReason == CloseReason.UserClosing)
-        {
-            e.Cancel = MessageBox.Show(this, text.T("Your session could not be saved:\n\n{0}\n\nClose anyway?", saveError),
-                "Folder Splitter", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes;
-        }
+        application.Closing(this, e);
         base.OnFormClosing(e);
     }
 
@@ -2973,17 +2656,10 @@ public sealed class MainForm : Form, IMessageFilter
             previewWindow = null;
             updateNotice?.Dispose();
             Application.RemoveMessageFilter(this);
-            saveTimer.Dispose();
             previewTimer.Dispose();
-            memoryTimer.Dispose();
             toolbarHideTimer.Dispose();
             toolbarRevealTimer.Dispose();
             tips.Dispose();
-            trayIcon.Visible = false;
-            trayIcon.ContextMenuStrip?.Dispose();
-            trayIcon.Dispose();
-            updateCancellation.Cancel();
-            updateTimer.Dispose();
             places.ContextMenuStrip?.Dispose();
             favoritePlaces.ContextMenuStrip?.Dispose();
         }
@@ -2991,10 +2667,85 @@ public sealed class MainForm : Form, IMessageFilter
         if (disposing)
         {
             foreach (var pane in panes) if (!pane.IsDisposed) pane.Dispose();
-            search?.Dispose();
+            application.Unregister(this);
             placeIcons.Dispose();
             appIcon.Dispose();
         }
+    }
+
+    internal string ActiveFolder => Active.CurrentPath;
+    internal bool IsUnobtrusive => (!Visible || WindowState == FormWindowState.Minimized)
+        && previewWindows.Count == 0 && !tabDragging && columnDrag is null
+        && OwnedForms.All(form => !form.Visible);
+
+    internal BrowserWindowState CaptureWindowState()
+    {
+        Rectangle bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        return new BrowserWindowState
+        {
+            Layout = visiblePanes.Length, LayoutTree = layoutTree,
+            Panes = panes.Select(pane => pane.CaptureState()).ToList(), ActivePane = activePane,
+            WindowX = bounds.X, WindowY = bounds.Y, WindowWidth = bounds.Width, WindowHeight = bounds.Height,
+            Maximized = maximizedPresentation, Hidden = !Visible, Minimized = WindowState == FormWindowState.Minimized,
+            ShowFolderTree = showFolderTree, FolderTreeHeight = folderTreeHeight,
+            ShowPreview = showPreview, ShowDetails = showDetails, PreviewWidth = previewWidth,
+            ShowSidebar = showSidebar, SidebarWidth = sidebarWidth, FavoritesExpanded = favoritesExpanded,
+            ColumnRatio = layoutTree.Ratio, LeftRowRatio = layoutTree.First?.Ratio ?? .5,
+            RightRowRatio = layoutTree.Second?.Ratio ?? .5
+        };
+    }
+
+    internal void RefreshFavorites() => ReloadPlaces();
+    internal void RefreshShellViews() { foreach (var pane in panes) pane.RefreshViews(); }
+    internal void SetApplicationStatus(string key, params object[] values) => Active.SetLocalizedStatus(key, values);
+    internal void RefreshUpdate() { UpdateVersionText(); ShowPendingUpdateNotice(); }
+
+    internal void RefreshSharedSettings(SessionState? previous = null, bool theme = false)
+    {
+        if (!ready) return;
+        var state = application.State;
+        bool languageChanged = text.Language != state.Language;
+        text.SetLanguage(state.Language);
+        int index = Array.IndexOf(new[] { "ko", "en", "zh-CN", "ja" }, text.Language);
+        if (languageSelector.SelectedIndex != index) languageSelector.SelectedIndex = index;
+        hotkeyItem.Checked = state.GlobalHotkey;
+        trayItem.Checked = state.KeepInTray;
+        startupItem.Checked = Startup.IsEnabled;
+        winEItem.Checked = winE.IsEnabled;
+        updateItem.Checked = state.CheckUpdates;
+        autoUpdateItem.Checked = state.AutoUpdate;
+        bool commandsChanged = showCommandBar != state.ShowCommandBar;
+        bool detailsChanged = showVerticalSeparators != state.ShowVerticalSeparators
+            || comfortableRows != state.ComfortableRows || highlightSortedColumn != state.HighlightSortedColumn;
+        showCommandBar = state.ShowCommandBar;
+        showVerticalSeparators = state.ShowVerticalSeparators;
+        comfortableRows = state.ComfortableRows;
+        highlightSortedColumn = state.HighlightSortedColumn;
+        bool fontChanged = fontFamily != state.FontFamily || textSize != state.TextSize;
+        fontFamily = state.FontFamily;
+        textSize = state.TextSize;
+        if (fontChanged)
+        {
+            Font = new Font(UiFace, UiPoints);
+            favoritesHeader.Font = treeHeader.Font = HeaderFont();
+            if (sideTitleLabel is not null) sideTitleLabel.Font = HeaderFont();
+        }
+        if (globalToolbarPinned != state.GlobalToolbarPinned) SetGlobalToolbarPinned(state.GlobalToolbarPinned);
+        foreach (var pane in panes)
+        {
+            if (previous?.ActivePaneColor != state.ActivePaneColor) pane.SetActivePaneColor(state.ActivePaneColor);
+            if (commandsChanged) pane.SetCommandBarVisible(showCommandBar);
+            if (detailsChanged) pane.SetDetailsAppearance(showVerticalSeparators, comfortableRows, highlightSortedColumn);
+            if (languageChanged) pane.RefreshLanguage();
+        }
+        if (languageChanged)
+        {
+            foreach (var refresh in languageBindings) refresh();
+            folderTree.RefreshLanguage();
+            ReloadPlaces();
+        }
+        if (theme || fontChanged) ApplyAppearance();
+        if (previous?.CheckUpdates != state.CheckUpdates || previous?.AutoUpdate != state.AutoUpdate) UpdateVersionText();
     }
 
     private void ShowHelp()

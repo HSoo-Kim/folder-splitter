@@ -35,8 +35,8 @@ internal static class Program
             ("normalization does not mutate caller lists", DoesNotMutate),
             ("split tree sessions preserve sparse pane IDs and ratios", SplitTreeRoundtrip),
             ("legacy and malformed layouts normalize safely", LegacyLayouts)
-        }.Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases).Concat(PaletteGeneratorTests.Cases)
-            .Concat(TabGroupPersistenceTests.Cases).ToArray();
+        }.Concat(BrowserWindowStateTests.Cases).Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases)
+            .Concat(PaletteGeneratorTests.Cases).Concat(TabGroupPersistenceTests.Cases).ToArray();
 
         var failures = 0;
         Directory.CreateDirectory(TestDirectory);
@@ -142,7 +142,7 @@ internal static class Program
         Equal(false, legacy.HighlightSortedColumn);
         SessionStore.Save(path, legacy with
         {
-            ColorTheme = "dark", ShowFolderTree = false, ShowCommandBar = false,
+            ColorTheme = "dark", Windows = [legacy.Windows[0] with { ShowFolderTree = false }], ShowCommandBar = false,
             ShowVerticalSeparators = true, ComfortableRows = false, HighlightSortedColumn = true,
             Workspaces = [new Workspace { Name = "Appearance", Panes = legacy.Panes }]
         });
@@ -558,7 +558,7 @@ internal static class Program
         var path = FilePath("inactive", "session.json");
         foreach (var layout in new[] { 1, 2, 3, 4 })
         {
-            SessionStore.Save(path, original with { Layout = layout, LayoutTree = null });
+            SessionStore.Save(path, original with { Windows = [], Layout = layout, LayoutTree = null });
             var state = SessionStore.Load(path, out var warning);
             Equal<string?>(null, warning);
             Equal(layout, state.Layout);
@@ -571,7 +571,7 @@ internal static class Program
             }
             original = state with { ActivePane = 3 };
         }
-        Equal(0, SessionStore.Normalize(original with { ActivePane = -1 }).ActivePane);
+        Equal(0, SessionStore.Normalize(original with { Windows = [], ActivePane = -1 }).ActivePane);
     }
 
     private static void Bounds()
@@ -593,7 +593,7 @@ internal static class Program
         Equal(.6, state.RightRowRatio);
         state = SessionStore.Normalize(state with
         {
-            WindowWidth = int.MaxValue, WindowHeight = int.MinValue, SidebarWidth = int.MaxValue
+            Windows = [], WindowWidth = int.MaxValue, WindowHeight = int.MinValue, SidebarWidth = int.MaxValue
         });
         Equal(10000, state.WindowWidth);
         Equal(600, state.WindowHeight);
@@ -602,6 +602,7 @@ internal static class Program
         {
             state = SessionStore.Normalize(state with
             {
+                Windows = [],
                 ColumnRatio = invalid,
                 LeftRowRatio = invalid,
                 RightRowRatio = invalid

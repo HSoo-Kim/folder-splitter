@@ -43,21 +43,22 @@ internal static partial class Program
                             // Deterministic lifecycle setup only: keys and menus never invoke private handlers.
                             // Trigger the actual timer callback after its real threshold and uptime gates.
                             form.SetAutoRestartMemory(100);
-                            typeof(MainForm).GetField("startedAt", BindingFlags.Instance | BindingFlags.NonPublic)!
-                                .SetValue(form, DateTime.UtcNow - TimeSpan.FromHours(1));
-                            typeof(MainForm).GetField("memoryBaseline", BindingFlags.Instance | BindingFlags.NonPublic)!
-                                .SetValue(form, -200L * 1024 * 1024);
+                            typeof(FolderSplitterApplicationContext).GetField("startedAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+                                .SetValue(form.ApplicationContext, DateTime.UtcNow - TimeSpan.FromHours(1));
+                            typeof(FolderSplitterApplicationContext).GetField("memoryBaseline", BindingFlags.Instance | BindingFlags.NonPublic)!
+                                .SetValue(form.ApplicationContext, -200L * 1024 * 1024);
                             form.RestartLauncher = arguments =>
                             {
-                                restartObserved = arguments.Contains("--session") && arguments.Contains(session)
-                                    && arguments.Contains("--hidden") && arguments.Contains("--wait-pid");
                                 var saved = SessionStore.Load(session);
+                                restartObserved = arguments.Contains("--session") && arguments.Contains(session)
+                                    && arguments.Contains("--wait-pid") && saved.Windows.Single().Hidden;
                                 Check(saved.Panes[0].Groups.Single().Collapsed,
                                     "memory restart launcher observes the real saved collapsed session before process handoff");
                                 return true;
                             };
                             form.Hide();
-                            typeof(MainForm).GetMethod("CheckMemory", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, null);
+                            typeof(FolderSplitterApplicationContext).GetMethod("CheckMemory", BindingFlags.Instance | BindingFlags.NonPublic)!
+                                .Invoke(form.ApplicationContext, null);
                             Check(restartObserved, "actual automatic memory callback restarts through the saved-session launcher with hidden-state arguments");
                         }
                     }

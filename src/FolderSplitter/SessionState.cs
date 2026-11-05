@@ -25,6 +25,33 @@ public sealed record TabGroupState
     public int Count { get; init; }
 }
 
+// The browser-local portion of a session; shared preferences remain on SessionState.
+public sealed record BrowserWindowState
+{
+    public int Layout { get; init; } = 1;
+    public PaneLayout? LayoutTree { get; init; }
+    public List<PaneState> Panes { get; init; } = [];
+    public int ActivePane { get; init; }
+    public int? WindowX { get; init; }
+    public int? WindowY { get; init; }
+    public int WindowWidth { get; init; } = 1400;
+    public int WindowHeight { get; init; } = 900;
+    public bool Maximized { get; init; }
+    public bool Hidden { get; init; }
+    public bool Minimized { get; init; }
+    public bool ShowFolderTree { get; init; } = true;
+    public int FolderTreeHeight { get; init; }
+    public bool ShowPreview { get; init; }
+    public bool ShowDetails { get; init; }
+    public int PreviewWidth { get; init; }
+    public bool ShowSidebar { get; init; } = true;
+    public int SidebarWidth { get; init; } = 220;
+    public bool FavoritesExpanded { get; init; } = true;
+    public double ColumnRatio { get; init; } = .5;
+    public double LeftRowRatio { get; init; } = .5;
+    public double RightRowRatio { get; init; } = .5;
+}
+
 // A named set of panes and tabs the user can switch back to.
 public sealed record Workspace
 {
@@ -78,15 +105,21 @@ public sealed record SessionState
     public List<string> DeletedFavorites { get; init; } = [];
     public bool ExplorerFavoritesImported { get; init; }
     public int ActivePane { get; init; }
+    public int? WindowX { get; init; }
+    public int? WindowY { get; init; }
     public int WindowWidth { get; init; } = 1400;
     public int WindowHeight { get; init; } = 900;
     public bool Maximized { get; init; }
+    public bool Hidden { get; init; }
+    public bool Minimized { get; init; }
     public bool ShowSidebar { get; init; } = true;
     public int SidebarWidth { get; init; } = 220;
     public bool FavoritesExpanded { get; init; } = true;
     public double ColumnRatio { get; init; } = .5;
     public double LeftRowRatio { get; init; } = .5;
     public double RightRowRatio { get; init; } = .5;
+    public List<BrowserWindowState> Windows { get; init; } = [];
+    public int LastActiveWindow { get; init; }
     public List<Workspace> Workspaces { get; init; } = [];
     // Folders opened often, used to rank address-bar search results; older versions ignore this entry.
     public List<FolderVisit> FrequentFolders { get; init; } = [];
@@ -116,6 +149,21 @@ public static class SessionStore
             {
                 warning = "Session file contained no session data. Default session loaded.";
                 return Normalize(new SessionState());
+            }
+
+            // Keep the exact pre-migration file once, without changing the source on load.
+            if (state.Windows is null || state.Windows.Count == 0)
+            {
+                try
+                {
+                    var backupPath = path + ".pre-multiwindow.bak";
+                    if (!File.Exists(backupPath))
+                        File.Copy(path, backupPath, overwrite: false);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+                {
+                    warning = $"Session loaded, but could not back up the legacy session: {exception.Message}";
+                }
             }
 
             return Normalize(state);
@@ -151,9 +199,34 @@ public static class SessionStore
         }
     }
 
-    public static SessionState Normalize(SessionState state)
+    public static BrowserWindowState LegacyWindow(SessionState state) => new()
     {
-        state ??= new SessionState();
+        Layout = state.Layout, LayoutTree = state.LayoutTree, Panes = state.Panes,
+        ActivePane = state.ActivePane, WindowX = state.WindowX, WindowY = state.WindowY,
+        WindowWidth = state.WindowWidth, WindowHeight = state.WindowHeight,
+        Maximized = state.Maximized, Hidden = state.Hidden, Minimized = state.Minimized,
+        ShowFolderTree = state.ShowFolderTree, FolderTreeHeight = state.FolderTreeHeight,
+        ShowPreview = state.ShowPreview, ShowDetails = state.ShowDetails, PreviewWidth = state.PreviewWidth,
+        ShowSidebar = state.ShowSidebar, SidebarWidth = state.SidebarWidth, FavoritesExpanded = state.FavoritesExpanded,
+        ColumnRatio = state.ColumnRatio, LeftRowRatio = state.LeftRowRatio, RightRowRatio = state.RightRowRatio
+    };
+
+    // Only projects legacy fields: the window list and shared settings are left untouched.
+    public static SessionState ProjectWindow(SessionState state, BrowserWindowState window) => state with
+    {
+        Layout = window.Layout, LayoutTree = window.LayoutTree, Panes = window.Panes,
+        ActivePane = window.ActivePane, WindowX = window.WindowX, WindowY = window.WindowY,
+        WindowWidth = window.WindowWidth, WindowHeight = window.WindowHeight,
+        Maximized = window.Maximized, Hidden = window.Hidden, Minimized = window.Minimized,
+        ShowFolderTree = window.ShowFolderTree, FolderTreeHeight = window.FolderTreeHeight,
+        ShowPreview = window.ShowPreview, ShowDetails = window.ShowDetails, PreviewWidth = window.PreviewWidth,
+        ShowSidebar = window.ShowSidebar, SidebarWidth = window.SidebarWidth, FavoritesExpanded = window.FavoritesExpanded,
+        ColumnRatio = window.ColumnRatio, LeftRowRatio = window.LeftRowRatio, RightRowRatio = window.RightRowRatio
+    };
+
+    public static BrowserWindowState NormalizeBrowserWindow(BrowserWindowState window)
+    {
+        window ??= new BrowserWindowState();
         var defaultTab = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (string.IsNullOrWhiteSpace(defaultTab))
             defaultTab = Environment.CurrentDirectory;
@@ -161,7 +234,7 @@ public static class SessionStore
         var panes = new List<PaneState>(4);
         for (var index = 0; index < 4; index++)
         {
-            var pane = state.Panes is not null && index < state.Panes.Count ? state.Panes[index] : null;
+            var pane = window.Panes is not null && index < window.Panes.Count ? window.Panes[index] : null;
             var tabs = new List<string>();
             List<int>? savedTabSlots = pane?.Groups is { Count: > 0 } ? [] : null;
             if (pane?.Tabs is not null)
@@ -188,8 +261,8 @@ public static class SessionStore
             });
         }
 
-        var layout = state.Layout is >= 1 and <= 4 ? state.Layout : 4;
-        bool hasTree = PaneLayout.TryNormalize(state.LayoutTree, out var layoutTree);
+        var layout = window.Layout is >= 1 and <= 4 ? window.Layout : 4;
+        bool hasTree = PaneLayout.TryNormalize(window.LayoutTree, out var layoutTree);
         if (!hasTree)
         {
             layoutTree = PaneLayout.Preset(layout);
@@ -197,24 +270,45 @@ public static class SessionStore
             {
                 layoutTree = layoutTree with
                 {
-                    Ratio = NormalizeRatio(state.ColumnRatio),
+                    Ratio = NormalizeRatio(window.ColumnRatio),
                     First = layoutTree.First!.IsLeaf ? layoutTree.First
-                        : layoutTree.First! with { Ratio = NormalizeRatio(state.LeftRowRatio) },
+                        : layoutTree.First! with { Ratio = NormalizeRatio(window.LeftRowRatio) },
                     Second = layoutTree.Second!.IsLeaf ? layoutTree.Second
-                        : layoutTree.Second! with { Ratio = NormalizeRatio(state.RightRowRatio) }
+                        : layoutTree.Second! with { Ratio = NormalizeRatio(window.RightRowRatio) }
                 };
             }
         }
         int[] visible = layoutTree.GetPanes();
         layout = visible.Length;
         int active = hasTree
-            ? visible.Contains(state.ActivePane) ? state.ActivePane : visible[0]
-            : Math.Clamp(state.ActivePane, 0, layout - 1);
+            ? visible.Contains(window.ActivePane) ? window.ActivePane : visible[0]
+            : Math.Clamp(window.ActivePane, 0, layout - 1);
+        return window with
+        {
+            Layout = layout, LayoutTree = layoutTree, Panes = panes, ActivePane = active,
+            WindowWidth = Math.Clamp(window.WindowWidth, 900, 10000),
+            WindowHeight = Math.Clamp(window.WindowHeight, 600, 10000),
+            SidebarWidth = Math.Clamp(window.SidebarWidth, 140, 480),
+            FolderTreeHeight = window.FolderTreeHeight <= 0 ? 0 : Math.Clamp(window.FolderTreeHeight, 80, 2000),
+            ColumnRatio = NormalizeRatio(window.ColumnRatio),
+            LeftRowRatio = NormalizeRatio(window.LeftRowRatio),
+            RightRowRatio = NormalizeRatio(window.RightRowRatio)
+        };
+    }
+
+    public static SessionState Normalize(SessionState state)
+    {
+        state ??= new SessionState();
+        var windows = new List<BrowserWindowState>();
+        foreach (var window in state.Windows ?? [])
+            windows.Add(NormalizeBrowserWindow(window));
+        if (windows.Count == 0)
+            windows.Add(NormalizeBrowserWindow(LegacyWindow(state)));
         string? accent = NormalizeColor(state.CustomAccent), background = NormalizeColor(state.CustomBackground);
         var recentCustomColors = NormalizeRecentCustomColors(state.RecentCustomColors);
         if (recentCustomColors.Count == 0 && background is not null && accent is not null)
             recentCustomColors.Add(new CustomColorPair { Background = background, Accent = accent });
-        return state with
+        return ProjectWindow(state with
         {
             Language = NormalizeLanguage(state.Language),
             ColorTheme = string.Equals(state.ColorTheme?.Trim(), CustomTheme, StringComparison.OrdinalIgnoreCase)
@@ -225,23 +319,14 @@ public static class SessionStore
             ActivePaneColor = NormalizeActivePaneColor(state.ActivePaneColor),
             FontFamily = string.IsNullOrWhiteSpace(state.FontFamily) || state.FontFamily.Trim().Length > 64 ? null : state.FontFamily.Trim(),
             TextSize = state.TextSize is "small" or "large" ? state.TextSize : "normal",
-            Layout = layout,
-            LayoutTree = layoutTree,
-            Panes = panes,
             Favorites = NormalizeFavorites(state.Favorites),
             DeletedFavorites = NormalizeFavorites(state.DeletedFavorites),
             Workspaces = NormalizeWorkspaces(state.Workspaces),
             FrequentFolders = FolderVisits.Normalize(state.FrequentFolders),
             AutoRestartMemory = state.AutoRestartMemory is 0 or 100 or 200 or 300 or 500 ? state.AutoRestartMemory : 100,
-            ActivePane = active,
-            WindowWidth = Math.Clamp(state.WindowWidth, 900, 10000),
-            WindowHeight = Math.Clamp(state.WindowHeight, 600, 10000),
-            SidebarWidth = Math.Clamp(state.SidebarWidth, 140, 480),
-            FolderTreeHeight = state.FolderTreeHeight <= 0 ? 0 : Math.Clamp(state.FolderTreeHeight, 80, 2000),
-            ColumnRatio = NormalizeRatio(state.ColumnRatio),
-            LeftRowRatio = NormalizeRatio(state.LeftRowRatio),
-            RightRowRatio = NormalizeRatio(state.RightRowRatio)
-        };
+            Windows = windows,
+            LastActiveWindow = Math.Clamp(state.LastActiveWindow, 0, windows.Count - 1)
+        }, windows[0]);
     }
 
     private static List<TabGroupState> NormalizeTabGroups(
@@ -311,7 +396,7 @@ public static class SessionStore
 
     public static Workspace NormalizeWorkspace(Workspace workspace)
     {
-        var state = Normalize(new SessionState
+        var state = NormalizeBrowserWindow(new BrowserWindowState
         {
             LayoutTree = workspace.LayoutTree, Panes = workspace.Panes ?? [], ActivePane = workspace.ActivePane
         });

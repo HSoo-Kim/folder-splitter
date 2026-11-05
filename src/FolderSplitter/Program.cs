@@ -12,9 +12,13 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         string sessionPath = SessionStore.DefaultPath;
+        // Resolve the scratch session before loading: legacy loads now create a migration backup.
+        int sessionArgument = Array.LastIndexOf(args, "--session");
+        if (sessionArgument >= 0 && sessionArgument + 1 < args.Length)
+            sessionPath = Path.GetFullPath(args[sessionArgument + 1]);
         var text = new UiText(SessionStore.Load(sessionPath).Language);
         var folders = new List<string>();
-        bool toggle = false, hidden = false, minimized = false;
+        bool toggle = false, hidden = false, minimized = false, restorePresentation = false;
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--toggle")
@@ -24,7 +28,10 @@ internal static class Program
             else if (args[i] == "--minimized")
                 minimized = true;
             else if (args[i] == "--wait-pid" && i + 1 < args.Length)
+            {
+                restorePresentation = true;
                 WaitForExit(args[++i]);
+            }
             else if (args[i] == "--session" && i + 1 < args.Length)
             {
                 sessionPath = Path.GetFullPath(args[++i]);
@@ -60,10 +67,13 @@ internal static class Program
         // Only the default session registers itself at launch: a work or test session started with --session
         // must not take over the one Run value. Any session can still turn the option on in Settings.
         bool registerStartup = sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase);
-        Application.Run(new MainForm(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync)
+        using var context = new FolderSplitterApplicationContext(sessionPath, folders, search, latestRelease: UpdateChecker.FetchLatestAsync)
         {
-            StartMinimized = hidden || minimized, StartHidden = hidden, RegisterStartupOnLaunch = registerStartup
-        });
+            StartMinimized = hidden || minimized, StartHidden = hidden, RestorePresentation = restorePresentation,
+            RegisterStartupOnLaunch = registerStartup
+        };
+        context.ShowWindows();
+        Application.Run(context);
     }
 
     // After an update the new executable starts before the old one has exited.

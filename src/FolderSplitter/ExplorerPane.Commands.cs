@@ -301,6 +301,10 @@ public sealed partial class ExplorerPane
         int room = commands.DisplayRectangle.Width - used - filter.Margin.Horizontal;
         filter.Visible = room >= 70;
         if (filter.Visible) filter.Width = Math.Min(220, room);
+        // Width changes can reveal the filter while the strip is already laying out. Finish its new
+        // preferred height now so the next browser resize does not shift the file list a second time.
+        int height = commands.GetPreferredSize(new Size(commands.Width, 0)).Height;
+        if (commands.Height != height) commands.Height = height;
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, EntryPoint = "SendMessageW")]

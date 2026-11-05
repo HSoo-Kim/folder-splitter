@@ -83,6 +83,12 @@ internal static partial class Program
                 Console.WriteLine($"FREQUENT_FOLDERS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--multi-window"])
+            {
+                RunMultiWindowScenario(root);
+                Console.WriteLine($"MULTI_WINDOW_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--recent-items"])
             {
                 RunRecentItemsScenario(root);
@@ -325,6 +331,7 @@ internal static partial class Program
             RunPaneNavigationScenario(root);
             RunAppearanceScenario(root);
             RunTrayScenario(root);
+            RunMultiWindowScenario(root);
             RunUpdateScenario(root);
             RunPreviewScenario(root);
             RunPdfScenario(root);
@@ -780,9 +787,9 @@ internal static partial class Program
                     Check(status.Text.Contains(here), "the status line shows the current folder's file total");
                 }
                 form.SetColorTheme("dark");
-                await WindowRestored(form, () => PostMessage(form.Handle, 0x0312, 0x4653, 0)); // WM_HOTKEY Win+Alt+E
+                await WindowRestored(form, () => PostMessage(form.ApplicationContext.ActivationHandle, 0x0312, 0x4653, 0)); // WM_HOTKEY Win+Alt+E
                 Check(form.WindowState != FormWindowState.Minimized, "Win+Alt+E hotkey restores a minimized window");
-                await WindowRestored(form, () => PostMessage(form.Handle, QuadExplorer.Program.ActivationMessage(session), 0, 0));
+                await WindowRestored(form, () => PostMessage(form.ApplicationContext.ActivationHandle, QuadExplorer.Program.ActivationMessage(session), 0, 0));
                 Check(form.WindowState != FormWindowState.Minimized, "a second launch brings the running window forward");
                 form.SetGlobalHotkey(false);
                 Check(!form.GlobalHotkeyEnabled, "Win+Alt+E hotkey can be turned off");
@@ -857,7 +864,7 @@ internal static partial class Program
                 var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void Shown(object? sender, EventArgs e) { if (form.Visible) shown.TrySetResult(); }
                 form.VisibleChanged += Shown;
-                PostMessage(form.Handle, QuadExplorer.Program.ActivationMessage(session), 0, 0);
+                PostMessage((nint)0xffff, QuadExplorer.Program.ActivationMessage(session), 0, 0); // Real HWND_BROADCAST from another launch.
                 await shown.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 form.VisibleChanged -= Shown;
                 Check(form.Visible, "Win+E or a second launch shows the hidden window again");
@@ -866,7 +873,7 @@ internal static partial class Program
                 var reshown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void Reshown(object? sender, EventArgs e) { if (form.Visible) reshown.TrySetResult(); }
                 form.VisibleChanged += Reshown;
-                PostMessage(form.Handle, 0x0312, 0x4653, 0); // WM_HOTKEY while hidden
+                PostMessage(form.ApplicationContext.ActivationHandle, 0x0312, 0x4653, 0); // WM_HOTKEY while hidden
                 await reshown.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 form.VisibleChanged -= Reshown;
                 Check(form.Visible, "Win+Alt+E shows the hidden window again");
@@ -874,7 +881,7 @@ internal static partial class Program
                 var toggledIn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void ToggledIn(object? sender, EventArgs e) { if (form.Visible) toggledIn.TrySetResult(); }
                 form.VisibleChanged += ToggledIn;
-                PostMessage(form.Handle, QuadExplorer.Program.ActivationMessage(session), 1, 0); // Win+E toggle while hidden
+                PostMessage(form.ApplicationContext.ActivationHandle, QuadExplorer.Program.ActivationMessage(session), 1, 0); // Win+E toggle while hidden
                 await toggledIn.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 form.VisibleChanged -= ToggledIn;
                 Check(form.Visible, "Win+E toggle shows the hidden window");
