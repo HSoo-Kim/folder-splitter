@@ -851,6 +851,16 @@ internal static class Theme
                 g.Clip = clip;
                 return;
             }
+            if (tab.MultiSelected)
+            {
+                var selected = new Rectangle(1, Scale(3, dpi), tab.Width - 3, tab.Height - Scale(6, dpi));
+                using var path = Rounded(selected, Scale(CornerRadius - 2, dpi));
+                using var fill = new SolidBrush(Blend(Selected, Canvas));
+                using var edge = new Pen(Blend(Accent, Border));
+                g.FillPath(fill, path);
+                g.DrawPath(edge, path);
+                return;
+            }
             if (active)
             {
                 var hover = new Rectangle(1, Scale(3, dpi), tab.Width - 3, tab.Height - Scale(6, dpi));

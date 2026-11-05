@@ -7,6 +7,20 @@ internal sealed class FolderTabButton : ToolStripButton
     private Point pressPosition;
     private ToolStrip? dragOwner;
     private TabGroupColor? groupColor;
+    private bool multiSelected;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal bool MultiSelected
+    {
+        get => multiSelected;
+        set { if (multiSelected == value) return; multiSelected = value; Invalidate(); }
+    }
+    protected override AccessibleObject CreateAccessibilityInstance() => new TabAccessibleObject(this);
+    private sealed class TabAccessibleObject(FolderTabButton owner) : ToolStripItemAccessibleObject(owner)
+    {
+        public override AccessibleStates State => base.State
+            | (owner.Checked ? AccessibleStates.Checked : AccessibleStates.None)
+            | (owner.MultiSelected ? AccessibleStates.Selected : AccessibleStates.None);
+    }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal TabGroupColor? GroupColor
     {

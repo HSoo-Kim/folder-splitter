@@ -161,6 +161,7 @@ public sealed partial class ExplorerPane
 
     internal bool HandleTabStripKey(Keys key)
     {
+        if (tabStrip.ContainsFocus && key == Keys.Escape) { ClearTabSelection(); return true; }
         if (!tabStrip.ContainsFocus || key is not (Keys.Apps or (Keys.Shift | Keys.F10))) return false;
         var item = tabStrip.Items.Cast<ToolStripItem>().FirstOrDefault(candidate => candidate.Selected);
         if (item is TabGroupChip chip) ShowGroupMenu(chip.Group, focusName: false);
@@ -196,9 +197,10 @@ public sealed partial class ExplorerPane
     {
         var members = GroupMembers(group);
         if (members.Count == 0) return;
+        SuppressSavedGroupSync = true;
         int selected = ActiveTab is { } active ? members.ToList().IndexOf(active) : -1;
         var snapshot = remember ? new ClosedGroup(group.Name, group.Color,
-            members.Select(tab => tab.Host?.LocationPath).ToArray(), Math.Max(0, selected)) : null;
+            members.Select(tab => tab.Host?.LocationPath).ToArray(), Math.Max(0, selected), group.SavedId) : null;
         if (selected >= 0)
         {
             int next = FindTabOutsideGroup(group);
@@ -211,6 +213,7 @@ public sealed partial class ExplorerPane
         }
         foreach (var tab in members.Reverse()) CloseTabCore(tabs.IndexOf(tab), remember: false, selectReplacement: false);
         if (selected >= 0 && selectedIndex < 0 && tabs.Count > 0) AddBlankTab();
+        SuppressSavedGroupSync = false;
         if (snapshot is null) return;
         RememberClosedTab(new ClosedTabEntry(null, snapshot));
         TabClosed?.Invoke(this, EventArgs.Empty);
@@ -230,6 +233,7 @@ public sealed partial class ExplorerPane
     {
         selectedIndex = active is null ? -1 : tabs.IndexOf(active);
         RememberGroupSelection();
+        UpdateTabSelectionAppearance();
         SynchronizeGroupStrip();
         LayoutTabs();
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -291,7 +295,7 @@ public sealed partial class ExplorerPane
             int start = index;
             while (index < saved.Count && saved[index].Group == group) index++;
             result.Add(new TabGroupState { Name = group.Name, Color = group.Color.ToString(), Collapsed = group.Collapsed,
-                Start = start, Count = index - start });
+                SavedId = group.SavedId, Start = start, Count = index - start });
         }
         return result;
     }
@@ -304,7 +308,8 @@ public sealed partial class ExplorerPane
         }).Panes[0];
         foreach (var entry in normalized.Groups)
         {
-            var group = new TabGroup { Name = entry.Name, Color = Enum.Parse<TabGroupColor>(entry.Color), Collapsed = entry.Collapsed };
+            var group = new TabGroup { Name = entry.Name, Color = Enum.Parse<TabGroupColor>(entry.Color),
+                Collapsed = entry.Collapsed, SavedId = entry.SavedId };
             for (int index = entry.Start; index < entry.Start + entry.Count; index++) tabs[index].Group = group;
         }
         SynchronizeGroupStrip();
@@ -314,26 +319,30 @@ public sealed partial class ExplorerPane
 
     private void AddGroupTabMenu(ContextMenuStrip menu, FolderTab tab)
     {
+        var selection = selectedTabs.Contains(tab) ? SelectedTabs : [tab];
+        bool multiple = selection.Count > 1;
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(text.T("Add tab to new group"), null, (_, _) =>
+        menu.Items.Add(multiple ? text.T("Add {0} tabs to new group", selection.Count) : text.T("Add tab to new group"), null, (_, _) =>
         {
-            if (CreateGroup(tab) is { } group) BeginInvoke(() => ShowGroupMenu(group));
+            if ((multiple ? CreateGroup(selection) : CreateGroup(tab)) is { } group) BeginInvoke(() => ShowGroupMenu(group));
         });
-        var add = new ToolStripMenuItem(text.T("Add tab to group"));
-        foreach (var group in Groups.Where(group => group != tab.Group))
+        var add = new ToolStripMenuItem(text.T(multiple ? "Add tabs to group" : "Add tab to group"));
+        foreach (var group in Groups.Where(group => selection.Any(member => member.Group != group)))
         {
+            int count = GroupMembers(group).Count + selection.Count(member => member.Group != group);
             var item = new ToolStripMenuItem(GroupLabel(group))
             {
-                Enabled = GroupMembers(group).Count < TabGroup.MaxTabs,
+                Enabled = count <= TabGroup.MaxTabs,
                 ForeColor = Theme.GroupColor(group.Color),
-                ToolTipText = GroupMembers(group).Count >= TabGroup.MaxTabs ? text.T("A group holds up to 12 tabs.") : ""
+                ToolTipText = count > TabGroup.MaxTabs ? text.T("A group holds up to 12 tabs.") : ""
             };
-            item.Click += (_, _) => AddToGroup(tab, group);
+            item.Click += (_, _) => { if (multiple) AddToGroup(selection, group); else AddToGroup(tab, group); };
             add.DropDownItems.Add(item);
         }
         add.Enabled = add.DropDownItems.Count > 0;
         menu.Items.Add(add);
-        if (tab.Group is not null) menu.Items.Add(text.T("Remove from group"), null, (_, _) => RemoveFromGroup(tab));
+        if (selection.Any(member => member.Group is not null))
+            menu.Items.Add(text.T("Remove from group"), null, (_, _) => { if (multiple) RemoveFromGroup(selection); else RemoveFromGroup(tab); });
         menu.Items.Add(new ToolStripSeparator());
     }
 
@@ -383,6 +392,9 @@ public sealed partial class ExplorerPane
         }
         menu.Items.Add(new ToolStripControlHost(colors) { Margin = Padding.Empty, Padding = Padding.Empty });
         menu.Items.Add(new ToolStripSeparator());
+        var save = new ToolStripMenuItem(text.T("Save group")) { Checked = ExistingSavedId(group.SavedId) is not null };
+        save.Click += (_, _) => SaveGroupRequested?.Invoke(this, group);
+        menu.Items.Add(save);
         menu.Items.Add(text.T("New tab in group"), null, (_, _) => AddTabInGroup(group));
         menu.Items.Add(text.T(group.Collapsed ? "Expand group" : "Collapse group"), null,
             (_, _) => SetGroupCollapsed(group, !group.Collapsed));

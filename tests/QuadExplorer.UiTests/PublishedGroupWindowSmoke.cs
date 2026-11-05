@@ -14,10 +14,13 @@ internal static partial class Program
         string session = Path.Combine(output, "published-groups-session.json");
         string first = Directory.CreateDirectory(Path.Combine(output, "Published-first")).FullName;
         string second = Directory.CreateDirectory(Path.Combine(output, "Published-second")).FullName;
+        string savedPath = Directory.CreateDirectory(Path.Combine(output, "Published-saved")).FullName;
+        const string savedId = "published-saved-group";
         SessionStore.Save(session, new SessionState
         {
             Language = "en", StartWithWindows = true, GlobalHotkey = false, CheckUpdates = false,
             AutoRestartMemory = 0, KeepInTray = false, ExplorerFavoritesImported = true,
+            SavedGroups = [new() { Id = savedId, Name = "Published Saved", Color = "Green", Paths = [savedPath] }],
             Windows = [new() { Panes = [new() { Tabs = [first], Groups = [new() { Name = "Smoke first", Color = "Blue", Count = 1 }] }],
                     WindowX = 20, WindowY = 20, ShowFolderTree = false },
                 new() { Panes = [new() { Tabs = [second], Groups = [new() { Name = "Smoke second", Color = "Purple", Count = 1 }] }],
@@ -52,6 +55,26 @@ internal static partial class Program
                     Check(windows.Count(window => PublishedNames(window).Any(item => item.Name.Contains("Smoke first", StringComparison.Ordinal))) == 1
                         && windows.Count(window => PublishedNames(window).Any(item => item.Name.Contains("Smoke second", StringComparison.Ordinal))) == 1,
                         $"published group smoke launch {launch} exposes each restored named chip in exactly its own window");
+                    PublishedAccessible? savedItem = null;
+                    PublishedWait(() =>
+                    {
+                        savedItem = windows.SelectMany(PublishedNames).FirstOrDefault(item => item.Name == "Published Saved (1 tabs)");
+                        return savedItem is not null && windows.SelectMany(PublishedNames).Any(item => item.Name == "Saved groups");
+                    }, "published Saved groups sidebar");
+                    Check(savedItem is not null, $"published saved group smoke launch {launch} shows the saved entry in the sidebar");
+                    nint savedList = PublishedSavedGroupList(windows);
+                    var row = new NativeRect();
+                    NativeAppearanceRectMessage(savedList, 0x0198, 0, ref row); // LB_GETITEMRECT
+                    nint click = (nint)(((row.Top + (row.Bottom - row.Top) / 2) << 16) | ((row.Left + 10) & 0xffff));
+                    // Native clicks update ListBox's managed selection before its consumer MouseClick command.
+                    PostMessage(savedList, 0x0201, 1, click);
+                    PostMessage(savedList, 0x0202, 0, click);
+                    PublishedWait(() => windows.SelectMany(PublishedNames)
+                        .Any(item => item.Name.Contains("Tab group: Published Saved,", StringComparison.Ordinal)),
+                        "saved sidebar entry opening its group");
+                    Check(windows.Count(window => PublishedNames(window).Any(item =>
+                        item.Name.Contains("Tab group: Published Saved,", StringComparison.Ordinal))) == 1,
+                        $"published saved group smoke launch {launch} opens or focuses exactly one linked group");
                     var settings = windows.SelectMany(PublishedNames).First(item => item.Name == "Settings");
                     settings.Object.accDoDefaultAction(settings.Child);
                     PublishedAccessible? exit = null;
@@ -64,11 +87,16 @@ internal static partial class Program
                     Check(process.WaitForExit(30_000) && process.ExitCode == 0,
                         $"published group smoke launch {launch} exits through the real Settings menu without killing a browser");
                     var saved = SessionStore.Load(session);
-                    Check(saved.Windows.Count == 2 && saved.Windows[0].Panes[0].Tabs.SequenceEqual([first])
-                        && saved.Windows[1].Panes[0].Tabs.SequenceEqual([second])
-                        && saved.Windows[0].Panes[0].Groups.Single() is { Name: "Smoke first", Color: "Blue", Count: 1 }
-                        && saved.Windows[1].Panes[0].Groups.Single() is { Name: "Smoke second", Color: "Purple", Count: 1 },
+                    Check(saved.Windows.Count == 2 && saved.Windows[0].Panes[0].Tabs.Contains(first)
+                        && saved.Windows[1].Panes[0].Tabs.Contains(second)
+                        && saved.Windows[0].Panes[0].Groups.Any(group => group is { Name: "Smoke first", Color: "Blue", Count: 1 })
+                        && saved.Windows[1].Panes[0].Groups.Any(group => group is { Name: "Smoke second", Color: "Purple", Count: 1 }),
                         $"published group smoke launch {launch} saves both windows and their group metadata for relaunch");
+                    Check(saved.SavedGroups.Single() is { Id: savedId, Name: "Published Saved", Color: "Green" } entry
+                        && entry.Paths.SequenceEqual([savedPath])
+                        && saved.Windows.SelectMany(window => window.Panes).SelectMany(pane => pane.Groups)
+                            .Single(group => group.SavedId == savedId).Name == "Published Saved",
+                        $"published saved group smoke launch {launch} retains the saved catalog and stable open link for relaunch");
                 }
                 finally
                 {
@@ -154,6 +182,24 @@ internal static partial class Program
         Collect(window);
         EnumChildWindows(window, (child, _) => { Collect(child); return true; }, 0);
         return items;
+    }
+
+    private static nint PublishedSavedGroupList(IEnumerable<nint> windows)
+    {
+        foreach (nint window in windows)
+        {
+            nint result = 0;
+            EnumChildWindows(window, (child, _) =>
+            {
+                var name = new System.Text.StringBuilder(256);
+                GetClassName(child, name, name.Capacity);
+                if (name.ToString().Contains("LISTBOX", StringComparison.OrdinalIgnoreCase)
+                    && PublishedNames(child).Any(item => item.Name == "Saved groups")) result = child;
+                return result == 0;
+            }, 0);
+            if (result != 0) return result;
+        }
+        throw new InvalidOperationException("The published Saved groups list HWND was not found.");
     }
 
     private delegate bool PublishedWindowCallback(nint window, nint data);

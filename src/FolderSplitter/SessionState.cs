@@ -20,9 +20,18 @@ public sealed record TabGroupState
 {
     public string Name { get; init; } = "";
     public string Color { get; init; } = "Grey";
+    public string? SavedId { get; init; }
     public bool Collapsed { get; init; }
     public int Start { get; init; }
     public int Count { get; init; }
+}
+
+public sealed record SavedTabGroup
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string Color { get; init; } = "Grey";
+    public List<string> Paths { get; init; } = [];
 }
 
 // The browser-local portion of a session; shared preferences remain on SessionState.
@@ -102,6 +111,7 @@ public sealed record SessionState
     public PaneLayout? LayoutTree { get; init; }
     public List<PaneState> Panes { get; init; } = [];
     public List<string> Favorites { get; init; } = [];
+    public List<SavedTabGroup> SavedGroups { get; init; } = [];
     public List<string> DeletedFavorites { get; init; } = [];
     public bool ExplorerFavoritesImported { get; init; }
     public int ActivePane { get; init; }
@@ -131,6 +141,7 @@ public static class SessionStore
 {
     public const string CustomTheme = "custom";
     public const int RecentCustomColorLimit = 6;
+    public const int SavedGroupLimit = 30;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public static string DefaultPath => Path.Combine(
@@ -322,6 +333,7 @@ public static class SessionStore
             Favorites = NormalizeFavorites(state.Favorites),
             DeletedFavorites = NormalizeFavorites(state.DeletedFavorites),
             Workspaces = NormalizeWorkspaces(state.Workspaces),
+            SavedGroups = NormalizeSavedGroups(state.SavedGroups),
             FrequentFolders = FolderVisits.Normalize(state.FrequentFolders),
             AutoRestartMemory = state.AutoRestartMemory is 0 or 100 or 200 or 300 or 500 ? state.AutoRestartMemory : 100,
             Windows = windows,
@@ -378,6 +390,7 @@ public static class SessionStore
             {
                 Name = name.Length > 40 ? name[..40] : name,
                 Color = NormalizeTabGroupColor(group.Color),
+                SavedId = NormalizeSavedGroupId(group.SavedId),
                 Start = start,
                 Count = count
             });
@@ -385,6 +398,39 @@ public static class SessionStore
         }
         groups.Sort(static (first, second) => first.Start.CompareTo(second.Start));
         return groups;
+    }
+
+    public static string? NormalizeSavedGroupId(string? id)
+    {
+        id = id?.Trim();
+        return string.IsNullOrEmpty(id) || id.Length > 128 ? null : id;
+    }
+
+    public static List<SavedTabGroup> NormalizeSavedGroups(IReadOnlyList<SavedTabGroup>? source)
+    {
+        var result = new List<SavedTabGroup>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in source ?? [])
+        {
+            if (group is null || NormalizeSavedGroupId(group.Id) is not { } id || ids.Contains(id)) continue;
+            var paths = new List<string>();
+            foreach (string? path in group.Paths ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                paths.Add(path);
+                if (paths.Count == 12) break;
+            }
+            if (paths.Count == 0) continue;
+            ids.Add(id);
+            string name = (group.Name ?? "").Trim();
+            result.Add(new SavedTabGroup
+            {
+                Id = id, Name = name.Length > 40 ? name[..40] : name,
+                Color = NormalizeTabGroupColor(group.Color), Paths = paths
+            });
+            if (result.Count == SavedGroupLimit) break;
+        }
+        return result;
     }
 
     private static string NormalizeTabGroupColor(string? color) => color?.Trim().ToLowerInvariant() switch

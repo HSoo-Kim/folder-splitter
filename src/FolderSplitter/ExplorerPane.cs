@@ -117,13 +117,11 @@ public sealed partial class ExplorerPane : UserControl
     public event EventHandler? StateChanged;
     public event EventHandler? SelectionChanged;
     public event EventHandler<string>? FavoriteRequested;
-    public event Action<ExplorerPane, string, int>? MoveTabRequested;
     internal event Action<ExplorerPane, FolderTab>? TabDragRequested;
     internal event Action<ExplorerPane, FolderTab, SplitEdge>? SplitTabRequested;
     internal event Action<ExplorerPane, TabGroup>? GroupDragRequested;
     internal event Action<ExplorerPane, TabGroup, int>? MoveGroupRequested;
     internal event Action<ExplorerPane, TabGroup>? MoveGroupToWindowRequested;
-    internal event Action<ExplorerPane, FolderTab>? MoveTabToWindowRequested;
     public event EventHandler<string>? FolderVisited;
     internal event Action<ExplorerPane>? OpenInOtherPaneRequested;
     internal Rectangle FileAreaOnScreen => contents.RectangleToScreen(contents.ClientRectangle);
@@ -535,7 +533,7 @@ public sealed partial class ExplorerPane : UserControl
         var tab = new FolderTab(button) { Group = group };
         button.CloseRequested += (_, _) => CloseTab(tabs.IndexOf(tab));
         button.DragRequested += (_, _) => TabDragRequested?.Invoke(this, tab);
-        button.Click += (_, _) => SelectTab(tabs.IndexOf(tab));
+        button.Click += (_, _) => SelectTabWithModifiers(tab, ModifierKeys);
         button.MouseDown += (_, e) =>
         {
             int index = tabs.IndexOf(tab);
@@ -618,19 +616,26 @@ public sealed partial class ExplorerPane : UserControl
         foreach (var tab in tabs) tab.Host?.RefreshFolder();
     }
 
-    public void SelectTab(int index, bool focus = true)
+    public void SelectTab(int index, bool focus = true, bool preserveSelection = false)
     {
         CloseCandidates();
         if (index < 0 || index >= tabs.Count) return;
         if (tabs[index].Group is { Collapsed: true } group) group.Collapsed = false;
         if (selectedIndex >= 0 && selectedIndex < tabs.Count && tabs[selectedIndex].Host is { } previous) previous.Visible = false;
         selectedIndex = index;
+        if (!preserveSelection)
+        {
+            selectedTabs.Clear();
+            selectionAnchor = tabs[index];
+        }
+        selectedTabs.Add(tabs[index]);
         RememberGroupSelection();
         for (int i = 0; i < tabs.Count; i++)
         {
             tabs[i].Button.Checked = i == index;
             tabs[i].Button.ForeColor = i == index ? Theme.Text : Theme.Muted;
         }
+        UpdateTabSelectionAppearance();
         selectionSummary = null;
         var current = tabs[index].Host;
         emptyHint.Visible = current is null;
@@ -665,6 +670,7 @@ public sealed partial class ExplorerPane : UserControl
         if (index < 0) index = selectedIndex;
         if (index < 0 || index >= tabs.Count) return;
         var tab = tabs[index];
+        ClearTabSelection();
         var active = ActiveTab;
         int nextIndex = selectedIndex > index ? selectedIndex - 1 : Math.Min(selectedIndex, tabs.Count - 2);
         tabs.RemoveAt(index);
@@ -708,8 +714,17 @@ public sealed partial class ExplorerPane : UserControl
             return;
         }
         var entry = closedTabs.Pop();
+        LastReopenedTabs = [];
+        if (entry.Selection is { } selection)
+        {
+            ReopenSelection(selection);
+            LastReopenedGroup = null;
+            TabReopened?.Invoke(this, EventArgs.Empty);
+            return;
+        }
         LastReopenedGroup = entry.Group is { } group
             ? AddGroup(group.Paths, group.Name, group.Color, selectedMember: group.SelectedMember) : null;
+        if (LastReopenedGroup is { } reopened) reopened.SavedId = ExistingSavedId(entry.Group!.SavedId);
         if (entry.Group is null)
         {
             var original = entry.OriginalGroup;
@@ -717,6 +732,8 @@ public sealed partial class ExplorerPane : UserControl
                 || tabs.Count(tab => tab.Group == original) >= TabGroup.MaxTabs)) original = null;
             InsertTab(entry.Path, select: true, group: original);
         }
+        LastReopenedTabs = LastReopenedGroup is { } restoredGroup ? GroupMembers(restoredGroup)
+            : ActiveTab is { } restoredTab ? [restoredTab] : [];
         TabReopened?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1027,24 +1044,26 @@ public sealed partial class ExplorerPane : UserControl
     private void ShowTabMenu(int index, bool keyboard = false)
     {
         if (index < 0) return;
-        SelectTab(index, focus: false);
+        if (!selectedTabs.Contains(tabs[index])) SelectTab(index, focus: false);
+        var selection = SelectedTabs;
+        var movingTab = tabs[index];
         tabMenu.Items.Clear();
         tabMenu.Items.Add(text.T("New tab"), null, (_, _) => AddBlankTab());
-        tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => DuplicateTab(tabs[index])).Enabled = ActiveView is not null;
+        tabMenu.Items.Add(text.T("Duplicate tab"), null, (_, _) => DuplicateTab(movingTab)).Enabled = movingTab.Host is not null;
         tabMenu.Items.Add(text.T("Reopen closed tab"), null, (_, _) => ReopenTab()).Enabled = CanReopenTab;
         AddGroupTabMenu(tabMenu, tabs[index]);
-        var move = new ToolStripMenuItem(text.T("Move tab to pane"));
+        var move = new ToolStripMenuItem(text.T(selection.Count > 1 ? "Move tabs to pane" : "Move tab to pane"));
         for (int i = 1; i <= 4; i++)
         {
             int target = i;
             if (target == PaneNumber) continue;
-            move.DropDownItems.Add(text.T("Pane {0}", target), null, (_, _) => MoveTabRequested?.Invoke(this, CurrentPath, target));
+            move.DropDownItems.Add(text.T("Pane {0}", target), null,
+                (_, _) => MoveTabsRequested?.Invoke(this, selection, target));
         }
         move.Enabled = ActiveTab is not null;
         tabMenu.Items.Add(move);
-        var movingTab = tabs[index];
-        tabMenu.Items.Add(text.T("Move tab to new window"), null,
-            (_, _) => MoveTabToWindowRequested?.Invoke(this, movingTab));
+        tabMenu.Items.Add(text.T(selection.Count > 1 ? "Move tabs to new window" : "Move tab to new window"), null,
+            (_, _) => MoveTabsToWindowRequested?.Invoke(this, selection));
         var split = new ToolStripMenuItem(text.T("Split tab"));
         foreach (SplitEdge edge in Enum.GetValues<SplitEdge>())
         {
@@ -1056,7 +1075,8 @@ public sealed partial class ExplorerPane : UserControl
         }
         tabMenu.Items.Add(split);
         tabMenu.Items.Add(new ToolStripSeparator());
-        tabMenu.Items.Add(text.T("Close tab    Ctrl+W"), null, (_, _) => CloseTab());
+        tabMenu.Items.Add(selection.Count > 1 ? text.T("Close {0} tabs", selection.Count) : text.T("Close tab    Ctrl+W"), null,
+            (_, _) => { if (selection.Count > 1) CloseTabs(selection); else CloseTab(); });
         tabMenu.Items.Add(text.T("Close other tabs"), null, (_, _) =>
         {
             var keep = tabs[selectedIndex];

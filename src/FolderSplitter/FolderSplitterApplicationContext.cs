@@ -30,6 +30,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     private MainForm? restoredActiveWindow;
     private MainForm? transferringSource;
     private string? saveError;
+    private bool syncingSavedGroups;
 
     internal string SessionPath { get; }
     internal SessionState State { get; private set; }
@@ -38,6 +39,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
     internal List<string> Favorites { get; }
     internal List<string> DeletedFavorites { get; }
     internal List<Workspace> Workspaces { get; }
+    internal IReadOnlyList<SavedTabGroup> SavedGroups => State.SavedGroups;
     internal FolderVisits FolderVisits { get; }
     internal WinEShortcut WinE { get; } = WinEShortcut.ForCurrentUser();
     internal StartupRegistration Startup { get; set; }
@@ -180,13 +182,11 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         return CreateWindow(state);
     }
 
-    internal void MoveToNewWindow(MainForm source, ExplorerPane pane, ExplorerPane.FolderTab? tab, TabGroup? group)
+    internal void MoveGroupToNewWindow(MainForm source, ExplorerPane pane, TabGroup group)
     {
         if (disposed || shuttingDown || saving || !windows.Contains(source)
             || source.GetPane(pane.PaneNumber - 1) != pane) return;
-        IReadOnlyList<ExplorerPane.FolderTab> members = group is null
-            ? tab is not null && pane.IndexOfTab(tab) >= 0 ? new[] { tab } : []
-            : pane.GroupMembers(group);
+        IReadOnlyList<ExplorerPane.FolderTab> members = pane.GroupMembers(group);
         if (members.Count == 0) return;
         int selected = -1;
         var paths = new string?[members.Count];
@@ -195,7 +195,7 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
             paths[i] = members[i].Host?.LocationPath;
             if (members[i] == pane.ActiveTab) selected = i;
         }
-        if (selected < 0 && group is not null) selected = Math.Clamp(group.LastSelectedMember, 0, members.Count - 1);
+        if (selected < 0) selected = Math.Clamp(group.LastSelectedMember, 0, members.Count - 1);
         Rectangle bounds = source.WindowState == FormWindowState.Normal ? source.Bounds : source.RestoreBounds;
         Rectangle cascaded = BrowserWindowGeometry.Cascade(bounds, Screen.FromRectangle(bounds).WorkingArea, source.DeviceDpi);
         var seed = new BrowserWindowState
@@ -209,15 +209,14 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
         {
             var window = new MainForm(this, SessionStore.NormalizeBrowserWindow(seed), [], treeRoots);
             var destination = window.GetPane(0);
-            if (group is not null)
-                destination.AddGroup(paths, group.Name, group.Color, collapsed: false, selectedMember: Math.Max(0, selected));
-            else if (paths[0] is { } path) destination.AddTab(path, countVisit: false);
-            else destination.AddBlankTab();
+            var moved = destination.AddGroup(paths, group.Name, group.Color, collapsed: false,
+                selectedMember: Math.Max(0, selected));
+            if (moved is not null) moved.SavedId = group.SavedId;
             window.Show();
             window.Activate();
             transferringSource = source;
-            source.CompleteWindowTransfer(pane, tab, group);
-            window.SetApplicationStatus(group is null ? "Tab moved to a new window." : "Group moved to a new window.");
+            source.CompleteWindowTransfer(pane, members);
+            window.SetApplicationStatus("Group moved to a new window.");
         }
         finally
         {
@@ -225,6 +224,164 @@ public sealed class FolderSplitterApplicationContext : ApplicationContext
             saving = false;
         }
         SaveSession();
+    }
+
+    internal void MoveTabsToNewWindow(MainForm sourceWindow, ExplorerPane source,
+        IReadOnlyList<ExplorerPane.FolderTab> tabs)
+    {
+        if (disposed || shuttingDown || saving || !windows.Contains(sourceWindow)
+            || sourceWindow.GetPane(source.PaneNumber - 1) != source
+            || tabs.Count == 0 || tabs.Any(tab => source.IndexOfTab(tab) < 0)) return;
+        Rectangle bounds = sourceWindow.WindowState == FormWindowState.Normal ? sourceWindow.Bounds : sourceWindow.RestoreBounds;
+        Rectangle cascaded = BrowserWindowGeometry.Cascade(bounds, Screen.FromRectangle(bounds).WorkingArea, sourceWindow.DeviceDpi);
+        var seed = new BrowserWindowState
+        {
+            Layout = 1, LayoutTree = PaneLayout.Preset(1), Panes = [new PaneState()],
+            WindowX = cascaded.X, WindowY = cascaded.Y, WindowWidth = cascaded.Width, WindowHeight = cascaded.Height
+        };
+        saving = true;
+        try
+        {
+            var window = new MainForm(this, SessionStore.NormalizeBrowserWindow(seed), [], treeRoots);
+            var copied = window.GetPane(0).AddTabBatch(tabs, preserveGroups: tabs.Count > 1);
+            if (copied.Count != tabs.Count)
+            {
+                window.Dispose();
+                return;
+            }
+            int selected = -1;
+            for (int i = 0; i < tabs.Count; i++) if (tabs[i] == source.ActiveTab) selected = i;
+            var destination = window.GetPane(0);
+            destination.SelectTab(destination.IndexOfTab(copied[Math.Max(0, selected)]));
+            window.Show();
+            window.Activate();
+            transferringSource = sourceWindow;
+            sourceWindow.CompleteWindowTransfer(source, tabs);
+            window.SetApplicationStatus(tabs.Count > 1 ? "Tabs moved to a new window." : "Tab moved to a new window.");
+        }
+        finally
+        {
+            transferringSource = null;
+            saving = false;
+        }
+        SaveSession();
+    }
+
+    internal bool ToggleSavedGroup(ExplorerPane pane, TabGroup group)
+    {
+        if (!pane.Groups.Contains(group)) return false;
+        if (group.SavedId is { } existing && SavedGroups.Any(saved => saved.Id == existing))
+        {
+            DeleteSavedGroup(existing);
+            return true;
+        }
+        if (SavedGroups.Count == SessionStore.SavedGroupLimit)
+        {
+            pane.SetLocalizedStatus("Maximum 30 saved groups. Delete a saved group first.");
+            return false;
+        }
+        string id = Guid.NewGuid().ToString("N");
+        var snapshot = SnapshotSavedGroup(pane, group, id);
+        if (snapshot.Paths.Count == 0)
+        {
+            pane.SetLocalizedStatus("Open a folder in this group before saving it.");
+            return false;
+        }
+        group.SavedId = id;
+        State = State with { SavedGroups = [snapshot, .. SavedGroups] };
+        PublishSavedGroups();
+        return true;
+    }
+
+    private static SavedTabGroup SnapshotSavedGroup(ExplorerPane pane, TabGroup group, string id) => new()
+    {
+        Id = id, Name = group.Name, Color = group.Color.ToString(),
+        Paths = pane.GroupMembers(group).Select(tab => tab.Host?.LocationPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path!).ToList()
+    };
+
+    internal void SyncSavedGroups(ExplorerPane pane)
+    {
+        if (syncingSavedGroups || pane.SuppressSavedGroupSync) return;
+        List<SavedTabGroup>? updated = null;
+        foreach (var group in pane.Groups)
+        {
+            if (group.SavedId is not { } id) continue;
+            int index = State.SavedGroups.FindIndex(saved => saved.Id == id);
+            if (index < 0) continue;
+            var snapshot = SnapshotSavedGroup(pane, group, id);
+            // A disappearing group or a temporarily blank navigation is not a deletion.
+            if (snapshot.Paths.Count == 0) continue;
+            var previous = State.SavedGroups[index];
+            if (previous.Name == snapshot.Name && previous.Color == snapshot.Color
+                && previous.Paths.SequenceEqual(snapshot.Paths, StringComparer.OrdinalIgnoreCase)) continue;
+            updated ??= [.. SavedGroups];
+            updated[index] = snapshot;
+        }
+        if (updated is null) return;
+        State = State with { SavedGroups = updated };
+        PublishSavedGroups();
+    }
+
+    internal void RenameSavedGroup(string id, string name)
+    {
+        int index = State.SavedGroups.FindIndex(saved => saved.Id == id);
+        if (index < 0) return;
+        name = name.Trim();
+        if (name.Length > 40) name = name[..40];
+        var updated = new List<SavedTabGroup>(State.SavedGroups);
+        updated[index] = updated[index] with { Name = name };
+        State = State with { SavedGroups = updated };
+        syncingSavedGroups = true;
+        try
+        {
+            foreach (var window in windows)
+                for (int i = 0; i < 4; i++)
+                    foreach (var group in window.GetPane(i).Groups)
+                        if (group.SavedId == id) window.GetPane(i).RenameGroup(group, name);
+        }
+        finally { syncingSavedGroups = false; }
+        PublishSavedGroups();
+    }
+
+    internal void DeleteSavedGroup(string id)
+    {
+        State = State with { SavedGroups = State.SavedGroups.Where(saved => saved.Id != id).ToList() };
+        foreach (var window in windows)
+            for (int i = 0; i < 4; i++)
+                foreach (var group in window.GetPane(i).Groups)
+                    if (group.SavedId == id) group.SavedId = null;
+        PublishSavedGroups();
+    }
+
+    private void PublishSavedGroups()
+    {
+        foreach (var window in windows.ToArray()) window.RefreshSavedGroupsSidebar();
+        ScheduleSave();
+    }
+
+    internal bool OpenSavedGroup(MainForm owner, string id, bool newWindow = false)
+    {
+        var saved = SavedGroups.FirstOrDefault(group => group.Id == id);
+        if (saved is null) return false;
+        foreach (var window in windows)
+            if (window.FocusSavedGroup(id)) return true;
+        if (newWindow)
+        {
+            var state = new BrowserWindowState
+            {
+                Layout = 1, LayoutTree = PaneLayout.Preset(1),
+                Panes = [new PaneState { Tabs = [.. saved.Paths],
+                    Groups = [new TabGroupState { Name = saved.Name, Color = saved.Color, SavedId = saved.Id,
+                        Start = 0, Count = saved.Paths.Count }] }]
+            };
+            Rectangle bounds = owner.WindowState == FormWindowState.Normal ? owner.Bounds : owner.RestoreBounds;
+            Rectangle cascaded = BrowserWindowGeometry.Cascade(bounds, Screen.FromRectangle(bounds).WorkingArea, owner.DeviceDpi);
+            CreateWindow(state with { WindowX = cascaded.X, WindowY = cascaded.Y,
+                WindowWidth = cascaded.Width, WindowHeight = cascaded.Height });
+            return true;
+        }
+        return owner.AddSavedGroup(saved);
     }
 
     internal void Activated(MainForm window)

@@ -36,7 +36,8 @@ internal static class Program
             ("split tree sessions preserve sparse pane IDs and ratios", SplitTreeRoundtrip),
             ("legacy and malformed layouts normalize safely", LegacyLayouts)
         }.Concat(BrowserWindowStateTests.Cases).Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases)
-            .Concat(PaletteGeneratorTests.Cases).Concat(TabGroupPersistenceTests.Cases).ToArray();
+            .Concat(PaletteGeneratorTests.Cases).Concat(TabGroupPersistenceTests.Cases)
+            .Concat(SavedGroupPersistenceTests.Cases).ToArray();
 
         var failures = 0;
         Directory.CreateDirectory(TestDirectory);

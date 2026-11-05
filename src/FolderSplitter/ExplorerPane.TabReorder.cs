@@ -4,6 +4,58 @@ public sealed partial class ExplorerPane
 {
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Func<ExplorerPane, TabGroup, int, string?>? GroupMoveDisabledReason { get; set; }
+    private bool CanInsertStripTabs(IReadOnlyList<FolderTab> moving, int insertionIndex, TabGroup? joinGroup,
+        out TabGroup? group, out string reason)
+    {
+        group = joinGroup;
+        reason = "This tab is no longer available.";
+        if (moving.Count == 0 || insertionIndex < 0 || insertionIndex > tabs.Count) return false;
+        if (group is null && insertionIndex > 0 && insertionIndex < tabs.Count
+            && tabs[insertionIndex - 1].Group is { } before && tabs[insertionIndex].Group == before) group = before;
+        if (tabs.Count + moving.Count(tab => !tabs.Contains(tab)) > 32)
+        { reason = "Destination has 32 tabs.\nClose a tab first."; return false; }
+        if (group is not null && GroupMembers(group).Count(tab => !moving.Contains(tab)) + moving.Count > TabGroup.MaxTabs)
+        { reason = "A group holds up to 12 tabs."; return false; }
+        reason = "";
+        return true;
+    }
+
+    internal bool ReorderTabs(IReadOnlyList<FolderTab> selection, int insertionIndex, TabGroup? joinGroup = null)
+    {
+        var moving = tabs.Where(selection.Contains).ToArray();
+        if (moving.Length != selection.Count)
+        {
+            SetLocalizedStatus("This tab is no longer available.");
+            return false;
+        }
+        if (!CanInsertStripTabs(moving, insertionIndex, joinGroup, out var targetGroup, out string reason))
+        {
+            SetLocalizedStatus(reason);
+            return false;
+        }
+        var wholeGroups = moving.Select(tab => tab.Group).OfType<TabGroup>().Distinct()
+            .Where(group => GroupMembers(group).All(moving.Contains)).ToHashSet();
+        var active = ActiveTab;
+        int destination = insertionIndex - tabs.Take(insertionIndex).Count(moving.Contains);
+        tabs.RemoveAll(moving.Contains);
+        if (targetGroup is null) destination = GroupBoundary(destination);
+        foreach (var member in moving)
+            member.Group = targetGroup ?? (member.Group is { } original && wholeGroups.Contains(original) ? original : null);
+        tabs.InsertRange(destination, moving);
+        if (active?.Group is { } activeGroup) activeGroup.Collapsed = false;
+        FinishGroupMutation(active);
+        return true;
+    }
+
+    internal bool InsertDroppedTabs(IReadOnlyList<FolderTab> moving, int insertionIndex, TabGroup? joinGroup)
+    {
+        if (!CanInsertStripTabs(moving, insertionIndex, joinGroup, out var group, out string reason))
+        { SetLocalizedStatus(reason); return false; }
+        var copied = AddTabBatch(moving, preserveGroups: moving.Count > 1);
+        if (copied.Count != moving.Count) return false;
+        LastDroppedTabs = copied;
+        return ReorderTabs(copied, insertionIndex, group);
+    }
 
     internal bool ReorderTab(FolderTab tab, int insertionIndex, TabGroup? joinGroup = null)
     {
@@ -135,7 +187,8 @@ public sealed partial class ExplorerPane
         return insertionIndex - first <= end - insertionIndex ? first : end;
     }
 
-    internal TabDropPlan? FindStripDropPlan(Point screen, FolderTab? tab, TabGroup? group)
+    internal TabDropPlan? FindStripDropPlan(Point screen, FolderTab? tab, TabGroup? group,
+        IReadOnlyList<FolderTab>? movingTabs = null)
     {
         if (!tabStrip.RectangleToScreen(tabStrip.ClientRectangle).Contains(screen)) return null;
         if (tab is null && group is null) return null;
@@ -180,9 +233,11 @@ public sealed partial class ExplorerPane
         if (insertion > 0 && insertion < tabs.Count && tabs[insertion].Group is { Collapsed: true } collapsed
             && tabs[insertion - 1].Group == collapsed) insertion = GroupBoundary(insertion);
         string reason = "";
-        bool allowed = tab is null || CanInsertStripTab(tab, insertion, joinGroup, out joinGroup, out reason);
+        bool allowed = tab is null || (movingTabs is { Count: > 1 }
+            ? CanInsertStripTabs(movingTabs, insertion, joinGroup, out joinGroup, out reason)
+            : CanInsertStripTab(tab, insertion, joinGroup, out joinGroup, out reason));
         if (!allowed) SetLocalizedStatus(reason);
-        string label = allowed ? text.T(group is null ? "Reorder tab" : "Reorder group") : text.T(reason);
+        string label = allowed ? text.T(group is not null ? "Reorder group" : movingTabs is { Count: > 1 } ? "Reorder tabs" : "Reorder tab") : text.T(reason);
         int markerX = StripInsertionX(insertion, joinGroup);
         var point = tabStrip.PointToScreen(new Point(markerX, 2));
         var marker = new Rectangle(point.X - 2, point.Y, Math.Max(3, (int)Math.Round(3 * DeviceDpi / 96d)), Math.Max(1, tabStrip.Height - 4));

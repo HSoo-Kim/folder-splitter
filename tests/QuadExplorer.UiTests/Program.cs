@@ -58,7 +58,22 @@ internal static partial class Program
             if (args is ["--tab-groups"])
             {
                 RunTabGroupScenario(root);
+                RunMultiSelectTabScenario(root);
+                RunMultiSelectDockingScenario(root);
+                RunSavedGroupScenario(root);
                 Console.WriteLine($"TAB_GROUPS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--saved-groups"])
+            {
+                RunSavedGroupScenario(root);
+                Console.WriteLine($"SAVED_GROUPS_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
+            if (args is ["--appearance"])
+            {
+                RunAppearanceScenario(root);
+                Console.WriteLine($"APPEARANCE_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
             if (args is ["--address-icons"])
@@ -88,6 +103,8 @@ internal static partial class Program
             if (args is ["--multi-window"])
             {
                 RunMultiWindowScenario(root);
+                RunMultiSelectDockingScenario(root);
+                RunSavedGroupScenario(root);
                 Console.WriteLine($"MULTI_WINDOW_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
@@ -339,6 +356,9 @@ internal static partial class Program
             RunPdfScenario(root);
             RunTabStripScenario(root);
             RunTabGroupScenario(root);
+            RunMultiSelectTabScenario(root);
+            RunMultiSelectDockingScenario(root);
+            RunSavedGroupScenario(root);
             RunConvenienceScenario(root);
             RunCustomColorsScenario(root);
             RunBreadcrumbDpiScenario(root, null);
