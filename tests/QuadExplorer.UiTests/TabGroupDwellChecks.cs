@@ -30,8 +30,8 @@ internal static partial class Program
                 : " starts outside the group with an accent insertion marker"));
         Check(TgChip(pane, group).DropJoinArmed == armed,
             scenario + " tints the group chip while its join is armed");
-        Check(TgJoinTimer(pane).Interval == 500 && (armed || TgJoinTimer(pane).Enabled),
-            scenario + " uses the native 500 ms group-join dwell timer");
+        Check(TgJoinTimer(pane).Interval == 300 && (armed || TgJoinTimer(pane).Enabled),
+            scenario + " uses the native 300 ms group-join dwell timer");
     }
 
     private static void TgArmJoin(ExplorerPane pane, TabGroup group, TabDockOverlay overlay, Point point, string scenario)

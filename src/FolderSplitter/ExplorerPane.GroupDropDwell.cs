@@ -2,7 +2,12 @@ namespace QuadExplorer;
 
 public sealed partial class ExplorerPane
 {
-    private readonly System.Windows.Forms.Timer groupJoinTimer = new() { Interval = 500 };
+    // How long a drag must rest at a group's end or on a collapsed chip before the drop joins the group:
+    // long enough to pass over without joining, short enough not to feel like waiting.
+    internal const int GroupJoinDwellMilliseconds = 300;
+    private readonly System.Windows.Forms.Timer groupJoinTimer = new() { Interval = GroupJoinDwellMilliseconds };
+    // Elapsed dwell for the progress fill. Tests replace it to step through the wait without sleeping.
+    internal static Func<long> DwellClock = static () => Environment.TickCount64;
     private readonly System.Windows.Forms.Timer groupJoinProgressTimer = new() { Interval = 25 };
     private TabGroup? dwellGroup;
     private bool dwellCollapsed;
@@ -96,7 +101,7 @@ public sealed partial class ExplorerPane
             ClearStripDropDwell();
             dwellGroup = candidate;
             dwellCollapsed = collapsed;
-            dwellStartedAt = Environment.TickCount64;
+            dwellStartedAt = DwellClock();
             groupJoinTimer.Start();
             groupJoinProgressTimer.Start();
         }
@@ -118,7 +123,7 @@ public sealed partial class ExplorerPane
         {
             DwellGroup = dwellGroup,
             DwellProgress = dwellGroup is null ? 0 : dwellArmed ? 1
-                : Math.Clamp((Environment.TickCount64 - dwellStartedAt) / 500f, 0, 1),
+                : Math.Clamp((DwellClock() - dwellStartedAt) / (float)GroupJoinDwellMilliseconds, 0, 1),
             IncomingCount = incomingCount
         };
         if (group is null) return plan;

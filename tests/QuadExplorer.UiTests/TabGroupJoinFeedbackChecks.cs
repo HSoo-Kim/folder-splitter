@@ -79,6 +79,10 @@ internal static partial class Program
     {
         string output = JfOutput();
         Point cursor = Cursor.Position;
+        // Progress follows elapsed time; a controlled clock steps through the wait instead of sleeping.
+        var realClock = ExplorerPane.DwellClock;
+        long dwellNow = 0;
+        ExplorerPane.DwellClock = () => dwellNow;
         var evidence = new List<object>();
         void Check(bool success, string name)
         {
@@ -114,8 +118,8 @@ internal static partial class Program
                     using var drop = new OitOleDrop(pane.TabStrip, fixture, folders.Take(2).ToArray());
                     Check(drop.Enter(point) == 4 && TgJoinTimer(pane).Enabled,
                         name + " registered OLE target starts native dwell with a stationary pointer");
-                    Check(TgJoinTimer(pane).Interval == 500,
-                        name + " retains the native 500 ms group-join timer contract");
+                    Check(TgJoinTimer(pane).Interval == 300,
+                        name + " retains the native 300 ms group-join timer contract");
                     var pending = JfExternalPlan(pane)!;
                     Check(pending.JoinGroup is null && pending.MarkerColor.ToArgb() == Theme.Accent.ToArgb(),
                         name + " remains an accent insertion outside the group before arming");
@@ -131,7 +135,7 @@ internal static partial class Program
                     int progressPaints = paints;
                     if (progressTimer is { Enabled: true })
                     {
-                        Thread.Sleep(125);
+                        dwellNow += 100;
                         OitFireTimer(progressTimer);
                     }
                     float middleProgress = JfMember<float>(JfExternalPlan(pane)!, "DwellProgress");
@@ -140,7 +144,7 @@ internal static partial class Program
                     TgSave(middle, Path.Combine(output, name + "-progress-1.png"));
                     if (progressTimer is { Enabled: true })
                     {
-                        Thread.Sleep(100);
+                        dwellNow += 100;
                         OitFireTimer(progressTimer);
                     }
                     float laterProgress = JfMember<float>(JfExternalPlan(pane)!, "DwellProgress");
@@ -219,6 +223,7 @@ internal static partial class Program
             File.WriteAllText(Path.Combine(output, "native-feedback-evidence.json"),
                 JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }));
             Cursor.Position = cursor;
+            ExplorerPane.DwellClock = realClock;
             form.SetColorTheme("light");
         }
     }
@@ -287,6 +292,9 @@ internal static partial class Program
             [typeof(object), typeof(DragDropEffects)]);
         transport.Patch(method, prefix: new HarmonyLib.HarmonyMethod(typeof(Program), nameof(DispatchBlankTabDrop)));
         Point cursor = Cursor.Position;
+        var realClock = ExplorerPane.DwellClock;
+        long dwellNow = 0;
+        ExplorerPane.DwellClock = () => dwellNow;
         try
         {
             foreach (string mode in new[] { "light", "dark", "custom-light", "custom-dark", "equal-light", "equal-dark" })
@@ -322,14 +330,14 @@ internal static partial class Program
                             && progress is { Enabled: true, Interval: 25 },
                             name + " real internal overlay starts pending progress without changing insertion semantics");
                         using var before = JfOverlayCapture(overlay, name + "-pending");
-                        Thread.Sleep(100);
+                        dwellNow += 100;
                         int firstStrip = stripPaints, firstOverlay = overlayPaints;
                         OitFireTimer(progress!);
                         float firstProgress = JfMember<float>(TgDwellPlan(overlay), "DwellProgress");
                         Check(stripPaints > firstStrip && overlayPaints > firstOverlay && firstProgress is > 0 and < 1,
                             name + " stationary native progress tick synchronously paints strip and overlay");
                         using var firstFrame = JfOverlayCapture(overlay, name + "-progress-1");
-                        Thread.Sleep(100);
+                        dwellNow += 100;
                         OitFireTimer(progress!);
                         float nextProgress = JfMember<float>(TgDwellPlan(overlay), "DwellProgress");
                         using var nextFrame = JfOverlayCapture(overlay, name + "-progress-2");
@@ -404,6 +412,7 @@ internal static partial class Program
             blankTabDrop = null;
             transport.Unpatch(method, HarmonyLib.HarmonyPatchType.Prefix, transport.Id);
             Cursor.Position = cursor;
+            ExplorerPane.DwellClock = realClock;
             form.SetColorTheme("light");
             TgResetForm(form);
         }

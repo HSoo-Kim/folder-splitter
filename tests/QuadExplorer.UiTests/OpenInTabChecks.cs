@@ -742,8 +742,8 @@ internal static partial class Program
             using var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0], folders[1]]);
             Check(drop.Enter(end) == 4 && drop.Over(end) == 4
                 && Plan() is { Allowed: true, JoinGroup: null, InsertionIndex: 2 }
-                && Plan().MarkerColor == Theme.Accent && joinTimer.Enabled && joinTimer.Interval == 500,
-                "external folder hover at an expanded group end stays ungrouped with an accent marker before 500 ms");
+                && Plan().MarkerColor == Theme.Accent && joinTimer.Enabled && joinTimer.Interval == 300,
+                "external folder hover at an expanded group end stays ungrouped with an accent marker before 300 ms");
             if (dwell)
             {
                 Check(hoverTimer.Enabled, "group-end fixture independently arms inactive-tab hover selection");
