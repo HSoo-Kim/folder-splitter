@@ -56,7 +56,13 @@ public sealed partial class ExplorerPane
             member.Group = keepPin ? null : targetGroup ?? (member.Group is { } original && wholeGroups.Contains(original) ? original : null);
         }
         tabs.InsertRange(destination, moving);
-        if (active?.Group is { } activeGroup) activeGroup.Collapsed = false;
+        if (targetGroup is { Collapsed: true } && active?.Group == targetGroup)
+        {
+            // A dwell drop into a closed group must not reveal the tabs it just received.
+            FinishGroupMutation(active);
+            SelectOutsideGroup(targetGroup, focus: false);
+            active = ActiveTab;
+        }
         FinishGroupMutation(active);
         return true;
     }
@@ -69,7 +75,8 @@ public sealed partial class ExplorerPane
         var copied = AddTabBatch(moving, preserveGroups: moving.Count > 1);
         if (copied.Count != moving.Count) return false;
         LastDroppedTabs = copied;
-        return ReorderTabs(copied, anchor is null ? tabs.Count : tabs.IndexOf(anchor), group, preservePinned: true);
+        // Appending copies must not move the original end boundary beyond the target group.
+        return ReorderTabs(copied, anchor is null ? insertionIndex : tabs.IndexOf(anchor), group, preservePinned: true);
     }
 
     internal bool ReorderTab(FolderTab tab, int insertionIndex, TabGroup? joinGroup = null)
@@ -93,7 +100,12 @@ public sealed partial class ExplorerPane
         tab.Pinned = pin;
         if (pin) tab.Group = null;
         tabs.Insert(destination, tab);
-        if (tab == active && group is not null) group.Collapsed = false;
+        if (tab == active && group is { Collapsed: true })
+        {
+            FinishGroupMutation(active);
+            SelectOutsideGroup(group, focus: false);
+            active = ActiveTab;
+        }
         FinishGroupMutation(active);
         return true;
     }
@@ -157,7 +169,7 @@ public sealed partial class ExplorerPane
         tab.Pinned = group is null && (source.Pinned || insertionIndex < PinnedCount);
         tabs.Insert(insertionIndex, tab);
         FinishGroupMutation(active);
-        SelectTab(tabs.IndexOf(tab));
+        if (group?.Collapsed != true) SelectTab(tabs.IndexOf(tab));
         return true;
     }
 
@@ -211,17 +223,31 @@ public sealed partial class ExplorerPane
     internal TabDropPlan? FindStripDropPlan(Point screen, FolderTab? tab, TabGroup? group,
         IReadOnlyList<FolderTab>? movingTabs = null, IReadOnlyList<string>? externalPaths = null, int minimumIndex = 0)
     {
-        if (!tabStrip.RectangleToScreen(tabStrip.ClientRectangle).Contains(screen)) return null;
-        if (tab is null && group is null && externalPaths is null) return null;
+        if (!tabStrip.RectangleToScreen(tabStrip.ClientRectangle).Contains(screen)
+            || tab is null && group is null && externalPaths is null)
+        {
+            ClearStripDropDwell();
+            return null;
+        }
         int x = tabStrip.PointToClient(screen).X;
         int insertion = 0;
         TabGroup? joinGroup = null;
+        TabGroup? dwellCandidate = null;
+        bool collapsedCandidate = false;
         foreach (ToolStripItem item in tabStrip.Items)
         {
             if (!item.Available) continue;
             if (item is TabGroupChip chip)
             {
                 int start = tabs.FindIndex(member => member.Group == chip.Group);
+                if (chip.Group.Collapsed && x >= item.Bounds.Left + item.Width / 2
+                    && item.Bounds.Contains(tabStrip.PointToClient(screen)))
+                {
+                    insertion = tabs.FindLastIndex(member => member.Group == chip.Group) + 1;
+                    dwellCandidate = chip.Group;
+                    collapsedCandidate = true;
+                    break;
+                }
                 if (x < item.Bounds.Left + item.Width / 2)
                 {
                     joinGroup = null;
@@ -245,6 +271,20 @@ public sealed partial class ExplorerPane
                 if (x <= item.Bounds.Right) break;
             }
         }
+        if (!collapsedCandidate && insertion > 0 && tabs[insertion - 1].Group is { Collapsed: false } endGroup
+            && (insertion == tabs.Count || tabs[insertion].Group != endGroup))
+        {
+            var lastButton = tabs[insertion - 1].Button;
+            int gapEnd = newTab.Bounds.Left;
+            foreach (ToolStripItem item in tabStrip.Items)
+                if (item.Available && item.Bounds.Left >= lastButton.Bounds.Right && item != lastButton)
+                    gapEnd = Math.Min(gapEnd, item.Bounds.Left);
+            if (x >= lastButton.Bounds.Left + lastButton.Width / 2 && x < gapEnd) dwellCandidate = endGroup;
+        }
+        if (group is null)
+            joinGroup = UpdateStripDropDwell(dwellCandidate, collapsedCandidate, screen, tab, movingTabs,
+                externalPaths, minimumIndex, insertion) ?? joinGroup;
+        else ClearStripDropDwell();
         if (group is not null)
         {
             insertion = GroupBoundary(insertion);

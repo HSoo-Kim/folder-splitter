@@ -583,6 +583,9 @@ internal static partial class Program
                 "external strip drop rejects a full group atomically instead of splitting it");
         }
 
+        await OitExternalGroupDwell(pane, fixture, folders);
+        await OitExternalGroupDwellVisuals(form, pane, fixture, folders);
+
         TgReset(pane, 31);
         point = TgStripPoint(pane, pane.Tabs[0].Button, after: false);
         using (var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0], folders[1]]))
@@ -713,6 +716,273 @@ internal static partial class Program
         Check(plan is { Allowed: true, InsertionIndex: 0 } && pane.ReorderTab(original[3], plan.InsertionIndex.Value)
             && pane.Tabs.SequenceEqual(new[] { original[3], original[0], original[1], original[2] }),
             "external OLE registration leaves internal tab drag planning and strip reordering unchanged");
+    }
+
+    private static async Task OitExternalGroupDwell(ExplorerPane pane, string fixture, string[] folders)
+    {
+        var joinTimer = (System.Windows.Forms.Timer)typeof(ExplorerPane).GetField("groupJoinTimer",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(pane)!;
+        var hoverTimer = (System.Windows.Forms.Timer)typeof(ExplorerPane).GetField("dragHoverTimer",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(pane)!;
+        var planField = typeof(ExplorerPane).GetField("externalDropPlan", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        TabDropPlan Plan() => (TabDropPlan?)planField.GetValue(pane)
+            ?? throw new InvalidOperationException("Real external OLE hover did not publish its strip plan.");
+
+        foreach (bool dwell in new[] { false, true })
+        {
+            await OitReset(pane, folders[10], folders[11], folders[12]);
+            var group = pane.CreateGroup(pane.Tabs[0])!;
+            pane.AddToGroup(pane.Tabs[1], group);
+            pane.SetGroupColor(group, TabGroupColor.Orange);
+            var members = pane.GroupMembers(group).ToArray();
+            pane.SelectTab(2, focus: false);
+            Point end = TgStripPoint(pane, members[^1].Button, after: true);
+            using var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0], folders[1]]);
+            Check(drop.Enter(end) == 4 && drop.Over(end) == 4
+                && Plan() is { Allowed: true, JoinGroup: null, InsertionIndex: 2 }
+                && Plan().MarkerColor == Theme.Accent && joinTimer.Enabled && joinTimer.Interval == 500,
+                "external folder hover at an expanded group end stays ungrouped with an accent marker before 500 ms");
+            if (dwell)
+            {
+                Check(hoverTimer.Enabled, "group-end fixture independently arms inactive-tab hover selection");
+                OitFireTimer(hoverTimer);
+                Check(pane.ActiveTab == members[^1] && drop.Over(end) == 4
+                    && Plan() is { JoinGroup: null, InsertionIndex: 2 } && joinTimer.Enabled,
+                    "the 600 ms hover-select timer does not change external insertion or arm group joining");
+                OitFireTimer(joinTimer);
+                Check(!joinTimer.Enabled && Plan().Allowed && Plan().JoinGroup == group
+                    && Plan().InsertionIndex == 2 && Plan().MarkerColor == Theme.GroupColor(group.Color),
+                    "the real group-join WM_TIMER immediately recolors and arms the existing external end plan");
+            }
+            Check(drop.Drop(end) == 4 && pane.Tabs.Skip(2).Take(2).Select(OitPath).SequenceEqual(folders.Take(2))
+                && pane.Tabs.Skip(2).Take(2).All(tab => tab.Group == (dwell ? group : null))
+                && pane.GroupMembers(group).Count == (dwell ? 4 : 2),
+                dwell ? "external end dwell appends its ordered folder batch as the group's last members"
+                    : "external end drop before dwell inserts its ordered folder batch outside the group");
+            Check(!joinTimer.Enabled && !hoverTimer.Enabled && planField.GetValue(pane) is null,
+                "successful external end drop clears both dwell timers and its insertion preview");
+            TgContiguous(pane, "external group-end dwell");
+        }
+
+        foreach (bool chipTarget in new[] { true, false })
+        {
+            await OitReset(pane, folders[10], folders[11], folders[12]);
+            var group = pane.CreateGroup(pane.Tabs[0])!;
+            pane.AddToGroup(pane.Tabs[1], group);
+            pane.SetGroupColor(group, TabGroupColor.Cyan);
+            Point inside = chipTarget ? TgStripPoint(pane, TgChip(pane, group), after: true)
+                : TgStripPoint(pane, pane.Tabs[0].Button, after: true);
+            using var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0]]);
+            Check(drop.Enter(inside) == 4 && Plan().JoinGroup == group
+                && Plan().MarkerColor == Theme.GroupColor(group.Color) && !joinTimer.Enabled,
+                chipTarget ? "external expanded-chip right-half hover joins immediately with the group underline color"
+                    : "external interior-gap hover joins immediately with the group underline color");
+            int insertion = Plan().InsertionIndex!.Value;
+            Check(drop.Drop(inside) == 4 && OitPath(pane.Tabs[insertion]) == folders[0]
+                && pane.Tabs[insertion].Group == group && pane.GroupMembers(group).Count == 3,
+                "immediate external group targets commit at the same colored insertion marker without dwell");
+        }
+
+        foreach (var (after, dwell) in new[] { (false, false), (true, false), (true, true) })
+        {
+            await OitReset(pane, folders[10], folders[11], folders[12], folders[13]);
+            var group = pane.CreateGroup(pane.Tabs[1])!;
+            pane.AddToGroup(pane.Tabs[2], group);
+            pane.SelectTab(0, focus: false);
+            pane.SetGroupCollapsed(group, true);
+            var chip = TgChip(pane, group);
+            var members = pane.GroupMembers(group).ToArray();
+            Point target = TgStripPoint(pane, chip, after);
+            using var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0], folders[1]]);
+            Check(drop.Enter(target) == 4 && Plan().JoinGroup is null
+                && Plan().InsertionIndex == (after ? 3 : 1) && Plan().MarkerColor == Theme.Accent
+                && joinTimer.Enabled == after && !chip.DropJoinArmed && group.Collapsed,
+                after ? "external collapsed-chip right half marks after the hidden group and starts join dwell without tint"
+                    : "external collapsed-chip left half marks before the hidden group and never starts join dwell");
+            if (dwell)
+            {
+                OitFireTimer(joinTimer);
+                Check(Plan().Allowed && Plan().JoinGroup == group && Plan().InsertionIndex == 3
+                    && Plan().MarkerColor == Theme.GroupColor(group.Color) && chip.DropJoinArmed
+                    && group.Collapsed && !joinTimer.Enabled,
+                    "external collapsed-chip dwell arms append at the hidden group's end and tints without expanding");
+            }
+            int insertion = after ? 3 : 1;
+            Check(drop.Drop(target) == 4 && pane.Tabs.Skip(insertion).Take(2).Select(OitPath).SequenceEqual(folders.Take(2))
+                && pane.Tabs.Skip(insertion).Take(2).All(tab => tab.Group == (dwell ? group : null))
+                && pane.GroupMembers(group).Take(2).SequenceEqual(members) && group.Collapsed
+                && pane.GroupMembers(group).Count == (dwell ? 4 : 2)
+                && pane.GroupMembers(group).All(tab => !tab.Button.Available)
+                && chip.AccessibleName!.Contains($", {(dwell ? 4 : 2)} tabs, collapsed", StringComparison.Ordinal)
+                && !chip.DropJoinArmed && !joinTimer.Enabled && planField.GetValue(pane) is null,
+                dwell ? "external collapsed dwell appends both folders, retains collapse, updates count and clears tint after drop"
+                    : "external collapsed drop before dwell stays outside on its chosen side without changing hidden membership");
+            TgContiguous(pane, "external collapsed-chip dwell");
+        }
+
+        await OitReset(pane, folders[10], folders[11], folders[12]);
+        var resetGroup = pane.CreateGroup(pane.Tabs[1])!;
+        pane.AddToGroup(pane.Tabs[2], resetGroup);
+        pane.SelectTab(0, focus: false);
+        pane.SetGroupCollapsed(resetGroup, true);
+        var resetChip = TgChip(pane, resetGroup);
+        Point chipPoint = TgStripPoint(pane, resetChip, after: true);
+        Point away = TgStripPoint(pane, pane.Tabs[0].Button, after: false);
+        using (var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0]]))
+        {
+            Check(drop.Enter(chipPoint) == 4 && joinTimer.Enabled, "external collapsed hover starts pending join dwell");
+            Check(drop.Over(away) == 4 && !joinTimer.Enabled && !resetChip.DropJoinArmed
+                && Plan().JoinGroup is null && Plan().MarkerColor == Theme.Accent,
+                "moving away before external dwell expires cancels its timer and removes the candidate");
+            Check(drop.Over(chipPoint) == 4 && joinTimer.Enabled && !resetChip.DropJoinArmed,
+                "returning to an external collapsed target requires a fresh full dwell");
+            OitFireTimer(joinTimer);
+            Check(resetChip.DropJoinArmed && Plan().JoinGroup == resetGroup,
+                "external return hover can arm the collapsed group after its fresh timer fires");
+            Check(drop.Over(away) == 4 && !joinTimer.Enabled && !resetChip.DropJoinArmed
+                && Plan().JoinGroup is null && Plan().InsertionIndex == 0 && Plan().MarkerColor == Theme.Accent,
+                "moving away after external dwell clears armed tint and restores the ungrouped insertion marker");
+            drop.Over(chipPoint);
+            OitFireTimer(joinTimer);
+            drop.Leave();
+            Check(!joinTimer.Enabled && !hoverTimer.Enabled && !resetChip.DropJoinArmed
+                && planField.GetValue(pane) is null && pane.TabCount == 3,
+                "real OLE DragLeave cancels an armed collapsed join and clears every preview without opening folders");
+        }
+        using (var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0]]))
+        {
+            Check(drop.Enter(chipPoint) == 4 && joinTimer.Enabled && !resetChip.DropJoinArmed
+                && Plan().JoinGroup is null, "a new external drag never inherits the previous drag's armed collapsed join");
+            drop.Leave();
+            Check(!joinTimer.Enabled && !resetChip.DropJoinArmed && planField.GetValue(pane) is null,
+                "real OLE DragLeave also cancels a pending collapsed join before its timer fires");
+        }
+
+        foreach (int memberCount in new[] { TabGroup.MaxTabs, TabGroup.MaxTabs - 1 })
+        {
+            await OitReset(pane, folders[10], folders[11]);
+            var group = pane.CreateGroup(pane.Tabs[1])!;
+            while (pane.GroupMembers(group).Count < memberCount) pane.AddTabInGroup(group);
+            pane.SelectTab(0, focus: false);
+            pane.SetGroupCollapsed(group, true);
+            var chip = TgChip(pane, group);
+            Point target = TgStripPoint(pane, chip, after: true);
+            using var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0], folders[1]]);
+            Check(drop.Enter(target) == 4 && drop.Over(target) == 4 && !joinTimer.Enabled && !chip.DropJoinArmed
+                && Plan().JoinGroup is null && Plan().MarkerColor == Theme.Accent,
+                $"a {memberCount}-member collapsed group never arms external join dwell for a non-fitting two-folder batch");
+            Check(drop.Drop(target) == 4 && pane.GroupMembers(group).Count == memberCount && group.Collapsed
+                && pane.Tabs.TakeLast(2).Select(OitPath).SequenceEqual(folders.Take(2))
+                && pane.Tabs.TakeLast(2).All(tab => tab.Group is null),
+                "group capacity leaves the entire external batch outside rather than partially joining or expanding");
+        }
+
+        TgReset(pane, 31);
+        var capacityGroup = pane.CreateGroup(pane.Tabs[0])!;
+        pane.AddToGroup(pane.Tabs[1], capacityGroup);
+        pane.SelectTab(2, focus: false);
+        pane.SetGroupCollapsed(capacityGroup, true);
+        var capacityChip = TgChip(pane, capacityGroup);
+        Point capacityPoint = TgStripPoint(pane, capacityChip, after: true);
+        var original = pane.Tabs.ToArray();
+        using (var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0], folders[1]]))
+        {
+            Check(drop.Enter(capacityPoint) == 0 && drop.Over(capacityPoint) == 0
+                && !joinTimer.Enabled && !capacityChip.DropJoinArmed && !Plan().Allowed
+                && Plan().MarkerColor == Color.FromArgb(160, 55, 45),
+                "pane capacity blocks collapsed external join dwell and uses the disallowed red marker");
+            Check(drop.Drop(capacityPoint) == 0 && pane.Tabs.SequenceEqual(original)
+                && pane.GroupMembers(capacityGroup).Count == 2 && capacityGroup.Collapsed
+                && !joinTimer.Enabled && !capacityChip.DropJoinArmed && planField.GetValue(pane) is null,
+                "over-capacity external collapsed drop is atomic and clears its rejected dwell state");
+        }
+    }
+
+    private static async Task OitExternalGroupDwellVisuals(MainForm form, ExplorerPane pane, string fixture, string[] folders)
+    {
+        string output = Environment.GetEnvironmentVariable("FOLDERSPLITTER_QA_LOG_DIR")
+            ?? Path.Combine(Path.GetTempPath(), "FolderSplitter-QA-Captures");
+        Directory.CreateDirectory(output);
+        var planField = typeof(ExplorerPane).GetField("externalDropPlan", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var joinTimer = (System.Windows.Forms.Timer)typeof(ExplorerPane).GetField("groupJoinTimer",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(pane)!;
+        Bitmap Capture(Color expected, string name)
+        {
+            var plan = (TabDropPlan?)planField.GetValue(pane)
+                ?? throw new InvalidOperationException("External OLE visual capture has no insertion plan.");
+            var image = TgPrintStrip(pane.TabStrip);
+            Rectangle marker = pane.TabStrip.RectangleToClient(plan.Preview);
+            Check(plan.MarkerColor.ToArgb() == expected.ToArgb()
+                && TgPixels(image, marker, expected) >= Math.Max(4, marker.Height),
+                name + " native external strip painter renders the expected insertion marker pixels");
+            TgSave(image, Path.Combine(output, name + ".png"));
+            return image;
+        }
+
+        Point cursor = Cursor.Position;
+        try
+        {
+            foreach (string mode in new[] { "light", "dark", "custom-light", "custom-dark" })
+            foreach (bool collapsed in new[] { false, true })
+            {
+                if (mode == "custom-light") form.SetCustomColors(Color.FromArgb(0, 139, 139), Color.FromArgb(247, 243, 232));
+                else if (mode == "custom-dark") form.SetCustomColors(Color.FromArgb(202, 77, 140), Color.FromArgb(24, 38, 56));
+                else form.SetColorTheme(mode);
+                await OitReset(pane, folders[10], folders[11], folders[12], folders[13]);
+                var group = pane.CreateGroup(pane.Tabs[1])!;
+                pane.AddToGroup(pane.Tabs[2], group);
+                pane.SetGroupColor(group, TabGroupColor.Purple);
+                pane.SelectTab(0, focus: false);
+                pane.SetGroupCollapsed(group, collapsed);
+                var chip = TgChip(pane, group);
+                Cursor.Position = pane.PointToScreen(new Point(pane.ClientSize.Width / 2, pane.ClientSize.Height / 2));
+                await NativeAppearanceDispatch(form);
+                Point target = TgStripPoint(pane, collapsed ? chip : pane.GroupMembers(group)[^1].Button, after: true);
+                string name = $"open-in-tab-external-dwell-{mode}-{(collapsed ? "collapsed" : "end")}";
+                using (var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0]]))
+                {
+                    Check(drop.Enter(target) == 4 && joinTimer.Enabled && !chip.DropJoinArmed,
+                        name + " real OLE hover starts outside with pending dwell and no collapsed tint");
+                    using var before = Capture(Theme.Accent, name + "-before");
+                    OitFireTimer(joinTimer);
+                    Check(((TabDropPlan)planField.GetValue(pane)!).JoinGroup == group
+                        && chip.DropJoinArmed == collapsed && !joinTimer.Enabled,
+                        name + " real WM_TIMER arms the group and its collapsed-only tint");
+                    using var armed = Capture(Theme.GroupColor(group.Color), name + "-armed");
+                    if (collapsed)
+                    {
+                        using var beforeChip = before.Clone(chip.Bounds, before.PixelFormat);
+                        using var armedChip = armed.Clone(chip.Bounds, armed.PixelFormat);
+                        Check(OitPixelDifference(beforeChip, armedChip) > chip.Height
+                            && TgPixels(armed, Rectangle.Inflate(chip.Bounds, -6, -4),
+                                Theme.GroupPillColor(group.Color, true, false)) >= 20,
+                            name + " native strip pixels visibly tint the armed collapsed chip in the current palette");
+                    }
+                    drop.Leave();
+                    Check(!chip.DropJoinArmed && !joinTimer.Enabled && planField.GetValue(pane) is null,
+                        name + " real OLE leave clears its painted armed state");
+                }
+                if (!collapsed)
+                {
+                    foreach (bool chipTarget in new[] { true, false })
+                    {
+                        Point immediate = TgStripPoint(pane, chipTarget ? chip : pane.GroupMembers(group)[0].Button, after: true);
+                        using var drop = new OitOleDrop(pane.TabStrip, fixture, [folders[0]]);
+                        Check(drop.Enter(immediate) == 4 && !joinTimer.Enabled
+                            && ((TabDropPlan)planField.GetValue(pane)!).JoinGroup == group,
+                            name + " immediate expanded-chip/interior target joins without dwell");
+                        using var image = Capture(Theme.GroupColor(group.Color),
+                            name + (chipTarget ? "-immediate-chip" : "-immediate-interior"));
+                        drop.Leave();
+                    }
+                }
+            }
+        }
+        finally
+        {
+            Cursor.Position = cursor;
+            form.SetColorTheme("light");
+        }
     }
 
     private static void OitFireTimer(System.Windows.Forms.Timer timer)

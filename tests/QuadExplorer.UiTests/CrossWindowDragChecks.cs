@@ -93,6 +93,7 @@ internal static partial class Program
                         $"cross-window {kind} edge drop rejects a fifth pane instead of relocating a foreign pane");
                 }
                 CdStripGroupLimits(context, first, second, paths);
+                CdGroupJoinDwell(context, first, second, paths);
                 CdReentrantRejection(context, first, second, paths);
                 await CdEmptiedSource(context, first, second, paths);
                 CdCancellation(context, first, second, paths);
@@ -199,7 +200,7 @@ internal static partial class Program
     private static void CdDrag(FolderSplitterApplicationContext context, MainForm form, ExplorerPane pane,
         FolderTab? tab, TabGroup? group, MainForm? target, Point point, bool allowed = true,
         bool release = false, bool escape = false, DragDropEffects? foreignEffect = null, Action? afterDrop = null,
-        bool bringTargetToFront = true)
+        bool bringTargetToFront = true, Action<TabDockOverlay, DragEventArgs>? hover = null)
     {
         if (bringTargetToFront) target?.BringToFront();
         bool entered = false;
@@ -210,7 +211,7 @@ internal static partial class Program
             Check(overlays.Length == context.Windows.Count(window => window.Visible && window.WindowState != FormWindowState.Minimized)
                 && overlays.All(overlay => overlay.Visible && overlay.Owner is MainForm),
                 "context drag shows one owned overlay on every visible non-minimized browser");
-            if (escape)
+            if (escape && hover is null)
             {
                 var query = new QueryContinueDragEventArgs(0, true, DragAction.Continue);
                 typeof(Control).GetMethod("OnQueryContinueDrag", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, [query]);
@@ -224,8 +225,17 @@ internal static partial class Program
             }
             var overlay = overlays.Single(item => item.Owner == target);
             var args = new DragEventArgs((IDataObject)data, 0, point.X, point.Y, effects, DragDropEffects.None);
-            foreach (string name in new[] { "OnDragEnter", "OnDragOver", "OnDragDrop" })
+            foreach (string name in new[] { "OnDragEnter", "OnDragOver" })
                 typeof(Control).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(overlay, [args]);
+            hover?.Invoke(overlay, args);
+            if (escape)
+            {
+                var query = new QueryContinueDragEventArgs(0, true, DragAction.Continue);
+                typeof(Control).GetMethod("OnQueryContinueDrag", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, [query]);
+                Check(query.Action == DragAction.Cancel, "Escape cancels the real cross-window drag source after hover");
+                return DragDropEffects.None;
+            }
+            typeof(Control).GetMethod("OnDragDrop", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(overlay, [args]);
             Check(args.Effect == (allowed ? DragDropEffects.Move : DragDropEffects.None),
                 "cross-window button drag resolves allowed or rejected destination through its own overlay");
             if (release) context.ContinueTabDrag(new QueryContinueDragEventArgs(0, false, DragAction.Drop), point);

@@ -103,7 +103,8 @@ public sealed partial class FolderSplitterApplicationContext
             else
             {
                 var overlay = new TabDockOverlay(window.DragBounds, window.DragPaneBounds,
-                    point => FindDragPlan(drag, window, point), text);
+                    point => FindDragPlan(drag, window, point), text, window.ClearStripDropDwell);
+                window.BindDragOverlay(overlay);
                 drag.Overlays.Add(window, overlay);
                 overlay.Show(window);
             }
@@ -112,7 +113,11 @@ public sealed partial class FolderSplitterApplicationContext
 
     private TabDropPlan? FindDragPlan(TabDragSession drag, MainForm window, Point point)
     {
-        if (!ValidDragSource(drag) || BrowserAt(point, drag) != window) return null;
+        if (!ValidDragSource(drag) || BrowserAt(point, drag) != window)
+        {
+            window.ClearStripDropDwell();
+            return null;
+        }
         return window.FindStripOrDockPlan(point, drag.Pane, drag.Tab, drag.Group, drag.Tabs)
             is { } drop ? drop with { TargetWindow = window } : null;
     }

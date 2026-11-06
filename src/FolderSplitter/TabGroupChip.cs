@@ -26,6 +26,18 @@ internal sealed class TabGroupChip : ToolStripButton
     internal event Action? DragRequested;
 
     internal TabGroup Group { get; }
+    private bool dropJoinArmed;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal bool DropJoinArmed
+    {
+        get => dropJoinArmed;
+        set
+        {
+            if (dropJoinArmed == value) return;
+            dropJoinArmed = value;
+            Invalidate();
+        }
+    }
 
     internal TabGroupChip(TabGroup group)
     {
@@ -199,9 +211,9 @@ internal sealed class TabGroupChip : ToolStripButton
         var bounds = new Rectangle(inset, inset, Width - inset * 2, Height - inset * 2);
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
         if (Pressed) bounds.Offset(0, Scale(1));
-        Color fill = Theme.GroupPillColor(Group.Color, Selected, Pressed);
+        Color fill = Theme.GroupPillColor(Group.Color, Selected || DropJoinArmed, Pressed);
         Color foreground = Theme.GroupTextColor(Group.Color);
-        Theme.PaintGroupPill(e.Graphics, bounds, Group.Color, Selected, Pressed);
+        Theme.PaintGroupPill(e.Graphics, bounds, Group.Color, Selected || DropJoinArmed, Pressed);
         int icon = Math.Min(Scale(14), bounds.Height - Scale(6));
         var glyph = new Rectangle(bounds.Left + Scale(7), bounds.Top + (bounds.Height - icon) / 2, icon, icon);
         Theme.PaintGroupFolder(e.Graphics, glyph, Group.Color);

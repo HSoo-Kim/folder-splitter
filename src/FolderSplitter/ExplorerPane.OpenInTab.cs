@@ -65,6 +65,7 @@ public sealed partial class ExplorerPane
 
     private void InitializeExternalTabDrops()
     {
+        InitializeGroupDropDwell();
         dragHoverTimer.Tick += (_, _) =>
         {
             dragHoverTimer.Stop();
@@ -87,7 +88,7 @@ public sealed partial class ExplorerPane
         {
             if (externalDropPlan is not { } plan) return;
             var marker = tabStrip.RectangleToClient(plan.Preview);
-            using var brush = new SolidBrush(plan.Allowed ? Theme.Accent : Color.FromArgb(160, 55, 45));
+            using var brush = new SolidBrush(plan.MarkerColor);
             e.Graphics.FillRectangle(brush, marker);
         };
     }
@@ -105,6 +106,7 @@ public sealed partial class ExplorerPane
         if (externalDropPaths.Length == 0 || e.Data?.GetDataPresent(TabDockOverlay.DragFormat, false) == true) return;
         var point = new Point(e.X, e.Y);
         bool strip = tabStrip.RectangleToScreen(tabStrip.ClientRectangle).Contains(point);
+        if (!strip) ClearStripDropDwell();
         var plan = strip ? FindStripDropPlan(point, null, null, externalPaths: externalDropPaths, minimumIndex: PinnedCount)
             : PlanExternalInsertion(tabs.Count, null, externalDropPaths, Rectangle.Empty);
         externalDropPlan = strip ? plan : null;
@@ -146,7 +148,7 @@ public sealed partial class ExplorerPane
                     if (added is null) break;
                     first ??= added;
                 }
-                if (first is not null) SelectTab(tabs.IndexOf(first));
+                if (first is not null && plan.JoinGroup?.Collapsed != true) SelectTab(tabs.IndexOf(first));
             }
         }
         ClearExternalDrop();
@@ -154,6 +156,7 @@ public sealed partial class ExplorerPane
 
     private void ClearExternalDrop()
     {
+        ClearStripDropDwell();
         dragHoverTimer.Stop();
         dragHoverTab = null;
         externalDropPlan = null;

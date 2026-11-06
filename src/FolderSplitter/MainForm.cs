@@ -2158,6 +2158,9 @@ public sealed partial class MainForm : Form, IMessageFilter
     internal TabDropPlan? FindStripOrDockPlan(Point screen, ExplorerPane source, ExplorerPane.FolderTab? tab, TabGroup? group,
         IReadOnlyList<ExplorerPane.FolderTab>? movingTabs = null)
     {
+        foreach (var pane in panes)
+            if (!pane.TabStrip.RectangleToScreen(pane.TabStrip.ClientRectangle).Contains(screen))
+                pane.ClearStripDropDwell();
         foreach (int target in visiblePanes)
         {
             if (panes[target].FindStripDropPlan(screen, tab, group, movingTabs) is not { } strip) continue;
@@ -2218,6 +2221,21 @@ public sealed partial class MainForm : Form, IMessageFilter
     internal Rectangle DragBounds => paneHost.RectangleToScreen(paneHost.ClientRectangle);
     internal Rectangle[] DragPaneBounds => visiblePanes.Select(i => panes[i].RectangleToScreen(panes[i].ClientRectangle)).ToArray();
 
+    internal void ClearStripDropDwell()
+    {
+        foreach (var pane in panes) pane.ClearStripDropDwell();
+    }
+
+    internal void BindDragOverlay(TabDockOverlay overlay)
+    {
+        foreach (var pane in panes) pane.StripDropPlanChanged += overlay.RefreshStripPreview;
+        overlay.Disposed += (_, _) =>
+        {
+            foreach (var pane in panes) pane.StripDropPlanChanged -= overlay.RefreshStripPreview;
+            ClearStripDropDwell();
+        };
+    }
+
     internal bool CanReceiveDrag(ExplorerPane source, IReadOnlyList<ExplorerPane.FolderTab> tabs,
         TabGroup? group, TabDropPlan drop, out string reason)
     {
@@ -2263,14 +2281,15 @@ public sealed partial class MainForm : Form, IMessageFilter
             if (group is not null) receiving.SetGroupCollapsed(copied[0].Group!, false);
             if (drop.InsertionIndex is { } insertion && !(group is not null
                 ? receiving.ReorderGroup(copied[0].Group!, insertion)
-                : receiving.ReorderTabs(copied, anchor is null ? receiving.TabCount : receiving.IndexOfTab(anchor),
+                : receiving.ReorderTabs(copied, anchor is null ? insertion : receiving.IndexOfTab(anchor),
                     drop.JoinGroup, preservePinned: true)))
             {
                 receiving.RemoveTabsForMove(copied);
                 if (previous is not null) receiving.SelectTab(receiving.IndexOfTab(previous), focus: false);
                 return false;
             }
-            receiving.SelectTab(receiving.IndexOfTab(copied[selected]), focus: false);
+            if (drop.JoinGroup?.Collapsed != true)
+                receiving.SelectTab(receiving.IndexOfTab(copied[selected]), focus: false);
             InvalidateRedo();
             if (drop.Edge is { } edge) RenderLayout(layoutTree.Split(drop.TargetPane, destination, edge));
             ActivatePane(destination);
@@ -2342,7 +2361,8 @@ public sealed partial class MainForm : Form, IMessageFilter
                 if (insertionIndex is { } insertion)
                 {
                     if (!receiving.InsertDroppedTabs(tabs, insertion, joinGroup)) return false;
-                    receiving.SelectTab(receiving.IndexOfTab(receiving.LastDroppedTabs[selected]), focus: false);
+                    if (joinGroup?.Collapsed != true)
+                        receiving.SelectTab(receiving.IndexOfTab(receiving.LastDroppedTabs[selected]), focus: false);
                 }
                 else
                 {

@@ -308,6 +308,7 @@ internal static partial class Program
                 && form.GetPane(1).TabCount == 1 && form.GetPane(1).Groups.Count == 0,
                 "existing single blank-tab drag still splits independently of neighboring groups");
             TgContiguous(pane, "all drag operations");
+            TgInternalGroupJoinDwell(form, output);
         }
         finally
         {
@@ -326,7 +327,8 @@ internal static partial class Program
     }
 
     private static void TgInterceptDrag(MainForm form, ExplorerPane pane, TabGroup? group, FolderTab? tab,
-        Point point, bool allowed = true, bool cancel = false, string? markerCapture = null)
+        Point point, bool allowed = true, bool cancel = false, string? markerCapture = null,
+        Action<TabDockOverlay, DragEventArgs>? hover = null)
     {
         bool entered = false;
         blankTabDrop = (data, effects) =>
@@ -350,6 +352,7 @@ internal static partial class Program
                 Check(TgPixels(image, strip, Theme.Accent) >= Math.Max(4, strip.Height / 2),
                     "rendered overlay contains the accent insertion marker on the tab strip during the intercepted drag");
             }
+            hover?.Invoke(overlay, args);
             if (cancel)
             {
                 var query = new QueryContinueDragEventArgs(0, true, DragAction.Continue);

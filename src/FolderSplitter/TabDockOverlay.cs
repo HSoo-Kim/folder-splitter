@@ -1,7 +1,11 @@
 namespace QuadExplorer;
 
 internal sealed record TabDropPlan(int TargetPane, SplitEdge? Edge, Rectangle Preview, string Label, bool Allowed,
-    int? InsertionIndex = null, TabGroup? JoinGroup = null, MainForm? TargetWindow = null);
+    int? InsertionIndex = null, TabGroup? JoinGroup = null, MainForm? TargetWindow = null)
+{
+    internal Color MarkerColor => !Allowed ? Color.FromArgb(160, 55, 45)
+        : JoinGroup is { } group ? Theme.GroupColor(group.Color) : Theme.Accent;
+}
 
 // Shown only while dragging one of our tabs. Native Shell file drops otherwise
 // continue to go directly to the Shell views beneath this window.
@@ -12,14 +16,18 @@ internal sealed class TabDockOverlay : Form
     private Rectangle[] paneBounds;
     private readonly UiText text;
     private TabDropPlan? preview;
+    private Point? previewPoint;
+    private readonly Action? clearStripDwell;
 
     internal TabDropPlan? Result { get; private set; }
     protected override bool ShowWithoutActivation => true;
 
-    internal TabDockOverlay(Rectangle bounds, Rectangle[] panes, Func<Point, TabDropPlan?> hitTest, UiText text)
+    internal TabDockOverlay(Rectangle bounds, Rectangle[] panes, Func<Point, TabDropPlan?> hitTest, UiText text,
+        Action? clearStripDwell = null)
     {
         this.text = text;
         this.hitTest = hitTest;
+        this.clearStripDwell = clearStripDwell;
         paneBounds = panes;
         FormBorderStyle = FormBorderStyle.None;
         AutoScaleMode = AutoScaleMode.None;
@@ -35,7 +43,7 @@ internal sealed class TabDockOverlay : Form
         AccessibleName = "Tab docking preview";
         DragEnter += UpdatePreview;
         DragOver += UpdatePreview;
-        DragLeave += (_, _) => { preview = null; Invalidate(); };
+        DragLeave += (_, _) => { preview = null; previewPoint = null; clearStripDwell?.Invoke(); Invalidate(); };
         DragDrop += (_, e) =>
         {
             UpdatePreview(this, e);
@@ -52,9 +60,17 @@ internal sealed class TabDockOverlay : Form
 
     private void UpdatePreview(object? sender, DragEventArgs e)
     {
+        previewPoint = new Point(e.X, e.Y);
         preview = e.Data?.GetDataPresent(DragFormat, false) == true
             ? hitTest(new Point(e.X, e.Y)) : null;
         e.Effect = preview is { Allowed: true } ? DragDropEffects.Move : DragDropEffects.None;
+        Invalidate();
+    }
+
+    internal void RefreshStripPreview()
+    {
+        if (previewPoint is not { } point || IsDisposed) return;
+        preview = hitTest(point);
         Invalidate();
     }
 
@@ -76,7 +92,7 @@ internal sealed class TabDockOverlay : Form
             return;
         }
         Rectangle area = ToLocal(preview.Preview);
-        Color accent = preview.Allowed ? Theme.Accent : Color.FromArgb(160, 55, 45);
+        Color accent = preview.MarkerColor;
         if (preview.InsertionIndex is not null)
         {
             using var marker = new SolidBrush(accent);
