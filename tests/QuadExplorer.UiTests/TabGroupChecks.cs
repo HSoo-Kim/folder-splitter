@@ -12,7 +12,7 @@ internal static partial class Program
         string session = Path.Combine(root, "tab-groups.json");
         SessionStore.Save(session, new SessionState
         {
-            Layout = 1, Language = "en", ExplorerFavoritesImported = true, CheckUpdates = false,
+            Layout = 1, Language = "en", ExplorerFavoritesImported = true, CheckUpdates = false, ConfirmCloseGroup = false,
             Panes = [new PaneState { Tabs = [paths[0]] }]
         });
         PaneState? expected = null;

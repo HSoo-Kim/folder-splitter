@@ -97,6 +97,8 @@ public sealed record SessionState
     public bool ShowVerticalSeparators { get; init; }
     public bool ComfortableRows { get; init; } = true;
     public bool HighlightSortedColumn { get; init; }
+    // Shared across browser windows; older sessions keep group-close confirmation enabled.
+    public bool ConfirmCloseGroup { get; init; } = true;
     public int FolderTreeHeight { get; init; }
     public bool GlobalHotkey { get; init; } = true;
     public bool StartWithWindows { get; init; } = true;

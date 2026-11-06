@@ -95,6 +95,12 @@ internal static partial class Program
                 Console.WriteLine($"SAVED_GROUPS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--group-close-confirm", var groupCloseOutput])
+            {
+                RunGroupCloseConfirmScenario(root, groupCloseOutput);
+                Console.WriteLine($"GROUP_CLOSE_CONFIRM_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--appearance"])
             {
                 RunAppearanceScenario(root);
@@ -435,6 +441,7 @@ internal static partial class Program
             RunMultiSelectTabScenario(root);
             RunMultiSelectDockingScenario(root);
             RunSavedGroupScenario(root);
+            RunGroupCloseConfirmScenario(root, null);
             RunConvenienceScenario(root);
             RunCustomColorsScenario(root);
             RunBreadcrumbDpiScenario(root, null);

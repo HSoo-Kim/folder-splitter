@@ -39,6 +39,7 @@ public sealed partial class MainForm : Form, IMessageFilter
     private readonly ToolStripMenuItem hotkeyItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem winEItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem startupItem = new() { CheckOnClick = true };
+    private readonly ToolStripMenuItem confirmCloseGroupItem = new() { CheckOnClick = true };
     private bool startWithWindows { get => application.State.StartWithWindows; set => application.ChangeState(s => s with { StartWithWindows = value }); }
     private WinEShortcut winE => application.WinE;
     private bool globalHotkey { get => application.State.GlobalHotkey; set => application.ChangeState(s => s with { GlobalHotkey = value }); }
@@ -273,6 +274,7 @@ public sealed partial class MainForm : Form, IMessageFilter
             pane.MoveTabsToWindowRequested += (source, tabs) => application.MoveTabsToNewWindow(this, source, tabs);
             pane.SaveGroupRequested += ToggleSavedGroup;
             pane.DeleteSavedGroupRequested += application.DeleteSavedGroup;
+            pane.ConfirmGroupCloseRequested = ConfirmGroupClose;
             pane.GroupMoveDisabledReason = (source, group, number) =>
                 CanDockGroup(source, group, number - 1, null, out string reason) ? null : reason;
             pane.GroupDragRequested += StartGroupDrag;
@@ -848,6 +850,11 @@ public sealed partial class MainForm : Form, IMessageFilter
         trayItem.Checked = closeToTray;
         trayItem.CheckedChanged += (_, _) => SetCloseToTray(trayItem.Checked);
         settings.DropDownItems.Add(trayItem);
+        BindText(confirmCloseGroupItem, "Confirm before closing a group");
+        confirmCloseGroupItem.Checked = application.State.ConfirmCloseGroup;
+        confirmCloseGroupItem.Click += (_, _) =>
+            application.ChangeSettings(s => s with { ConfirmCloseGroup = confirmCloseGroupItem.Checked });
+        settings.DropDownItems.Add(confirmCloseGroupItem);
         BindText(updateItem, "Check for new versions");
         updateItem.Checked = checkUpdates;
         updateItem.CheckedChanged += (_, _) => SetCheckUpdates(updateItem.Checked);
@@ -2896,6 +2903,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         winEItem.Checked = winE.IsEnabled;
         updateItem.Checked = state.CheckUpdates;
         autoUpdateItem.Checked = state.AutoUpdate;
+        confirmCloseGroupItem.Checked = state.ConfirmCloseGroup;
         bool commandsChanged = showCommandBar != state.ShowCommandBar;
         bool detailsChanged = showVerticalSeparators != state.ShowVerticalSeparators
             || comfortableRows != state.ComfortableRows || highlightSortedColumn != state.HighlightSortedColumn;
@@ -2929,6 +2937,16 @@ public sealed partial class MainForm : Form, IMessageFilter
         if (theme || fontChanged) ApplyAppearance();
         RefreshSavedGroupsSidebar();
         if (previous?.CheckUpdates != state.CheckUpdates || previous?.AutoUpdate != state.AutoUpdate) UpdateVersionText();
+    }
+
+    private bool ConfirmGroupClose(string name, int count, bool deleteSaved)
+    {
+        if (!deleteSaved && !application.State.ConfirmCloseGroup) return true;
+        using var dialog = new GroupCloseDialog(text, name, count, deleteSaved, Font);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return false;
+        if (!deleteSaved && dialog.DontAskAgain)
+            application.ChangeSettings(s => s with { ConfirmCloseGroup = false });
+        return true;
     }
 
     private void ShowHelp()
