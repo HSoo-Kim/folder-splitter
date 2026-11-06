@@ -40,7 +40,7 @@ public sealed partial class ExplorerPane
             SetLocalizedStatus("The active tab is not in a group.");
             return;
         }
-        if (close) CloseGroup(group);
+        if (close) RequestCloseGroup(group);
         else AddTabInGroup(group);
     }
 
@@ -229,6 +229,21 @@ public sealed partial class ExplorerPane
         SelectTab(start + Math.Clamp(selectedMember, 0, paths.Count - 1));
         if (collapsed) SetGroupCollapsed(group, true);
         return group;
+    }
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Func<string, int, bool, bool>? ConfirmGroupCloseRequested { get; set; }
+
+    private void RequestCloseGroup(TabGroup group, bool deleteSaved = false, string? editedName = null)
+    {
+        int count = GroupMembers(group).Count;
+        if (count == 0) return;
+        string name = editedName?.Trim() ?? group.Name;
+        if (ConfirmGroupCloseRequested?.Invoke(group.Name, count, deleteSaved) == false) return;
+        if (editedName is not null && group.Name != name) RenameGroup(group, name);
+        string? savedId = deleteSaved ? ExistingSavedId(group.SavedId, group) : null;
+        CloseGroup(group);
+        if (savedId is not null) DeleteSavedGroupRequested?.Invoke(savedId);
     }
 
     internal void CloseGroup(TabGroup group, bool remember = true)
@@ -584,15 +599,21 @@ public sealed partial class ExplorerPane
         var save = Command("Save group", "\uE74E", () => SaveGroupRequested?.Invoke(this, group));
         save.Checked = ExistingSavedId(group.SavedId, group) is not null;
         menu.Items.Add(new ToolStripSeparator());
-        Command("Close group", "\uE8BB", () => CloseGroup(group), "Alt+Shift+W");
+        bool closingGroup = false;
+        void CloseFromEditor(bool deleteSaved)
+        {
+            // Dismiss the editor first, but do not commit its name field if confirmation is canceled.
+            closingGroup = true;
+            menu.Close();
+            RequestCloseGroup(group, deleteSaved, name.Text);
+        }
+        var close = Command("Close group", "\uE8BB", () => CloseFromEditor(deleteSaved: false), "Alt+Shift+W");
         Command("Ungroup", "\uE71B", () => Ungroup(group));
-        if (ExistingSavedId(group.SavedId, group) is { } savedId)
-            Command("Delete group", "\uE74D", () =>
-            {
-                CloseGroup(group);
-                DeleteSavedGroupRequested?.Invoke(savedId);
-            });
-        menu.Closing += (_, _) => RenameGroup(group, name.Text);
+        ToolStripMenuItem? delete = ExistingSavedId(group.SavedId, group) is not null
+            ? Command("Delete group", "\uE74D", () => CloseFromEditor(deleteSaved: true)) : null;
+        // Native dismissal precedes Click, so defer the name commit before a confirmation command closes the menu.
+        menu.ItemClicked += (_, e) => closingGroup = e.ClickedItem == close || e.ClickedItem == delete;
+        menu.Closing += (_, _) => { if (!closingGroup) RenameGroup(group, name.Text); };
         // WinForms finishes native menu teardown after Closed returns.
         menu.Closed += (_, _) => menu.BeginInvoke(() => menu.Dispose());
         int contentWidth = Math.Max(Scale(300), menu.Items.OfType<ToolStripMenuItem>()

@@ -10,7 +10,7 @@ internal static partial class Program
         string session = Path.Combine(root, "chrome-groups.json");
         SessionStore.Save(session, new SessionState
         {
-            Layout = 1, Language = "en", ExplorerFavoritesImported = true, CheckUpdates = false,
+            Layout = 1, Language = "en", ExplorerFavoritesImported = true, CheckUpdates = false, ConfirmCloseGroup = false,
             GlobalHotkey = false, StartWithWindows = false, Panes = [new PaneState { Tabs = [paths[0]] }]
         });
         using var form = new MainForm(session, []);
@@ -205,7 +205,8 @@ internal static partial class Program
             savedMenu.DrawToBitmap(savedImage, savedMenu.ClientRectangle);
             TgEditorIconPixels(savedMenu, savedImage, "saved group including check and delete");
         }
-        savedMenu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "Delete group").PerformClick();
+        GcAnswerDialog(() => savedMenu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "Delete group").PerformClick(),
+            dialog => Descendants(dialog).OfType<Button>().Single(button => button.Name == "GroupCloseAccept").PerformClick());
         Check(pane.TabCount == before - 2 && !pane.Groups.Contains(group)
             && form.ApplicationContext.SavedGroups.All(saved => saved.Id != savedId),
             "saved-only Delete group closes all members and removes its saved copy");
