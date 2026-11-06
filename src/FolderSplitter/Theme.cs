@@ -686,13 +686,20 @@ internal static class Theme
         return button;
     }
 
-    public static ToolStrip Strip(bool outlineItems = false) => new()
+    public static ToolStrip Strip(bool outlineItems = false, ToolStrip? strip = null)
     {
-        Tag = outlineItems ? OutlineItems : null,
-        GripStyle = ToolStripGripStyle.Hidden, BackColor = Canvas, ForeColor = Text,
-        Renderer = Renderer, Padding = new Padding(6, 3, 6, 3),
-        AutoSize = true, Stretch = true, CanOverflow = true
-    };
+        strip ??= new ToolStrip();
+        strip.Tag = outlineItems ? OutlineItems : null;
+        strip.GripStyle = ToolStripGripStyle.Hidden;
+        strip.BackColor = Canvas;
+        strip.ForeColor = Text;
+        strip.Renderer = Renderer;
+        strip.Padding = new Padding(6, 3, 6, 3);
+        strip.AutoSize = true;
+        strip.Stretch = true;
+        strip.CanOverflow = true;
+        return strip;
+    }
 
     public static Image FolderIcon()
     {

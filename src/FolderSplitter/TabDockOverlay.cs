@@ -118,7 +118,8 @@ internal sealed class TabDockOverlay : Form
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
     }
 
-    internal static void PaintStripFeedback(Graphics graphics, TabDropPlan plan, Point origin, bool highlightGroup)
+    internal static void PaintStripFeedback(Graphics graphics, TabDropPlan plan, Point origin, bool highlightGroup,
+        bool paintGhost = true)
     {
         Rectangle Local(Rectangle screen) => new(screen.X - origin.X, screen.Y - origin.Y, screen.Width, screen.Height);
         Color color = plan.MarkerColor;
@@ -150,22 +151,7 @@ internal sealed class TabDockOverlay : Form
                     }
                 }
             }
-            Rectangle slot = Local(plan.GhostSlot);
-            if (slot.Width > 2 && slot.Height > 2)
-            {
-                slot.Inflate(-1, -1);
-                using var tint = new SolidBrush(Color.FromArgb(55, color));
-                using var outline = new Pen(color, Math.Max(2, plan.Preview.Width / 2f))
-                { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
-                graphics.FillRectangle(tint, slot);
-                graphics.DrawRectangle(outline, slot);
-                // A geometric plus remains distinct even when group and accent colors coincide.
-                int centerX = slot.Left + slot.Width / 2, centerY = slot.Top + slot.Height / 2;
-                int radius = Math.Max(4, slot.Height / 6);
-                using var plus = new Pen(Theme.GroupTextColor(group.Color), Math.Max(2, plan.Preview.Width / 2f));
-                graphics.DrawLine(plus, centerX - radius, centerY, centerX + radius, centerY);
-                graphics.DrawLine(plus, centerX, centerY - radius, centerX, centerY + radius);
-            }
+            if (paintGhost) PaintStripGhost(graphics, plan, origin);
         }
         Rectangle marker = Local(plan.Preview);
         using var markerBrush = new SolidBrush(color);
@@ -177,6 +163,26 @@ internal sealed class TabDockOverlay : Form
             using var fill = new SolidBrush(Theme.GroupColor(candidate.Color));
             graphics.FillRectangle(fill, progress);
         }
+    }
+
+    internal static void PaintStripGhost(Graphics graphics, TabDropPlan plan, Point origin)
+    {
+        if (plan.JoinGroup is not { } group) return;
+        var slot = new Rectangle(plan.GhostSlot.X - origin.X, plan.GhostSlot.Y - origin.Y,
+            plan.GhostSlot.Width, plan.GhostSlot.Height);
+        if (slot.Width <= 2 || slot.Height <= 2) return;
+        // Paint an opaque, already-composited group tint so no covered tab ink survives.
+        using var tint = new SolidBrush(Theme.GroupPillColor(group.Color, hover: true));
+        graphics.FillRectangle(tint, slot);
+        slot.Inflate(-1, -1);
+        using var outline = new Pen(plan.MarkerColor, Math.Max(2, plan.Preview.Width / 2f))
+        { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+        graphics.DrawRectangle(outline, slot);
+        int centerX = slot.Left + slot.Width / 2, centerY = slot.Top + slot.Height / 2;
+        int radius = Math.Max(4, slot.Height / 6);
+        using var plus = new Pen(Theme.GroupTextColor(group.Color), Math.Max(2, plan.Preview.Width / 2f));
+        graphics.DrawLine(plus, centerX - radius, centerY, centerX + radius, centerY);
+        graphics.DrawLine(plus, centerX, centerY - radius, centerX, centerY + radius);
     }
 
     private Rectangle ToLocal(Rectangle screen) =>

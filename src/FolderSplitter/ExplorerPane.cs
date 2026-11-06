@@ -58,7 +58,7 @@ public sealed partial class ExplorerPane : UserControl
     private Func<string>? localizedStatus;
     private string statusMessage = "";
     private readonly Stack<ClosedTabEntry> closedTabs = [];
-    private readonly ToolStrip tabStrip = Theme.Strip();
+    private readonly ToolStrip tabStrip = Theme.Strip(strip: new DropFeedbackStrip());
     private readonly Panel contents = new() { Dock = DockStyle.Fill, BackColor = Color.White };
     private readonly Label emptyHint = new()
     {

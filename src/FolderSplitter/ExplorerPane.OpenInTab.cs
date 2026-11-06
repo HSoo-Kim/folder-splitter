@@ -5,6 +5,18 @@ namespace QuadExplorer;
 
 public sealed partial class ExplorerPane
 {
+    private sealed class DropFeedbackStrip : ToolStrip
+    {
+        internal event Action<Graphics>? PaintDropSlot;
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            // ToolStrip raises Paint before painting items; cover their ink after the items.
+            PaintDropSlot?.Invoke(e.Graphics);
+        }
+    }
+
     private FolderTab? tabOpener;
     private readonly List<FolderTab> openerRunTabs = [];
     private TabDropPlan? externalDropPlan;
@@ -90,7 +102,12 @@ public sealed partial class ExplorerPane
         tabStrip.Paint += (_, e) =>
         {
             if (externalDropPlan is not { } plan) return;
-            TabDockOverlay.PaintStripFeedback(e.Graphics, plan, tabStrip.PointToScreen(Point.Empty), false);
+            TabDockOverlay.PaintStripFeedback(e.Graphics, plan, tabStrip.PointToScreen(Point.Empty), false, paintGhost: false);
+        };
+        ((DropFeedbackStrip)tabStrip).PaintDropSlot += graphics =>
+        {
+            if (externalDropPlan is { JoinGroup: not null } plan)
+                TabDockOverlay.PaintStripGhost(graphics, plan, tabStrip.PointToScreen(Point.Empty));
         };
     }
 

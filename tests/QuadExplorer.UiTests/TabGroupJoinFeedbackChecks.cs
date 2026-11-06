@@ -188,6 +188,8 @@ internal static partial class Program
                     Check(JfChangedInScreen(before, after, pane.TabStrip, ghost) > pane.TabStrip.Height
                         && highlight.All(rectangle => JfChangedInScreen(before, after, pane.TabStrip, rectangle) > 5),
                         name + " native pixels paint the ghost slot and every highlighted chip or member");
+                    Check(JfGhostHidesUnderlay(after, pane.TabStrip, armed),
+                        name + " opaque ghost contains no covered tab icon or text ink");
                     Check(armed.Label.Contains("Blue feedback", StringComparison.Ordinal)
                         && armed.Label.Contains("group", StringComparison.OrdinalIgnoreCase),
                         name + " armed label names the target group rather than only opening tabs");
@@ -241,6 +243,28 @@ internal static partial class Program
 
     private static int JfChangedInScreen(Bitmap before, Bitmap after, Control control, Rectangle screen) =>
         JfChangedIn(before, after, control.RectangleToClient(screen));
+
+    private static bool JfGhostHidesUnderlay(Bitmap actual, Control control, TabDropPlan plan)
+    {
+        Rectangle slot = control.RectangleToClient(plan.GhostSlot);
+        if (slot.Width <= 2 || slot.Height <= 2 || !new Rectangle(Point.Empty, actual.Size).Contains(slot)) return false;
+        using var overBlack = new Bitmap(slot.Width, slot.Height);
+        using var overWhite = new Bitmap(slot.Width, slot.Height);
+        using (var black = Graphics.FromImage(overBlack))
+        using (var white = Graphics.FromImage(overWhite))
+        {
+            black.Clear(Color.Black);
+            white.Clear(Color.White);
+            TabDockOverlay.PaintStripFeedback(black, plan, plan.GhostSlot.Location, false);
+            TabDockOverlay.PaintStripFeedback(white, plan, plan.GhostSlot.Location, false);
+        }
+        using var native = actual.Clone(slot, actual.PixelFormat);
+        var area = new Rectangle(Point.Empty, slot.Size);
+        // Every pixel, including border gaps and the plus glyph, must be independent of
+        // the underlying ink and match the actual strip/overlay capture.
+        return OitPixelDifference(overBlack, overWhite) == 0
+            && JfChangedIn(native, overBlack, area) == 0;
+    }
 
     private static int JfProgressFillHeight(Bitmap image, Control control, TabDropPlan plan, Color groupColor)
     {
@@ -340,6 +364,8 @@ internal static partial class Program
                         Check(JfChangedInScreen(before, after, overlay, ghost) > pane.TabStrip.Height
                             && highlights.All(rectangle => JfChangedInScreen(before, after, overlay, rectangle) > 5),
                             name + " real overlay paints its tab-width ghost and every group highlight even when blue equals accent");
+                        Check(JfGhostHidesUnderlay(after, overlay, armed),
+                            name + " opaque overlay ghost contains no covered tab icon or text ink");
                         var label = new Rectangle(8, Math.Min(overlay.ClientSize.Height - overlay.Font.Height * 2,
                             overlay.RectangleToClient(armed.Preview).Bottom + 4),
                             Math.Max(0, overlay.ClientSize.Width - 16), overlay.Font.Height * 2);
