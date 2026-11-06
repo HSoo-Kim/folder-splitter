@@ -27,6 +27,13 @@ internal sealed class TabGroupChip : ToolStripButton
 
     internal TabGroup Group { get; }
     private bool dropJoinArmed;
+    private int dropJoinCount;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal int DropJoinCount
+    {
+        get => dropJoinCount;
+        set { if (dropJoinCount == value) return; dropJoinCount = value; Invalidate(); }
+    }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal bool DropJoinArmed
     {
@@ -216,12 +223,24 @@ internal sealed class TabGroupChip : ToolStripButton
         Theme.PaintGroupPill(e.Graphics, bounds, Group.Color, Selected || DropJoinArmed, Pressed);
         int icon = Math.Min(Scale(14), bounds.Height - Scale(6));
         var glyph = new Rectangle(bounds.Left + Scale(7), bounds.Top + (bounds.Height - icon) / 2, icon, icon);
-        Theme.PaintGroupFolder(e.Graphics, glyph, Group.Color);
-        if (labelText.Length != 0)
+        bool showIncomingCount = DropJoinArmed && Group.Collapsed;
+        if (!showIncomingCount) Theme.PaintGroupFolder(e.Graphics, glyph, Group.Color);
+        if (labelText.Length != 0 || DropJoinArmed && Group.Collapsed)
         {
-            var label = Rectangle.FromLTRB(bounds.Left + Scale(26), bounds.Top, bounds.Right - Scale(7), bounds.Bottom);
+            var label = Rectangle.FromLTRB(bounds.Left + Scale(showIncomingCount ? 7 : 26), bounds.Top, bounds.Right - Scale(7), bounds.Bottom);
             var flags = LabelFlags;
             if (RightToLeft == RightToLeft.Yes) flags |= TextFormatFlags.RightToLeft;
+            if (DropJoinArmed && Group.Collapsed)
+            {
+                // Reserve the count suffix rather than resizing the chip beneath the held pointer.
+                string suffix = $"{labelCount} +{DropJoinCount}";
+                int countWidth = Math.Min(label.Width, TextRenderer.MeasureText(e.Graphics, suffix, Font,
+                    Size.Empty, LabelFlags & ~TextFormatFlags.EndEllipsis).Width);
+                var countBounds = new Rectangle(label.Right - countWidth, label.Top, countWidth, label.Height);
+                TextRenderer.DrawText(e.Graphics, suffix, Font, countBounds, foreground, flags);
+                label.Width = Math.Max(0, label.Width - countWidth - Scale(3));
+                labelText = Group.Name;
+            }
             TextRenderer.DrawText(e.Graphics, labelText, Font, label, foreground, flags);
         }
         if (Selected && Owner is { ContainsFocus: true })

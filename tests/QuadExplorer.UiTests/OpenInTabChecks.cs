@@ -40,6 +40,8 @@ internal static partial class Program
                 OitPlacement(pane, folders, file);
                 await OitChromeGestures(form, pane, fixture, folders);
                 await OitExternalDrops(form, pane, fixture, folders, file, link);
+                JfExternalFeedbackChecks(form, pane, fixture, folders);
+                JfShellDescriptionChecks(form, pane, fixture, folders);
             }
             catch (Exception ex) { failure = ex; }
             finally { form.ExitApplication(); }
@@ -946,8 +948,8 @@ internal static partial class Program
                     using var before = Capture(Theme.Accent, name + "-before");
                     OitFireTimer(joinTimer);
                     Check(((TabDropPlan)planField.GetValue(pane)!).JoinGroup == group
-                        && chip.DropJoinArmed == collapsed && !joinTimer.Enabled,
-                        name + " real WM_TIMER arms the group and its collapsed-only tint");
+                        && chip.DropJoinArmed && !joinTimer.Enabled,
+                        name + " real WM_TIMER arms the group and its visible chip tint");
                     using var armed = Capture(Theme.GroupColor(group.Color), name + "-armed");
                     if (collapsed)
                     {

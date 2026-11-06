@@ -36,6 +36,7 @@ internal static partial class Program
                     TgAppearance(form, pane);
                     await TgPolish(form, pane, paths);
                     await TgChromeRefinements(form, pane, paths);
+                    JfInternalFeedbackChecks(form);
 
                     // Persist real folders through MainForm, with a blank group member omitted from disk.
                     pane.ReplaceTabs(new PaneState { Tabs = paths.Take(6).ToList() });

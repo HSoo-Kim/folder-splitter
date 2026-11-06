@@ -66,6 +66,12 @@ internal static partial class Program
                 Directory.Delete(root, recursive: true);
                 return QuitWithoutDriverTeardown(failures == 0 ? 0 : 1);
             }
+            if (args is ["--group-join-feedback"])
+            {
+                RunGroupJoinFeedbackScenario(root);
+                Console.WriteLine($"GROUP_JOIN_FEEDBACK_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--tab-groups"])
             {
                 RunTabGroupScenario(root);

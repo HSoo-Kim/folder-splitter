@@ -9,6 +9,9 @@ public sealed partial class ExplorerPane
     private readonly List<FolderTab> openerRunTabs = [];
     private TabDropPlan? externalDropPlan;
     private string[] externalDropPaths = [];
+    private System.Runtime.InteropServices.ComTypes.IDataObject? externalDropData;
+    private string? externalDropDescription;
+    private bool externalDropAllowed;
     private FolderTab? dragHoverTab;
     private readonly System.Windows.Forms.Timer dragHoverTimer = new() { Interval = 600 };
 
@@ -87,9 +90,7 @@ public sealed partial class ExplorerPane
         tabStrip.Paint += (_, e) =>
         {
             if (externalDropPlan is not { } plan) return;
-            var marker = tabStrip.RectangleToClient(plan.Preview);
-            using var brush = new SolidBrush(plan.MarkerColor);
-            e.Graphics.FillRectangle(brush, marker);
+            TabDockOverlay.PaintStripFeedback(e.Graphics, plan, tabStrip.PointToScreen(Point.Empty), false);
         };
     }
 
@@ -97,6 +98,8 @@ public sealed partial class ExplorerPane
     {
         ClearExternalDrop();
         externalDropPaths = ShellDropPaths.Read(e.Data);
+        if (externalDropPaths.Length != 0)
+            externalDropData = e.Data as System.Runtime.InteropServices.ComTypes.IDataObject;
         ExternalDragOver(sender, e);
     }
 
@@ -112,6 +115,8 @@ public sealed partial class ExplorerPane
         externalDropPlan = strip ? plan : null;
         tabStrip.Invalidate();
         if (plan is { Allowed: true }) e.Effect = DragDropEffects.Link;
+        externalDropAllowed = plan is { Allowed: true };
+        RefreshExternalDropDescription();
         FolderTab? hovered = strip && tabStrip.GetItemAt(tabStrip.PointToClient(point)) is FolderTabButton button
             ? tabs.FirstOrDefault(tab => tab.Button == button) : null;
         if (hovered != dragHoverTab)
@@ -122,6 +127,18 @@ public sealed partial class ExplorerPane
         }
     }
 
+    internal string JoinDropLabel(TabGroup? group) => group is null ? text.T("Open in new tabs")
+        : group.Name.Length == 0 ? text.T("Add to group") : text.T("Add to '{0}' group", group.Name);
+
+    private void RefreshExternalDropDescription()
+    {
+        if (externalDropData is null) return;
+        string? description = externalDropAllowed ? JoinDropLabel(externalDropPlan?.JoinGroup) : null;
+        if (description == externalDropDescription) return;
+        ShellDropDescription.Set(externalDropData, description);
+        externalDropDescription = description;
+    }
+
     private TabDropPlan PlanExternalInsertion(int insertion, TabGroup? group, IReadOnlyList<string> paths, Rectangle marker)
     {
         if (group is null && insertion > 0 && insertion < tabs.Count
@@ -129,7 +146,7 @@ public sealed partial class ExplorerPane
         string? reason = tabs.Count + paths.Count > 32 ? "Maximum 32 tabs per pane. Close a tab first."
             : group is not null && CountOpenGroupTabs(group) + paths.Count > TabGroup.MaxTabs ? "A group holds up to 12 tabs." : null;
         if (reason is not null) SetLocalizedStatus(reason);
-        return new TabDropPlan(PaneNumber - 1, null, marker, reason is null ? "" : text.T(reason), reason is null,
+        return new TabDropPlan(PaneNumber - 1, null, marker, reason is null ? JoinDropLabel(group) : text.T(reason), reason is null,
             InsertionIndex: insertion, JoinGroup: group);
     }
 
@@ -156,12 +173,17 @@ public sealed partial class ExplorerPane
 
     private void ClearExternalDrop()
     {
+        if (externalDropData is not null) ShellDropDescription.Set(externalDropData, null);
+        externalDropData = null;
+        externalDropDescription = null;
+        externalDropAllowed = false;
+        externalDropPlan = null;
         ClearStripDropDwell();
         dragHoverTimer.Stop();
         dragHoverTab = null;
-        externalDropPlan = null;
         externalDropPaths = [];
         tabStrip.Invalidate();
+        tabStrip.Update();
     }
 }
 

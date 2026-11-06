@@ -1526,6 +1526,7 @@ public sealed partial class ExplorerPane : UserControl
             folderSizeTimer.Dispose();
             dragHoverTimer.Dispose();
             groupJoinTimer.Dispose();
+            groupJoinProgressTimer.Dispose();
             candidates.Dispose();
             tips.Dispose();
             tabMenu.Dispose();

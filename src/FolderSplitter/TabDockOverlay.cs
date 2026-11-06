@@ -5,6 +5,11 @@ internal sealed record TabDropPlan(int TargetPane, SplitEdge? Edge, Rectangle Pr
 {
     internal Color MarkerColor => !Allowed ? Color.FromArgb(160, 55, 45)
         : JoinGroup is { } group ? Theme.GroupColor(group.Color) : Theme.Accent;
+    internal TabGroup? DwellGroup { get; init; }
+    internal float DwellProgress { get; init; }
+    internal Rectangle GhostSlot { get; init; }
+    internal Rectangle[] GroupHighlight { get; init; } = [];
+    internal int IncomingCount { get; init; }
 }
 
 // Shown only while dragging one of our tabs. Native Shell file drops otherwise
@@ -34,7 +39,7 @@ internal sealed class TabDockOverlay : Form
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         Bounds = bounds;
-        BackColor = Color.White;
+        BackColor = Theme.Canvas;
         ForeColor = Theme.Text;
         Font = new Font("Segoe UI", 11);
         Opacity = .78;
@@ -43,7 +48,7 @@ internal sealed class TabDockOverlay : Form
         AccessibleName = "Tab docking preview";
         DragEnter += UpdatePreview;
         DragOver += UpdatePreview;
-        DragLeave += (_, _) => { preview = null; previewPoint = null; clearStripDwell?.Invoke(); Invalidate(); };
+        DragLeave += (_, _) => { preview = null; previewPoint = null; clearStripDwell?.Invoke(); Invalidate(); Update(); };
         DragDrop += (_, e) =>
         {
             UpdatePreview(this, e);
@@ -72,6 +77,7 @@ internal sealed class TabDockOverlay : Form
         if (previewPoint is not { } point || IsDisposed) return;
         preview = hitTest(point);
         Invalidate();
+        Update();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -95,11 +101,11 @@ internal sealed class TabDockOverlay : Form
         Color accent = preview.MarkerColor;
         if (preview.InsertionIndex is not null)
         {
-            using var marker = new SolidBrush(accent);
-            e.Graphics.FillRectangle(marker, area);
+            PaintStripFeedback(e.Graphics, preview, Location, true);
             var label = new Rectangle(8, Math.Min(ClientSize.Height - Font.Height * 2, area.Bottom + 4),
                 Math.Max(0, ClientSize.Width - 16), Font.Height * 2);
-            TextRenderer.DrawText(e.Graphics, preview.Label, Font, label, accent,
+            Color labelColor = preview.JoinGroup is { } group ? Theme.GroupTextColor(group.Color) : Theme.Text;
+            TextRenderer.DrawText(e.Graphics, preview.Label, Font, label, labelColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
             return;
         }
@@ -110,6 +116,67 @@ internal sealed class TabDockOverlay : Form
         e.Graphics.DrawRectangle(outline, area);
         TextRenderer.DrawText(e.Graphics, preview.Label, Font, area, accent,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
+    }
+
+    internal static void PaintStripFeedback(Graphics graphics, TabDropPlan plan, Point origin, bool highlightGroup)
+    {
+        Rectangle Local(Rectangle screen) => new(screen.X - origin.X, screen.Y - origin.Y, screen.Width, screen.Height);
+        Color color = plan.MarkerColor;
+        if (plan.JoinGroup is { } group)
+        {
+            if (highlightGroup)
+            {
+                for (int i = 0; i < plan.GroupHighlight.Length; i++)
+                {
+                    Rectangle region = Local(plan.GroupHighlight[i]);
+                    if (region.Width <= 0 || region.Height <= 0) continue;
+                    if (i == 0)
+                    {
+                        region.Inflate(-3, -3);
+                        Theme.PaintGroupPill(graphics, region, group.Color, true);
+                        string caption = group.Collapsed
+                            ? $"{group.Name} +{plan.IncomingCount}" : group.Name;
+                        TextRenderer.DrawText(graphics, caption, SystemFonts.MenuFont, region,
+                            Theme.GroupTextColor(group.Color), TextFormatFlags.HorizontalCenter
+                            | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                    }
+                    else
+                    {
+                        using var tint = new SolidBrush(Color.FromArgb(35, color));
+                        graphics.FillRectangle(tint, region);
+                        using var underline = new SolidBrush(color);
+                        int thickness = Math.Max(5, plan.Preview.Width * 2);
+                        graphics.FillRectangle(underline, region.Left, region.Bottom - thickness, region.Width, thickness);
+                    }
+                }
+            }
+            Rectangle slot = Local(plan.GhostSlot);
+            if (slot.Width > 2 && slot.Height > 2)
+            {
+                slot.Inflate(-1, -1);
+                using var tint = new SolidBrush(Color.FromArgb(55, color));
+                using var outline = new Pen(color, Math.Max(2, plan.Preview.Width / 2f))
+                { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+                graphics.FillRectangle(tint, slot);
+                graphics.DrawRectangle(outline, slot);
+                // A geometric plus remains distinct even when group and accent colors coincide.
+                int centerX = slot.Left + slot.Width / 2, centerY = slot.Top + slot.Height / 2;
+                int radius = Math.Max(4, slot.Height / 6);
+                using var plus = new Pen(Theme.GroupTextColor(group.Color), Math.Max(2, plan.Preview.Width / 2f));
+                graphics.DrawLine(plus, centerX - radius, centerY, centerX + radius, centerY);
+                graphics.DrawLine(plus, centerX, centerY - radius, centerX, centerY + radius);
+            }
+        }
+        Rectangle marker = Local(plan.Preview);
+        using var markerBrush = new SolidBrush(color);
+        graphics.FillRectangle(markerBrush, marker);
+        if (plan.JoinGroup is null && plan.DwellGroup is { } candidate && plan.DwellProgress > 0)
+        {
+            int height = Math.Max(1, (int)Math.Round(marker.Height * plan.DwellProgress));
+            var progress = new Rectangle(marker.Left, marker.Bottom - height, marker.Width * 2, height);
+            using var fill = new SolidBrush(Theme.GroupColor(candidate.Color));
+            graphics.FillRectangle(fill, progress);
+        }
     }
 
     private Rectangle ToLocal(Rectangle screen) =>

@@ -28,8 +28,8 @@ internal static partial class Program
             && plan.MarkerColor.ToArgb() == (armed ? Theme.GroupColor(group.Color) : Theme.Accent).ToArgb(),
             scenario + (armed ? " timer refreshes the real overlay to a group-colored join marker"
                 : " starts outside the group with an accent insertion marker"));
-        Check(TgChip(pane, group).DropJoinArmed == (armed && group.Collapsed),
-            scenario + " only tints a collapsed chip while its join is armed");
+        Check(TgChip(pane, group).DropJoinArmed == armed,
+            scenario + " tints the group chip while its join is armed");
         Check(TgJoinTimer(pane).Interval == 500 && (armed || TgJoinTimer(pane).Enabled),
             scenario + " uses the native 500 ms group-join dwell timer");
     }

@@ -299,12 +299,13 @@ public sealed partial class ExplorerPane
             ? CanInsertStripTabs(movingTabs, insertion, joinGroup, out joinGroup, out reason)
             : CanInsertStripTab(tab, insertion, joinGroup, out joinGroup, out reason));
         if (!allowed) SetLocalizedStatus(reason);
-        string label = allowed ? text.T(group is not null ? "Reorder group" : movingTabs is { Count: > 1 } ? "Reorder tabs" : "Reorder tab") : text.T(reason);
+        string label = allowed ? group is not null ? text.T("Reorder group") : JoinDropLabel(joinGroup) : text.T(reason);
         int markerX = StripInsertionX(insertion, joinGroup);
         var point = tabStrip.PointToScreen(new Point(markerX, 2));
         var marker = new Rectangle(point.X - 2, point.Y, Math.Max(3, (int)Math.Round(3 * DeviceDpi / 96d)), Math.Max(1, tabStrip.Height - 4));
-        if (externalPaths is not null) return PlanExternalInsertion(insertion, joinGroup, externalPaths, marker);
-        return new TabDropPlan(PaneNumber - 1, null, marker, label, allowed, InsertionIndex: insertion, JoinGroup: joinGroup);
+        var plan = externalPaths is not null ? PlanExternalInsertion(insertion, joinGroup, externalPaths, marker)
+            : new TabDropPlan(PaneNumber - 1, null, marker, label, allowed, InsertionIndex: insertion, JoinGroup: joinGroup);
+        return AddStripDropFeedback(plan, externalPaths?.Count ?? movingTabs?.Count ?? 1);
     }
 
     private int StripInsertionX(int insertion, TabGroup? joinGroup)

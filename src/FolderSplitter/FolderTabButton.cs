@@ -12,6 +12,13 @@ internal sealed class FolderTabButton : ToolStripButton
     private TabGroupColor? groupColor;
     private bool multiSelected;
     private bool pinned;
+    private bool dropJoinArmed;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal bool DropJoinArmed
+    {
+        get => dropJoinArmed;
+        set { if (dropJoinArmed == value) return; dropJoinArmed = value; Invalidate(); }
+    }
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal bool Pinned
     {
@@ -168,9 +175,14 @@ internal sealed class FolderTabButton : ToolStripButton
         // Pinned tabs never carry group membership, even during a strip rebuild.
         if (!Pinned && GroupColor is { } color && Width > 0 && Height > 0)
         {
-            int thickness = Math.Min(Height, Math.Max(2, (int)Math.Round(3 * (Owner?.DeviceDpi ?? 96) / 96d)));
+            int thickness = Math.Min(Height, Math.Max(2, (int)Math.Round((DropJoinArmed ? 6 : 3) * (Owner?.DeviceDpi ?? 96) / 96d)));
             using var brush = new SolidBrush(Theme.GroupColor(color));
             e.Graphics.FillRectangle(brush, 0, Height - thickness, Width, thickness);
+            if (DropJoinArmed && thickness > 2)
+            {
+                using var shine = new SolidBrush(Theme.GroupTextColor(color));
+                e.Graphics.FillRectangle(shine, 0, Height - thickness, Width, Math.Max(1, thickness / 4));
+            }
         }
     }
 
