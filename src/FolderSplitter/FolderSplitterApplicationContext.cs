@@ -753,6 +753,11 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
         }
     }
 
+    internal void OpenAvailableReleasePage(MainForm owner)
+    {
+        if (AvailableUpdate is { } update) OpenReleasePage(update, owner);
+    }
+
     private void OpenReleasePage(ReleaseInfo update, MainForm owner)
     {
         if (ReleasePageOpener is { } open) { open(update); return; }
@@ -836,6 +841,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
         {
             disposed = true;
             shuttingDown = true;
+            ClearCrossViewFileSelection();
             cancellation.Cancel();
             saveTimer.Dispose();
             updateTimer.Dispose();

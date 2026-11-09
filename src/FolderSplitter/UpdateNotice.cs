@@ -15,6 +15,12 @@ internal sealed class UpdateNotice : Form
     };
     private readonly Button action;
     private readonly Button dismiss;
+    private readonly Button details;
+    private readonly FlowLayoutPanel buttons;
+    private readonly Label summary = new() { TextAlign = ContentAlignment.TopLeft };
+    private IReadOnlyList<string> bullets = Array.Empty<string>();
+    private bool showDetails;
+    private bool layingOut;
     private readonly System.Windows.Forms.Timer timer = new();
     private readonly Stopwatch transition = new();
     private Form? anchor;
@@ -27,8 +33,9 @@ internal sealed class UpdateNotice : Form
     internal bool Dismissed { get; private set; }
 
     internal event EventHandler? UpdateRequested;
+    internal event EventHandler? DetailsRequested;
 
-    internal UpdateNotice(UiText text, Font font, ReleaseInfo release, bool canInstall)
+    internal UpdateNotice(UiText text, Font font, ReleaseInfo release, bool canInstall, bool executableAvailable = true)
     {
         this.text = text;
         Font = font;
@@ -39,7 +46,7 @@ internal sealed class UpdateNotice : Form
         Padding = new Padding(2);
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
-        var buttons = new FlowLayoutPanel
+        buttons = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft,
             Padding = new Padding(10, 4, 10, 10)
@@ -50,6 +57,8 @@ internal sealed class UpdateNotice : Form
             StartTransition(0);
         }, 100);
         action = Theme.Button("", "", () => UpdateRequested?.Invoke(this, EventArgs.Empty), 140);
+        details = Theme.Button("", "", () => DetailsRequested?.Invoke(this, EventArgs.Empty), 140);
+        details.Dock = DockStyle.None;
         dismiss.Dock = action.Dock = DockStyle.None;
         buttons.Controls.Add(dismiss);
         buttons.Controls.Add(action);
@@ -57,7 +66,7 @@ internal sealed class UpdateNotice : Form
         Controls.Add(buttons);
         CancelButton = dismiss;
         timer.Tick += OnTimerTick;
-        RefreshNotice(release, canInstall);
+        RefreshNotice(release, canInstall, executableAvailable);
         Theme.Apply(this);
     }
 
@@ -107,7 +116,7 @@ internal sealed class UpdateNotice : Form
             Control.FromHandle(root) is UpdateNotice notice && ReferenceEquals(notice.Owner, owner);
     }
 
-    internal void RefreshNotice(ReleaseInfo release, bool canInstall)
+    internal void RefreshNotice(ReleaseInfo release, bool canInstall, bool executableAvailable = true)
     {
         Text = text.T("Update available");
         AccessibleName = Text;
@@ -116,6 +125,11 @@ internal sealed class UpdateNotice : Form
         action.AccessibleName = action.Text;
         dismiss.Text = text.T("Close");
         dismiss.AccessibleName = dismiss.Text;
+        details.Text = text.T("View details");
+        details.AccessibleName = details.Text;
+        bullets = UpdateSummary.ForLanguage(release.Summaries, text.Language).Take(3).ToArray();
+        showDetails = canInstall && executableAvailable;
+        if (anchor is not null) UpdateTarget();
     }
 
     private void OwnerChanged(object? sender, EventArgs e)
@@ -127,10 +141,93 @@ internal sealed class UpdateNotice : Form
 
     private void UpdateTarget()
     {
-        if (anchor is null) return;
+        if (anchor is null || layingOut) return;
+        LayoutForOwner();
         targetBounds = TargetBounds(anchor, Size);
         slideDistance = (12 * anchor.DeviceDpi + 48) / 96;
         PositionAtOwner();
+    }
+
+    private void LayoutForOwner()
+    {
+        if (anchor is null) return;
+        layingOut = true;
+        try
+        {
+            int Scale(int value) => (value * anchor.DeviceDpi + 48) / 96;
+            int pad = Scale(16), gap = Scale(6);
+            int compactWidth = Scale(NoticeSize.Width), compactHeight = Scale(NoticeSize.Height);
+            Rectangle ownerClient = anchor.RectangleToScreen(anchor.ClientRectangle);
+            var available = Rectangle.Intersect(ownerClient, Screen.FromRectangle(ownerClient).WorkingArea);
+            int margin = Scale(12);
+            int maxWidth = available.Width - 2 * margin;
+            int maxHeight = available.Height - 2 * margin;
+            int ButtonWidth(Button button, int minimum) =>
+                Math.Max(Scale(minimum), TextRenderer.MeasureText(button.Text, Font).Width + Scale(24));
+            int buttonHeight = Math.Max(Scale(30), Font.Height + Scale(12));
+            int actionWidth = ButtonWidth(action, 140), dismissWidth = ButtonWidth(dismiss, 100);
+            int detailsWidth = showDetails ? ButtonWidth(details, 140) : 0;
+            int width = Math.Max(compactWidth, actionWidth + dismissWidth + detailsWidth
+                + Scale(showDetails ? 56 : 48));
+            width = Math.Min(width, maxWidth);
+            string summaryText = string.Join(Environment.NewLine, bullets.Select(item => "• " + item));
+            int textWidth = width - 2 * pad;
+            var flags = TextFormatFlags.WordBreak | TextFormatFlags.NoPadding | TextFormatFlags.TextBoxControl;
+            int messageHeight = textWidth > 0 ? TextRenderer.MeasureText(message.Text, Font,
+                new Size(textWidth, int.MaxValue), flags).Height + Scale(4) : 0;
+            int summaryHeight = textWidth > 0 && bullets.Count > 0 ? TextRenderer.MeasureText(summaryText, Font,
+                new Size(textWidth, int.MaxValue), flags).Height + Scale(4) : 0;
+            int height = pad + messageHeight + gap + summaryHeight + gap + buttonHeight + pad;
+            int neededButtonWidth = actionWidth + dismissWidth + detailsWidth + Scale(showDetails ? 44 : 36);
+            bool expanded = bullets.Count > 0 && width >= compactWidth && width >= neededButtonWidth
+                && height <= maxHeight;
+
+            SuspendLayout();
+            if (expanded)
+            {
+                message.Dock = DockStyle.None;
+                message.Padding = Padding.Empty;
+                message.TextAlign = ContentAlignment.TopLeft;
+                buttons.Dock = DockStyle.None;
+                buttons.AutoSize = false;
+                buttons.Padding = Padding.Empty;
+                action.Size = new Size(actionWidth, buttonHeight);
+                dismiss.Size = new Size(dismissWidth, buttonHeight);
+                details.Size = new Size(detailsWidth, buttonHeight);
+                if (showDetails && !buttons.Controls.Contains(details)) buttons.Controls.Add(details);
+                if (!showDetails) buttons.Controls.Remove(details);
+                if (!Controls.Contains(summary)) Controls.Add(summary);
+                summary.ForeColor = Theme.Text;
+                summary.BackColor = Theme.Canvas;
+                summary.Text = summaryText;
+                ClientSize = new Size(width, height);
+                message.SetBounds(pad, pad, textWidth, messageHeight);
+                summary.SetBounds(pad, pad + messageHeight + gap, textWidth, summaryHeight);
+                buttons.SetBounds(pad, height - pad - buttonHeight - Scale(4), width - 2 * pad, buttonHeight + Scale(4));
+            }
+            else
+            {
+                buttons.Controls.Remove(details);
+                Controls.Remove(summary);
+                message.Dock = DockStyle.Fill;
+                message.Padding = new Padding(Scale(16), Scale(12), Scale(16), Scale(4));
+                message.TextAlign = ContentAlignment.MiddleLeft;
+                buttons.Dock = DockStyle.Bottom;
+                buttons.AutoSize = true;
+                buttons.Padding = new Padding(Scale(10), Scale(4), Scale(10), Scale(10));
+                action.Size = new Size(Scale(140), Scale(30));
+                dismiss.Size = new Size(Scale(100), Scale(30));
+                ClientSize = new Size(compactWidth, compactHeight);
+            }
+            ResumeLayout(true);
+        }
+        finally { layingOut = false; }
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        if (anchor is not null) UpdateTarget();
     }
 
     private void PositionAtOwner()
@@ -205,6 +302,8 @@ internal sealed class UpdateNotice : Form
         if (disposing)
         {
             timer.Dispose();
+            details.Dispose();
+            summary.Dispose();
             if (anchor is not null)
             {
                 anchor.Move -= OwnerChanged;

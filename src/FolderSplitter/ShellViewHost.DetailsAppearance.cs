@@ -214,6 +214,15 @@ public sealed partial class ShellViewHost
 
         protected override void WndProc(ref Message message)
         {
+            if (kind == DetailsWindowKind.List && message.Msg == 0x0201) owner.FileSelectionMouseDown(ref message);
+            else if (kind == DetailsWindowKind.List && (message.Msg == 0x0203
+                || message.Msg == 0x0100 && message.WParam == 0x1B)) owner.CancelCrossViewFileSelection();
+            if (kind == DetailsWindowKind.Container && message.Msg == 0x004E
+                && owner.TryBeginCrossViewFileDrag(message.LParam))
+            {
+                message.Result = 0;
+                return;
+            }
             if (kind == DetailsWindowKind.List && owner.TryFolderContextMenuKey(ref message)) return;
             if (kind == DetailsWindowKind.List && owner.TryFolderContextMenuMessage(ref message)) return;
             if (kind == DetailsWindowKind.List && owner.TryOpenInTabListMessage(ref message)) return;
@@ -237,6 +246,9 @@ public sealed partial class ShellViewHost
                 owner.UpdateScrollbars(Handle, horizontalHover || horizontalDrag, verticalHover || verticalDrag);
             }
             base.WndProc(ref message);
+            // The Shell may consume button-up inside its button-down handler while detecting a
+            // drag. Once that handler returns, the click's native selection is already settled.
+            if (kind == DetailsWindowKind.List && message.Msg is 0x0201 or 0x0202) owner.CompleteFileSelectionClick();
             if (horizontalDrag) owner.horizontalTracking = false;
             if (verticalDrag) owner.verticalTracking = false;
             if (kind == DetailsWindowKind.List)

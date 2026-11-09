@@ -23,6 +23,7 @@ public sealed class UiText
         ["Add to group"] = ("그룹에 추가", "添加到组", "グループに追加"),
         ["Add to '{0}' group"] = ("'{0}' 그룹에 추가", "添加到“{0}”组", "「{0}」グループに追加"),
         ["Open in new tabs"] = ("새 탭으로 열기", "在新标签页中打开", "新しいタブで開く"),
+        ["Could not drag all selected files and folders. Nothing was moved. Select them again."] = ("선택한 파일과 폴더를 모두 끌 수 없습니다. 항목은 이동되지 않았습니다. 다시 선택하세요.", "无法拖动全部选中的文件和文件夹。未移动任何项目。请重新选择。", "選択したファイルとフォルダーをすべてドラッグできませんでした。項目は移動されていません。選択し直してください。"),
         ["Move tabs to pane"] = ("선택한 탭을 다른 영역으로 이동", "将标签页移至窗格", "タブを別のペインに移動"),
         ["Move tabs to new window"] = ("선택한 탭을 새 창으로 이동", "将标签页移至新窗口", "タブを新しいウィンドウに移動"),
         ["Close {0} tabs"] = ("탭 {0}개 닫기", "关闭 {0} 个标签页", "{0} 個のタブを閉じる"),
@@ -74,6 +75,7 @@ public sealed class UiText
         ["A new version {0} is available."] = ("새 버전 {0}을 사용할 수 있습니다.", "新版本 {0} 已发布。", "新しいバージョン {0} を利用できます。"),
         ["Update"] = ("업데이트", "更新", "アップデート"),
         ["Download"] = ("다운로드", "下载", "ダウンロード"),
+        ["View details"] = ("자세히 보기", "查看详情", "詳細を見る"),
         ["New version {0} available · Download"] = ("새 버전 {0} 있음 · 다운로드", "有新版本 {0} · 下载", "新しいバージョン {0} · ダウンロード"),
         ["Check for new versions"] = ("새 버전 확인", "检查新版本", "新しいバージョンを確認"),
         ["New version {0} available · Update"] = ("새 버전 {0} 있음 · 업데이트", "有新版本 {0} · 更新", "新しいバージョン {0} · 更新"),
@@ -464,6 +466,7 @@ public sealed class UiText
 
             파일
             Windows 메뉴 및 영역 간 파일 끌어 놓기를 사용하세요.
+            각 영역이나 창의 파일 목록에서 Ctrl+클릭으로 고른 파일·폴더를 함께 끌 수 있습니다.
             Ctrl+C / Ctrl+X / Ctrl+V   복사, 잘라내기, 붙여넣기
             F2   이름 바꾸기    |    Delete   휴지통으로
             Ctrl+Shift+N   새 폴더 만들기
@@ -519,6 +522,7 @@ public sealed class UiText
 
             文件
             使用 Windows 右键菜单，在窗格之间拖放文件。
+            在各个窗格或窗口的文件列表中按 Ctrl 单击，可将选中的文件和文件夹一起拖动。
             Ctrl+C / Ctrl+X / Ctrl+V   复制、剪切、粘贴
             F2   重命名    |    Delete   移至回收站
             Ctrl+Shift+N   新建文件夹
@@ -574,6 +578,7 @@ public sealed class UiText
 
             ファイル
             Windows のコンテキスト メニューを使い、ペイン間でファイルをドラッグできます。
+            各ペイン・ウィンドウの一覧で Ctrl+クリックしたファイルやフォルダーをまとめてドラッグできます。
             Ctrl+C / Ctrl+X / Ctrl+V   コピー、切り取り、貼り付け
             F2   名前の変更    |    Delete   ごみ箱へ移動
             Ctrl+Shift+N   新しいフォルダー
@@ -631,6 +636,7 @@ public sealed class UiText
 
         FILES
         Use Windows context menus and drag files between panes.
+        Ctrl-click files and folders in each pane or window to drag them together.
         Ctrl+C / Ctrl+X / Ctrl+V   Copy, cut, paste
         F2   Rename    |    Delete   Recycle
         Ctrl+Shift+N   New folder

@@ -1673,7 +1673,8 @@ public sealed partial class MainForm : Form, IMessageFilter
         versionLabel.LinkArea = new LinkArea(current.Length + 3, notice.Length);
         versionLabel.Links[0].Enabled = true;
         versionLabel.LinkColor = versionLabel.ActiveLinkColor = versionLabel.VisitedLinkColor = Theme.Accent;
-        updateNotice?.RefreshNotice(availableUpdate, CanInstallUpdate(availableUpdate));
+        updateNotice?.RefreshNotice(availableUpdate, CanInstallUpdate(availableUpdate),
+            application.UpdateExecutablePath() is not null);
     }
 
     private void ShowPendingUpdateNotice()
@@ -1683,9 +1684,11 @@ public sealed partial class MainForm : Form, IMessageFilter
             !UpdateNotice.OwnerVisibleAtNotice(this)) return;
         updateNotice?.Close();
         application.NotifiedUpdateVersion = update.Version;
-        var notice = new UpdateNotice(text, Font, update, CanInstallUpdate(update));
+        var notice = new UpdateNotice(text, Font, update, CanInstallUpdate(update),
+            application.UpdateExecutablePath() is not null);
         updateNotice = notice;
         notice.UpdateRequested += async (_, _) => await OpenAvailableUpdateAsync();
+        notice.DetailsRequested += (_, _) => application.OpenAvailableReleasePage(this);
         notice.FormClosed += (_, _) =>
         {
             if (ReferenceEquals(updateNotice, notice)) updateNotice = null;

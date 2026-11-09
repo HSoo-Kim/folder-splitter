@@ -8,7 +8,8 @@ using System.Text.Json;
 
 namespace QuadExplorer;
 
-public sealed record ReleaseInfo(Version Version, string Tag, string Url, Uri? PackageUrl = null, string? PackageSha256 = null);
+public sealed record ReleaseInfo(Version Version, string Tag, string Url, Uri? PackageUrl = null, string? PackageSha256 = null,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? Summaries = null);
 
 
 internal static class UpdateChecker
@@ -20,7 +21,7 @@ internal static class UpdateChecker
 
     public static Version Normalize(Version version) => new(version.Major, version.Minor, Math.Max(version.Build, 0));
 
-    // Reads only the latest release's tag, page and package digest; nothing about the user or their files is sent.
+    // Reads only the latest release's tag, page, body and package digest; nothing about the user or their files is sent.
     public static async Task<ReleaseInfo?> FetchLatestAsync(CancellationToken token)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
@@ -53,7 +54,13 @@ internal static class UpdateChecker
                 }
                 break;
             }
-        return new ReleaseInfo(Normalize(version), tag, url, package, sha256);
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? summaries = null;
+        if (release.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.String)
+        {
+            try { summaries = UpdateSummary.Parse(body.GetString()); }
+            catch (Exception error) when (error is InvalidOperationException or JsonException or ArgumentException) { }
+        }
+        return new ReleaseInfo(Normalize(version), tag, url, package, sha256, summaries);
     }
 }
 

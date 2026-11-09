@@ -38,7 +38,7 @@ internal static class Program
         }.Concat(BrowserWindowStateTests.Cases).Concat(PaneLayoutTests.Cases).Concat(FolderVisitsTests.Cases)
             .Concat(PaletteGeneratorTests.Cases).Concat(TabGroupPersistenceTests.Cases)
             .Concat(SavedGroupPersistenceTests.Cases).Concat(GroupClosePreferenceTests.Cases)
-            .Concat(UpdateProgressTests.Cases).ToArray();
+            .Concat(UpdateProgressTests.Cases).Concat(UpdateSummaryTests.Cases).ToArray();
 
         var failures = 0;
         Directory.CreateDirectory(TestDirectory);

@@ -137,12 +137,19 @@ internal static partial class Program
                 Console.WriteLine($"FREQUENT_FOLDERS_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--cross-view-file-drag"])
+            {
+                RunCrossViewFileDragScenario(root);
+                Console.WriteLine($"CROSS_VIEW_FILE_DRAG_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--multi-window"])
             {
                 RunMultiWindowScenario(root);
                 RunMultiSelectDockingScenario(root);
                 RunSavedGroupScenario(root);
                 RunCrossWindowDragScenario(root);
+                RunCrossViewFileDragScenario(root);
                 Console.WriteLine($"MULTI_WINDOW_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
@@ -438,6 +445,7 @@ internal static partial class Program
             RunTrayScenario(root);
             RunMultiWindowScenario(root);
             RunCrossWindowDragScenario(root);
+            RunCrossViewFileDragScenario(root);
             RunUpdateScenario(root);
             RunUpdateProgressScenario(root);
             RunPreviewScenario(root);
@@ -1371,6 +1379,7 @@ internal static partial class Program
         Application.Run(form);
         Check(!SessionStore.Load(session).CheckUpdates && !SessionStore.Load(session).AutoUpdate, "update settings persist");
         RunMultiWindowUpdateNotice(root, folder);
+        RunUpdateNoticeSummaryScenario(root);
     }
 
     private static async Task WindowRestored(Form form, Action trigger)
