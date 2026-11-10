@@ -11,11 +11,13 @@ public sealed record ExplorerFavoritesResult(
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
 
-public static class ExplorerFavorites
+internal sealed record ExplorerFavoritesExportPlan(IReadOnlyList<string> ToPin, int AlreadyPinned, int Unavailable);
+
+public static partial class ExplorerFavorites
 {
     private const string QuickAccess = "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}";
 
-    // Only reads Shell properties. Never invokes verbs, resolves links, or saves shortcuts.
+    // Import only reads Shell properties. It never invokes verbs, resolves links, or saves shortcuts.
     public static ExplorerFavoritesResult Read()
     {
         var paths = new List<string>();
@@ -26,13 +28,13 @@ public static class ExplorerFavorites
         {
             var shellType = Type.GetTypeFromProgID("Shell.Application", throwOnError: true)!;
             shell = Activator.CreateInstance(shellType)!;
-            ReadFolder(shell, QuickAccess, legacyLinks: false, paths, seen, warnings);
+            ReadFolder(shell, QuickAccess, legacyLinks: false, paths, seen, warnings, limit: 100);
             var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (!string.IsNullOrWhiteSpace(profile))
             {
                 var links = Path.Combine(profile, "Links");
                 if (Directory.Exists(links))
-                    ReadFolder(shell, links, legacyLinks: true, paths, seen, warnings);
+                    ReadFolder(shell, links, legacyLinks: true, paths, seen, warnings, limit: 100);
             }
         }
         catch (Exception exception) when (IsReadFailure(exception))
@@ -50,8 +52,67 @@ public static class ExplorerFavorites
         { Warnings = warnings.Distinct().ToArray() };
     }
 
+    // Every folder pinned in File Explorer's Quick Access, without the import cap; null when any pin state is
+    // unknown. Export depends on this: the Shell pin command unpins a folder that is already pinned.
+    internal static IReadOnlyList<string>? ReadPinnedQuickAccess()
+    {
+        var paths = new List<string>();
+        var warnings = new List<string>();
+        object? shell = null;
+        try
+        {
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application", throwOnError: true)!)!;
+            ReadFolder(shell, QuickAccess, legacyLinks: false, paths,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase), warnings, int.MaxValue);
+        }
+        catch (Exception exception) when (IsReadFailure(exception)) { return null; }
+        finally { Release(shell); }
+        return warnings.Count == 0 ? paths : null;
+    }
+
+    // Only existing file-system folders can be pinned. Spelling variants of one folder are pinned once.
+    internal static ExplorerFavoritesExportPlan PlanExport(IEnumerable<string> favorites, IEnumerable<string> pinned)
+    {
+        var pinnedPaths = new HashSet<string>(pinned.Select(Normalize), StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var toPin = new List<string>();
+        int alreadyPinned = 0, unavailable = 0;
+        foreach (string favorite in favorites)
+        {
+            if (string.IsNullOrWhiteSpace(favorite) || !Path.IsPathFullyQualified(favorite) || !Directory.Exists(favorite))
+            {
+                unavailable++;
+                continue;
+            }
+            string path = Normalize(favorite);
+            if (!seen.Add(path)) continue;
+            if (pinnedPaths.Contains(path)) alreadyPinned++;
+            else toPin.Add(path);
+        }
+        return new ExplorerFavoritesExportPlan(toPin, alreadyPinned, unavailable);
+    }
+
+    // Quick Access reports long names, so an 8.3 short name (C:\PROGRA~1) is expanded before comparing paths.
+    private static string Normalize(string path)
+    {
+        string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        if (!full.Contains('~')) return full;
+        var buffer = new char[full.Length + 260];
+        uint length = GetLongPathNameW(full, buffer, (uint)buffer.Length);
+        if (length > buffer.Length)
+        {
+            buffer = new char[length];
+            length = GetLongPathNameW(full, buffer, (uint)buffer.Length);
+        }
+        return length == 0 || length > buffer.Length ? full
+            : Path.TrimEndingDirectorySeparator(new string(buffer, 0, (int)length));
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint GetLongPathNameW(string shortPath, [Out] char[] longPath, uint length);
+
     private static void ReadFolder(object shell, string location, bool legacyLinks,
-        List<string> paths, HashSet<string> seen, List<string> warnings)
+        List<string> paths, HashSet<string> seen, List<string> warnings, int limit)
     {
         object? folder = null;
         object? items = null;
@@ -68,7 +129,7 @@ public static class ExplorerFavorites
 
             items = ((dynamic)folder).Items();
             int count = ((dynamic)items).Count;
-            for (var index = 0; index < count && paths.Count < 100; index++)
+            for (var index = 0; index < count && paths.Count < limit; index++)
             {
                 object? item = null;
                 object? link = null;
@@ -109,7 +170,7 @@ public static class ExplorerFavorites
                     if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)
                         || !Directory.Exists(path))
                         continue;
-                    var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+                    var normalized = Normalize(path);
                     if (seen.Add(normalized))
                         paths.Add(normalized);
                 }

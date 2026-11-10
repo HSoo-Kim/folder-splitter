@@ -95,6 +95,27 @@ internal static partial class Program
                     "peer window Apps-key folder menu retains its hosted open-in-new-tab command");
                 created.Close();
 
+                form.ToggleFavorites();
+                host.SelectPaths([folders[1], folders[2]]);
+                int tabsBeforeFavorite = pane.TabCount;
+                var favoriteMenu = await NftChooseMenu(host, "addfavorite");
+                var favoriteList = Descendants(form).OfType<ListBox>().Single(list => list.AccessibleName == "Favorites");
+                Check(form.FavoritePaths.SequenceEqual([folders[1], folders[2]]) && pane.TabCount == tabsBeforeFavorite
+                    && host.LocationPath == fixture && SelectedPaths(host).SequenceEqual([folders[1], folders[2]]),
+                    "folder right-click adds every selected folder to the app favorites without opening tabs or changing the selection");
+                Check(form.FavoritesExpanded && favoriteList.Visible && favoriteList.Items.Count == 2 && favoriteList.SelectedIndex == 1,
+                    "adding from the folder menu expands a collapsed Favorites section and selects the added folder");
+                int afterAppCommands = favoriteMenu.Where(entry => entry.Id is 0x7000 or 0x7001)
+                    .Select(entry => entry.Position + 1).DefaultIfEmpty(0).Max();
+                Check(favoriteMenu.Single(entry => entry.Verb == "addfavorite").Position == afterAppCommands
+                    && favoriteMenu.Any(entry => entry.Verb == "pintohome" && entry.Selectable),
+                    "the app favorites command follows the app's open commands while Windows' own Quick Access pin stays separate");
+                host.SelectPaths([folders[1]]);
+                await NftChooseMenu(host, "addfavorite");
+                Check(form.FavoritePaths.Count == 2 && favoriteList.SelectedIndex == 0
+                    && PnStatusText(pane).Contains("Already in favorites.", StringComparison.Ordinal),
+                    "adding a folder that is already a favorite selects the existing entry without a duplicate");
+
                 host.SelectPaths([folders[0]]);
                 var background = await NftChooseMenu(host, null, blank: true);
                 Check(background.All(entry => !entry.Wrapped && entry.Id != 0x7000),
@@ -285,7 +306,7 @@ internal static partial class Program
                 {
                     uint id = NftGetMenuItemID(menu, i);
                     uint state = NftGetMenuState(menu, (uint)i, 0x0400); // MF_BYPOSITION
-                    string? verb = id == 0x7000 ? "opennewtab" : id == 0x7001 ? "opennewwindow"
+                    string? verb = id == 0x7000 ? "opennewtab" : id == 0x7001 ? "opennewwindow" : id == 0x7002 ? "addfavorite"
                         : handler is null ? null : NftVerb(handler, id);
                     entries.Add(new NftMenuEntry(i, id, verb, (state & 0x0803) == 0, handler is not null,
                         NftGetSubMenu(menu, i) != 0)); // not separator/disabled/grayed

@@ -153,6 +153,12 @@ internal static partial class Program
                 Console.WriteLine($"MULTI_WINDOW_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--favorites"])
+            {
+                RunFavoriteDropScenario(root);
+                Console.WriteLine($"FAVORITES_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--recent-items"])
             {
                 RunRecentItemsScenario(root);
@@ -429,6 +435,7 @@ internal static partial class Program
             RunNativeOpenSelectionScenario(root);
             RunOpenInTabScenario(root);
             RunNativeFolderTabMenuScenario(root);
+            RunFavoriteDropScenario(root);
             RunRenameScenario(root);
             RunNativeShortcutMenuScenario(root);
             RunHelpDialogScenario(root);

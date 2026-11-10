@@ -5,11 +5,13 @@ namespace QuadExplorer;
 public sealed partial class ShellViewHost
 {
     internal event Action<IReadOnlyList<string>>? OpenFoldersInNewWindowRequested;
+    internal event Action<IReadOnlyList<string>>? AddFoldersToFavoritesRequested;
 
     private const uint FolderMenuFirstCommand = 1;
     private const uint FolderMenuLastCommand = 0x6FFF;
     private const uint FolderMenuNewTabCommand = 0x7000;
     private const uint FolderMenuNewWindowCommand = 0x7001;
+    private const uint FolderMenuFavoritesCommand = 0x7002;
     private IContextMenu? activeFolderContextMenu;
     private bool folderMenuAppsArmed, folderMenuF10Handled;
 
@@ -116,13 +118,26 @@ public sealed partial class ShellViewHost
                 uint flags = 0x10u | (OpenInTabNative.GetKeyState(0x10) < 0 ? 0x100u : 0u); // CANRENAME | EXTENDEDVERBS
                 if (menu.QueryContextMenu(popup, 0, FolderMenuFirstCommand, FolderMenuLastCommand, flags) < 0)
                     return false;
-                if (!HasFolderMenuCommand(menu, popup, verbBuffer, "opennewtab")
-                    && !FolderMenuNative.InsertMenuW(popup, 0, 0x0400, FolderMenuNewTabCommand, text.T("Open in new tab")))
-                    return false; // MF_BYPOSITION | MF_STRING
+                uint appItems = 0;
+                if (!HasFolderMenuCommand(menu, popup, verbBuffer, "opennewtab"))
+                {
+                    if (!FolderMenuNative.InsertMenuW(popup, 0, 0x0400, FolderMenuNewTabCommand, text.T("Open in new tab")))
+                        return false; // MF_BYPOSITION | MF_STRING
+                    appItems = 1;
+                }
                 // DefView adds Open in new window outside the raw IContextMenu payload on Win11.
                 // Preserve that host command without depending on DefView's private command IDs.
-                if (OpenFoldersInNewWindowRequested is not null && !HasFolderMenuCommand(menu, popup, verbBuffer, "opennewwindow")
-                    && !FolderMenuNative.InsertMenuW(popup, 1, 0x0400, FolderMenuNewWindowCommand, text.T("Open in new window")))
+                if (OpenFoldersInNewWindowRequested is not null && !HasFolderMenuCommand(menu, popup, verbBuffer, "opennewwindow"))
+                {
+                    if (!FolderMenuNative.InsertMenuW(popup, 1, 0x0400, FolderMenuNewWindowCommand, text.T("Open in new window")))
+                        return false;
+                    appItems = 2;
+                }
+                // Windows' own "Pin to Quick access" (localized as a favorites pin) changes File Explorer only,
+                // so the app's sidebar favorites get their own, explicitly named command next to the app's items.
+                if (AddFoldersToFavoritesRequested is not null
+                    && !FolderMenuNative.InsertMenuW(popup, appItems, 0x0400, FolderMenuFavoritesCommand,
+                        text.T("Add to Folder Splitter favorites")))
                     return false;
             }
             catch (ExternalException) { return false; } // Cleanup below, then the original DefView builds its own menu.
@@ -134,7 +149,8 @@ public sealed partial class ShellViewHost
                 ExternalException? failure = null;
                 try
                 {
-                    if (selected != FolderMenuNewTabCommand && selected != FolderMenuNewWindowCommand)
+                    if (selected != FolderMenuNewTabCommand && selected != FolderMenuNewWindowCommand
+                        && selected != FolderMenuFavoritesCommand)
                         verb = FolderContextMenuVerb(menu, selected, verbBuffer);
                 }
                 catch (ExternalException error) { failure = error; }
@@ -149,6 +165,8 @@ public sealed partial class ShellViewHost
                 else if ((selected == FolderMenuNewWindowCommand || string.Equals(verb, "opennewwindow", StringComparison.OrdinalIgnoreCase))
                     && OpenFoldersInNewWindowRequested is { } openWindow)
                     openWindow(folders);
+                else if (selected == FolderMenuFavoritesCommand && AddFoldersToFavoritesRequested is { } addFavorites)
+                    addFavorites(folders);
                 else
                 {
                     try

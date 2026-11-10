@@ -226,12 +226,21 @@ public sealed class UiText
         ["Collapse / expand favorites"] = ("즐겨찾기 목록 접기 / 펼치기", "折叠 / 展开收藏夹", "お気に入りの折りたたみ / 展開"),
         ["Drag to resize quick access; double-click to hide"] = ("좌우로 끌어 빠른 접근 폭 조절 — 두 번 클릭하면 숨기기", "拖动调整快速访问宽度；双击隐藏", "ドラッグでクイック アクセスの幅を調整、ダブルクリックで非表示"),
         ["Manage..."] = ("관리...", "管理...", "管理..."),
-        ["Manage favorites: import, remove all, restore"] = ("즐겨찾기 관리 — 탐색기에서 가져오기, 전체 제거, 복원", "管理收藏夹：导入、全部移除、恢复", "お気に入りの管理：インポート、すべて削除、復元"),
+        ["Manage favorites: import, export, remove all, restore"] = ("즐겨찾기 관리 — 탐색기에서 가져오기·탐색기로 내보내기, 전체 제거, 복원", "管理收藏夹：导入、导出、全部移除、恢复", "お気に入りの管理：インポート、エクスポート、すべて削除、復元"),
         ["+  Pin folder"] = ("+  폴더 고정", "+  固定文件夹", "+  フォルダー固定"),
         ["Pin current folder to favorites (Ctrl+D)"] = ("현재 영역의 폴더를 즐겨찾기에 추가 (Ctrl+D)", "将当前窗格的文件夹添加到收藏夹 (Ctrl+D)", "現在のペインのフォルダーをお気に入りにピン留め (Ctrl+D)"),
         ["Open in new tab"] = ("새 탭에서 열기", "在新标签页中打开", "新しいタブで開く"),
         ["Remove favorite"] = ("즐겨찾기 제거", "移除收藏", "お気に入りから削除"),
         ["Import from File Explorer"] = ("파일 탐색기에서 가져오기", "从文件资源管理器导入", "エクスプローラーからインポート"),
+        ["Export to File Explorer"] = ("파일 탐색기로 내보내기", "导出到文件资源管理器", "エクスプローラーへエクスポート"),
+        ["Pinned {0} favorites in File Explorer."] = ("파일 탐색기 즐겨찾기에 {0}개를 고정했습니다.", "已在文件资源管理器中固定 {0} 个收藏。", "エクスプローラーにお気に入りを {0} 件ピン留めしました。"),
+        ["{0} were already pinned."] = ("{0}개는 이미 고정되어 있었습니다.", "{0} 个已固定。", "{0} 件は既にピン留めされていました。"),
+        ["{0} could not be pinned."] = ("{0}개는 고정하지 못했습니다.", "{0} 个无法固定。", "{0} 件はピン留めできませんでした。"),
+        ["All favorites are already pinned in File Explorer."] = ("모든 즐겨찾기가 이미 파일 탐색기에 고정되어 있습니다.", "所有收藏已在文件资源管理器中固定。", "すべてのお気に入りは既にエクスプローラーにピン留めされています。"),
+        ["File Explorer favorites could not be read. Nothing was exported."] = ("파일 탐색기 즐겨찾기를 읽지 못해 아무것도 내보내지 않았습니다.", "无法读取文件资源管理器收藏，未导出任何内容。", "エクスプローラーのお気に入りを読み取れなかったため、何もエクスポートしませんでした。"),
+        ["Add to Folder Splitter favorites"] = ("Folder Splitter 즐겨찾기에 추가", "添加到 Folder Splitter 收藏夹", "Folder Splitter のお気に入りに追加"),
+        ["Add to favorites"] = ("즐겨찾기에 추가", "添加到收藏夹", "お気に入りに追加"),
+        ["Added {0} folders to favorites."] = ("즐겨찾기에 폴더 {0}개를 추가했습니다.", "已将 {0} 个文件夹添加到收藏夹。", "{0} 個のフォルダーをお気に入りに追加しました。"),
         ["Remove all favorites"] = ("모든 즐겨찾기 제거", "移除所有收藏", "すべてのお気に入りを削除"),
         ["Restore favorites..."] = ("즐겨찾기 복원...", "恢复收藏...", "お気に入りを復元..."),
         ["Restore favorites"] = ("즐겨찾기 복원", "恢复收藏", "お気に入りを復元"),
@@ -462,6 +471,7 @@ public sealed class UiText
             Win+Alt+E   어디서나 Folder Splitter 불러오기 (다시 누르면 알림 영역으로 숨기기)
             F5   새로고침
             Ctrl+D   현재 폴더 고정
+            폴더를 즐겨찾기 목록에 끌어 놓거나 폴더 우클릭 > Folder Splitter 즐겨찾기에 추가로도 추가할 수 있습니다.
             폴더 선택 버튼은 폴더 선택 창을 엽니다.
 
             파일
@@ -518,6 +528,7 @@ public sealed class UiText
             Win+Alt+E   随时调出 Folder Splitter（再按一次隐藏到通知区域）
             F5   刷新
             Ctrl+D   固定当前文件夹
+            也可将文件夹拖到收藏夹，或右键单击文件夹 > 添加到 Folder Splitter 收藏夹。
             选择文件夹按钮打开文件夹选择窗口。
 
             文件
@@ -574,6 +585,7 @@ public sealed class UiText
             Win+Alt+E   どこからでも Folder Splitter を前面に（もう一度で通知領域に隠す）
             F5   最新の情報に更新
             Ctrl+D   現在のフォルダーをピン留め
+            フォルダーをお気に入りにドロップするか、フォルダーを右クリック > Folder Splitter のお気に入りに追加でも追加できます。
             フォルダーを選択 ボタンでフォルダー選択ダイアログを開きます。
 
             ファイル
@@ -632,6 +644,7 @@ public sealed class UiText
         Win+Alt+E   Bring Folder Splitter to the front from anywhere (again: hide to the notification area)
         F5   Refresh
         Ctrl+D   Pin current folder
+        You can also drop folders on Favorites, or right-click a folder > Add to Folder Splitter favorites.
         Choose folder opens the folder picker.
 
         FILES

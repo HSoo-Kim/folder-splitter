@@ -260,7 +260,7 @@ public sealed partial class MainForm : Form, IMessageFilter
                 RefreshCloseHistory();
             };
             pane.SelectionChanged += (_, _) => { if (ReferenceEquals(pane, Active)) SchedulePreview(); };
-            pane.FavoriteRequested += (_, path) => AddFavorite(path);
+            pane.FavoriteRequested += (_, paths) => AddFavorites(paths);
             pane.OpenFoldersInNewWindowRequested += paths =>
             {
                 if (paths.Count > 32) pane.SetLocalizedStatus("Maximum 32 tabs per pane. Close a tab first.");
@@ -388,8 +388,16 @@ public sealed partial class MainForm : Form, IMessageFilter
         favoritePlaces.DrawItem += DrawPlace;
         TrackHover(favoritePlaces);
         favoritePlaces.Resize += (_, _) => favoritePlaces.Invalidate();
+        // A ListBox clicks on button-up only while it holds capture; OLE's drag loop takes it, so ending a drag never opens a row.
         favoritePlaces.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) OpenSidebarPlace(favoritePlaces, e); };
-        favoritePlaces.MouseDown += (_, e) => { if (e.Button == MouseButtons.Middle) OpenSidebarPlace(favoritePlaces, e); };
+        favoritePlaces.MouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Middle) OpenSidebarPlace(favoritePlaces, e);
+            favoritePress = e.Button == MouseButtons.Left && favoritePlaces.IndexFromPoint(e.Location) is var index and >= 0
+                ? (index, e.Location) : null;
+        };
+        favoritePlaces.MouseMove += (_, e) => BeginFavoriteDrag(e);
+        favoritePlaces.MouseUp += (_, _) => favoritePress = null;
         favoritePlaces.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Enter && favoritePlaces.SelectedItem is Place p)
@@ -405,6 +413,9 @@ public sealed partial class MainForm : Form, IMessageFilter
         }), "Remove favorite");
         favoriteMenu.Items.Add(new ToolStripSeparator());
         BindText(favoriteMenu.Items.Add("Import from File Explorer", null, (_, _) => ImportExplorerFavorites()), "Import from File Explorer");
+        var exportFavorites = favoriteMenu.Items.Add("Export to File Explorer", null, (_, _) => ExportExplorerFavorites());
+        BindText(exportFavorites, "Export to File Explorer");
+        favoriteMenu.Opening += (_, _) => exportFavorites.Enabled = favorites.Count > 0;
         BindText(favoriteMenu.Items.Add("Remove all favorites", null, (_, _) => ClearFavorites()), "Remove all favorites");
         BindText(favoriteMenu.Items.Add("Restore favorites...", null, (_, _) => ShowRestoreFavorites()), "Restore favorites...");
         favoritePlaces.ContextMenuStrip = favoriteMenu;
@@ -428,8 +439,8 @@ public sealed partial class MainForm : Form, IMessageFilter
         manage.Padding = new Padding(6, 0, 0, 0);
         manage.AutoSize = true;
         BindText(manage, "Manage...");
-        BindTip(manage, "Manage favorites: import, remove all, restore");
-        var pin = Theme.Button("+  Pin folder", "Pin current folder to favorites", () => AddFavorite(Active.CurrentPath), 152, quiet: true);
+        BindTip(manage, "Manage favorites: import, export, remove all, restore");
+        var pin = Theme.Button("+  Pin folder", "Pin current folder to favorites", () => AddFavorites([Active.CurrentPath]), 152, quiet: true);
         pin.Dock = DockStyle.Bottom;
         pin.Height = 36;
         pin.BackColor = Theme.Canvas;
@@ -442,6 +453,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         sidebar.Controls.Add(places);
         sidebar.Controls.Add(pin);
         sidebar.Controls.Add(manage);
+        InitializeFavoriteDrops(favoritePlaces, favoritesHeader, pin);
         sidebar.Controls.Add(sideTitle);
         InitializeSavedGroupsSidebar();
         ReloadPlaces();
@@ -1914,7 +1926,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         foreach (string path in favorites.ToArray()) RemoveFavorite(path);
     }
 
-    internal void RestoreFavorite(string path) => AddFavorite(path);
+    internal void RestoreFavorite(string path) => AddFavorites([path]);
 
     private void ShowRestoreFavorites()
     {
@@ -1933,7 +1945,7 @@ public sealed partial class MainForm : Form, IMessageFilter
                 list.Items.Add(place);
         var restore = Theme.Button(text.T("Restore selected"), "Restore selected favorites", () =>
         {
-            foreach (Place item in list.SelectedItems.Cast<Place>().ToArray()) RestoreFavorite(item.Path);
+            AddFavorites(list.SelectedItems.Cast<Place>().Select(item => item.Path).ToArray());
             dialog.Close();
         });
         restore.Dock = DockStyle.Bottom;
@@ -1978,6 +1990,16 @@ public sealed partial class MainForm : Form, IMessageFilter
         TextRenderer.DrawText(e.Graphics, place.Label, Font, rect,
             selected ? Theme.Accent : Theme.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        // A reordering drag marks the gap the favorite will move into.
+        int count = ((ListBox)sender!).Items.Count;
+        if (sender == favoritePlaces && favoriteInsertion >= 0
+            && (e.Index == favoriteInsertion || (favoriteInsertion == count && e.Index == count - 1)))
+        {
+            int thickness = Math.Max(2, (int)Math.Round(2 * DeviceDpi / 96d));
+            using var marker = new SolidBrush(Theme.Accent);
+            e.Graphics.FillRectangle(marker, e.Bounds.Left + gap,
+                e.Index == favoriteInsertion ? e.Bounds.Top : e.Bounds.Bottom - thickness, e.Bounds.Width - gap * 2, thickness);
+        }
     }
 
     private void OpenPlace()
@@ -1985,16 +2007,198 @@ public sealed partial class MainForm : Form, IMessageFilter
         if (places.SelectedItem is Place place) Active.Navigate(place.Path);
     }
 
-    private void AddFavorite(string path)
+    // Every add path (Ctrl+D, the folder menu, drops, restore) reveals the result in this window's sidebar.
+    private void AddFavorites(IReadOnlyList<string> paths)
     {
-        if (string.IsNullOrWhiteSpace(path)) return;
-        if (favorites.Contains(path, StringComparer.OrdinalIgnoreCase)) { Active.SetLocalizedStatus("Already in favorites."); return; }
-        if (favorites.Count >= 100) { Active.SetLocalizedStatus("Maximum 100 favorites."); return; }
-        favorites.Add(path);
-        deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
-        application.RefreshFavorites();
-        Active.SetLocalizedStatus("Added to favorites.");
+        string? reveal = null;
+        int added = 0;
+        bool full = false;
+        foreach (string path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            if (favorites.FirstOrDefault(favorite => StringComparer.OrdinalIgnoreCase.Equals(favorite, path)) is { } existing)
+            {
+                reveal = existing;
+                continue;
+            }
+            if (favorites.Count >= 100) { full = true; break; }
+            favorites.Add(path);
+            deletedFavorites.RemoveAll(p => StringComparer.OrdinalIgnoreCase.Equals(p, path));
+            reveal = path;
+            added++;
+        }
+        if (reveal is null && !full) return;
+        if (reveal is not null) favoritesExpanded = true;
+        if (added > 0) application.RefreshFavorites();
+        else ReloadPlaces();
+        if (reveal is not null)
+            for (int i = 0; i < favoritePlaces.Items.Count; i++)
+                if (((Place)favoritePlaces.Items[i]).Path == reveal) { favoritePlaces.SelectedIndex = i; break; }
+        Active.SetLocalizedStatus(() =>
+        {
+            string result = added == 1 ? text.T("Added to favorites.")
+                : added > 1 ? text.T("Added {0} folders to favorites.", added)
+                : full ? "" : text.T("Already in favorites.");
+            return full ? (result + " " + text.T("Maximum 100 favorites.")).TrimStart() : result;
+        });
         ScheduleSave();
+    }
+
+    private string[] favoriteDropFolders = [];
+    private System.Runtime.InteropServices.ComTypes.IDataObject? favoriteDropData;
+    private const string FavoriteDragFormat = "FolderSplitter.Favorite";
+    private (int Index, Point Point)? favoritePress;
+    private int favoriteInsertion = -1;
+    private long favoriteScrolled;
+
+    // Dragging a favorite reorders the list. The drag carries only an app-private format, so File Explorer,
+    // file lists and tab strips never receive a path they could move or open.
+    private void BeginFavoriteDrag(MouseEventArgs e)
+    {
+        if (favoritePress is not { } press || (e.Button & MouseButtons.Left) == 0) return;
+        var size = SystemInformation.DragSize;
+        if (Math.Abs(e.X - press.Point.X) <= size.Width / 2 && Math.Abs(e.Y - press.Point.Y) <= size.Height / 2) return;
+        favoritePress = null;
+        if (press.Index >= favoritePlaces.Items.Count || favoritePlaces.Items[press.Index] is not Place place) return;
+        var data = new DataObject();
+        data.SetData(FavoriteDragFormat, false, place.Path);
+        favoritePlaces.DoDragDrop(data, DragDropEffects.Move);
+    }
+
+    // The gap nearest the pointer: before the row under it, or after it in the row's lower half.
+    private int FavoriteInsertion(Point client)
+    {
+        int count = favoritePlaces.Items.Count, edge = favoritePlaces.ItemHeight / 2;
+        if (count == 0) return -1;
+        // Holding the pointer near the top or bottom edge scrolls a long list one row per 100 ms.
+        int step = client.Y < edge ? -1 : client.Y > favoritePlaces.ClientSize.Height - edge ? 1 : 0;
+        if (step != 0 && Environment.TickCount64 - favoriteScrolled >= 100)
+        {
+            int top = Math.Clamp(favoritePlaces.TopIndex + step, 0, count - 1);
+            if (top != favoritePlaces.TopIndex)
+            {
+                favoritePlaces.TopIndex = top;
+                favoriteScrolled = Environment.TickCount64;
+            }
+        }
+        int index = favoritePlaces.IndexFromPoint(client);
+        if (index < 0) return count;
+        var bounds = favoritePlaces.GetItemRectangle(index);
+        return client.Y < bounds.Top + bounds.Height / 2 ? index : index + 1;
+    }
+
+    private void MoveFavorite(string path, int insertion)
+    {
+        int from = favorites.FindIndex(favorite => StringComparer.OrdinalIgnoreCase.Equals(favorite, path));
+        if (from < 0) return;
+        int to = Math.Clamp(insertion > from ? insertion - 1 : insertion, 0, favorites.Count - 1);
+        if (to != from)
+        {
+            string moved = favorites[from];
+            favorites.RemoveAt(from);
+            favorites.Insert(to, moved);
+            application.RefreshFavorites();
+            ScheduleSave();
+        }
+        favoritePlaces.SelectedIndex = to;
+    }
+
+    private void InitializeFavoriteDrops(params Control[] targets)
+    {
+        foreach (var target in targets)
+        {
+            target.AllowDrop = true;
+            target.DragEnter += FavoriteDragEnter;
+            target.DragOver += FavoriteDragOver;
+            target.DragLeave += (_, _) => ClearFavoriteDrop();
+            target.DragDrop += FavoriteDragDrop;
+        }
+    }
+
+    private void FavoriteDragEnter(object? sender, DragEventArgs e)
+    {
+        ClearFavoriteDrop();
+        if (e.Data?.GetDataPresent(FavoriteDragFormat, false) == true)
+        {
+            FavoriteDragOver(sender, e);
+            return;
+        }
+        // Only folders become favorites; dropped files are ignored and nothing is moved or linked.
+        favoriteDropFolders = ShellDropPaths.Read(e.Data).Where(Directory.Exists)
+            .Select(path => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))).ToArray();
+        if (favoriteDropFolders.Length > 0 && e.Data is System.Runtime.InteropServices.ComTypes.IDataObject data)
+        {
+            favoriteDropData = data;
+            ShellDropDescription.Set(data, text.T("Add to favorites"));
+        }
+        FavoriteDragOver(sender, e);
+    }
+
+    // Folder drops report Link (or Copy) so the source keeps its items; only reordering a favorite reports Move.
+    private void FavoriteDragOver(object? sender, DragEventArgs e)
+    {
+        if (e.Data?.GetDataPresent(FavoriteDragFormat, false) == true)
+        {
+            int insertion = sender == favoritePlaces ? FavoriteInsertion(favoritePlaces.PointToClient(new Point(e.X, e.Y))) : -1;
+            if (insertion != favoriteInsertion)
+            {
+                favoriteInsertion = insertion;
+                favoritePlaces.Invalidate();
+            }
+            e.Effect = insertion >= 0 ? DragDropEffects.Move : DragDropEffects.None;
+            return;
+        }
+        e.Effect = favoriteDropFolders.Length == 0 ? DragDropEffects.None
+            : (e.AllowedEffect & DragDropEffects.Link) != 0 ? DragDropEffects.Link
+            : (e.AllowedEffect & DragDropEffects.Copy) != 0 ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    private void FavoriteDragDrop(object? sender, DragEventArgs e)
+    {
+        FavoriteDragOver(sender, e);
+        if (e.Data?.GetDataPresent(FavoriteDragFormat, false) == true)
+        {
+            int insertion = favoriteInsertion;
+            ClearFavoriteDrop();
+            if (insertion >= 0 && e.Data.GetData(FavoriteDragFormat) is string path) MoveFavorite(path, insertion);
+            return;
+        }
+        string[] folders = favoriteDropFolders;
+        bool accepted = e.Effect != DragDropEffects.None;
+        ClearFavoriteDrop();
+        if (accepted) AddFavorites(folders);
+    }
+
+    private void ClearFavoriteDrop()
+    {
+        if (favoriteDropData is not null) ShellDropDescription.Set(favoriteDropData, null);
+        favoriteDropData = null;
+        favoriteDropFolders = [];
+        if (favoriteInsertion >= 0)
+        {
+            favoriteInsertion = -1;
+            favoritePlaces.Invalidate();
+        }
+    }
+
+    private void ExportExplorerFavorites()
+    {
+        var previous = Cursor.Current;
+        Cursor.Current = Cursors.WaitCursor;
+        ExplorerFavoritesExport result;
+        try { result = ExplorerFavorites.Export(favorites.ToArray(), Handle); }
+        finally { Cursor.Current = previous; }
+        Active.SetLocalizedStatus(() =>
+        {
+            if (result.Unreadable) return text.T("File Explorer favorites could not be read. Nothing was exported.");
+            if (result.Pinned == 0 && result.Failed == 0)
+                return text.T("All favorites are already pinned in File Explorer.");
+            var parts = new List<string>();
+            if (result.Pinned > 0) parts.Add(text.T("Pinned {0} favorites in File Explorer.", result.Pinned));
+            if (result.AlreadyPinned > 0) parts.Add(text.T("{0} were already pinned.", result.AlreadyPinned));
+            if (result.Failed > 0) parts.Add(text.T("{0} could not be pinned.", result.Failed));
+            return string.Join(" ", parts);
+        });
     }
 
     private void MoveTabs(ExplorerPane source, IReadOnlyList<ExplorerPane.FolderTab> tabs, int number) =>
@@ -2794,7 +2998,7 @@ public sealed partial class MainForm : Form, IMessageFilter
             case Keys.Control | Keys.Shift | Keys.T: ReopenClosedItem(); break;
             case Keys.Control | Keys.L:
             case Keys.Alt | Keys.D: Active.FocusAddress(); break;
-            case Keys.Control | Keys.D: AddFavorite(Active.CurrentPath); break;
+            case Keys.Control | Keys.D: AddFavorites([Active.CurrentPath]); break;
             case Keys.Control | Keys.Shift | Keys.E: SetFolderTreeVisible(!showFolderTree); break;
             case Keys.Alt | Keys.P: SetPreviewVisible(!showPreview); break;
             case Keys.Control | Keys.Shift | Keys.F11: SetGlobalToolbarPinned(!globalToolbarPinned); break;

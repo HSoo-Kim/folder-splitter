@@ -117,7 +117,7 @@ public sealed partial class ExplorerPane : UserControl
     public event EventHandler? Activated;
     public event EventHandler? StateChanged;
     public event EventHandler? SelectionChanged;
-    public event EventHandler<string>? FavoriteRequested;
+    public event EventHandler<IReadOnlyList<string>>? FavoriteRequested;
     internal event Action<ExplorerPane, FolderTab>? TabDragRequested;
     internal event Action<ExplorerPane, FolderTab, SplitEdge>? SplitTabRequested;
     internal event Action<ExplorerPane, TabGroup>? GroupDragRequested;
@@ -575,6 +575,10 @@ public sealed partial class ExplorerPane : UserControl
         host.OpenFoldersInNewWindowRequested += paths =>
         {
             if (host == ActiveView) OpenFoldersInNewWindowRequested?.Invoke(paths);
+        };
+        host.AddFoldersToFavoritesRequested += paths =>
+        {
+            if (host == ActiveView) FavoriteRequested?.Invoke(this, paths);
         };
         if (selectFile is not null) host.NavigateAndSelect(selectFile);
         tab.Host = host;
@@ -1136,7 +1140,7 @@ public sealed partial class ExplorerPane : UserControl
     {
         tabMenu.Items.Clear();
         tabMenu.Items.Add(text.T("Refresh    F5"), null, (_, _) => ActiveView?.RefreshFolder());
-        tabMenu.Items.Add(text.T("Add to favorites    Ctrl+D"), null, (_, _) => FavoriteRequested?.Invoke(this, CurrentPath));
+        tabMenu.Items.Add(text.T("Add to favorites    Ctrl+D"), null, (_, _) => FavoriteRequested?.Invoke(this, [CurrentPath]));
         tabMenu.Items.Add(text.T("Copy folder path"), null, (_, _) => CopyPath());
         tabMenu.Items.Add(text.T("Open in File Explorer"), null, (_, _) => OpenInExplorer());
         tabMenu.Items.Add(text.T("Choose folder..."), null, (_, _) => ChooseFolder());
