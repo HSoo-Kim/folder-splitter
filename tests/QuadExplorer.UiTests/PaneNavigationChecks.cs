@@ -301,6 +301,51 @@ internal static partial class Program
             Application.Run(fallback);
             Application.RemoveMessageFilter(pnDelivery);
         }
+        // A click focuses the Shell list natively, without WinForms recording it. Closing that pane's last
+        // tab must keep keyboard focus in the pane, or the next Ctrl+W on the empty pane is dropped.
+        pnDelivery = new PnDelivery();
+        Application.AddMessageFilter(pnDelivery);
+        SessionStore.Save(session, new SessionState
+        {
+            Language = "en", Layout = 2, ActivePane = 1, ExplorerFavoritesImported = true,
+            GlobalHotkey = false, KeepInTray = false, CheckUpdates = false,
+            Panes = [new PaneState { Tabs = [folders[0]] }, new PaneState { Tabs = [folders[1]] }]
+        });
+        using (var closing = new MainForm(session, []))
+        {
+            pnDelivery.Form = closing;
+            var left = closing.GetPane(0);
+            var right = closing.GetPane(1);
+            closing.Shown += async (_, _) =>
+            {
+                try
+                {
+                    await PnReady(left);
+                    await PnReady(right);
+                    closing.Activate();
+                    right.ActiveView!.Focus();
+                    nint list = NativeAppearanceList(left.ActiveView!);
+                    nint point = (40 << 16) | 20;
+                    await NativeAppearanceIdle(() =>
+                    {
+                        PostMessage(list, 0x0201, 1, point);
+                        PostMessage(list, 0x0202, 0, point);
+                    });
+                    PnCheck(PnGetFocus() == list, "a posted click focuses the left pane's native file list");
+                    await PnKey(closing, Keys.Control | Keys.W);
+                    PnCheck(left.TabCount == 0 && left.Visible && left.ContainsFocus,
+                        "closing the clicked pane's last tab keeps keyboard focus in the now empty pane");
+                    await PnKey(closing, Keys.Control | Keys.W);
+                    PnCheck(closing.CurrentLayout.GetPanes().SequenceEqual(new[] { 1 }) && !left.Visible
+                        && right.ActiveView!.ContainsFocus,
+                        "the next Ctrl+W closes the empty pane and focuses the remaining file list");
+                }
+                catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL empty pane close: " + ex); }
+                finally { closing.ExitApplication(); }
+            };
+            Application.Run(closing);
+        }
+        Application.RemoveMessageFilter(pnDelivery);
         pnDelivery = null;
     }
 

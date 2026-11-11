@@ -141,7 +141,6 @@ public sealed partial class ExplorerPane : UserControl
         searchTimer.Tick += async (_, _) => { searchTimer.Stop(); await QueryCandidates(); };
         if (search is not null) search.IndexChanged += SearchIndexChanged;
         PaneNumber = number;
-        Dock = DockStyle.Fill;
         BackColor = Theme.Canvas;
         UpdateCardPadding(); // room for the card's edge and soft shadow
         DpiChangedAfterParent += (_, _) => UpdateCardPadding();
@@ -699,6 +698,9 @@ public sealed partial class ExplorerPane : UserControl
         if (remember) RememberClosedTab(new ClosedTabEntry(tab.Host?.LocationPath, OriginalGroup: tab.Group, Pinned: tab.Pinned));
         if (tab.Host is { } host)
         {
+            // Destroying the focused Shell list would leave the window without keyboard focus, so the
+            // next shortcut (Ctrl+W on the now empty pane) would be dropped until the user clicked.
+            if (tabs.Count == 0 && host.ContainsFocus) FocusAddress();
             contents.Controls.Remove(host);
             host.Dispose();
         }

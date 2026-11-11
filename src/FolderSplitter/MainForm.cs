@@ -65,6 +65,8 @@ public sealed partial class MainForm : Form, IMessageFilter
     private readonly ExplorerPane[] panes;
     private readonly Panel paneHost = new() { Dock = DockStyle.Fill, BackColor = Theme.Canvas };
     private readonly List<(SplitContainer Control, string Path)> splits = [];
+    private readonly Dictionary<int, Control> paneCells = [];
+    private bool deferPanePlacement;
     private PaneLayout layoutTree;
     private readonly List<(int Pane, PaneLayout? Layout)> closedItems = [];
     private readonly List<(int Pane, IReadOnlyList<ExplorerPane.FolderTab>? Tabs, bool Global)> reopenedItems = [];
@@ -497,6 +499,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         RefreshGlobalToolbar();
         var workspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 4, 8, 8) };
         workspace.Controls.Add(paneHost);
+        paneHost.Resize += (_, _) => PlacePanes();
         workspace.Controls.Add(previewSplitter);
         workspace.Controls.Add(previewPane);
         workspace.Controls.Add(sidebarSplitter);
@@ -2225,21 +2228,34 @@ public sealed partial class MainForm : Form, IMessageFilter
             InvalidateRedo();
         }
         rebuilding = true;
+        deferPanePlacement = true;
         paneHost.SuspendLayout();
         try
         {
             layoutTree = tree;
             visiblePanes = tree.GetPanes().Order().ToArray();
-            foreach (var pane in panes)
-            {
-                pane.SetCanClose(visiblePanes.Length > 1);
-                pane.Visible = false;
-                pane.Parent?.Controls.Remove(pane);
-            }
-            foreach (Control old in paneHost.Controls.Cast<Control>().ToArray()) old.Dispose();
+            // Panes stay children of paneHost; only the empty split containers under them are rebuilt.
+            // Moving a pane into another container passed its Shell view through the WinForms parking
+            // window and made it inherit its font and theme again, a visible pause on every layout change.
+            foreach (var (split, _) in splits) split.Dispose();
             splits.Clear();
+            paneCells.Clear();
             UpdateMinimumSize();
-            paneHost.Controls.Add(BuildNode(tree, ""));
+            if (BuildNode(tree, "", paneHost) is { } root)
+            {
+                root.TabIndex = 0;
+                paneHost.Controls.Add(root);
+                root.SendToBack();
+            }
+            int[] order = tree.GetPanes();
+            for (int i = 0; i < panes.Length; i++)
+            {
+                var pane = panes[i];
+                pane.SetCanClose(visiblePanes.Length > 1);
+                if (pane.Parent != paneHost) paneHost.Controls.Add(pane);
+                pane.TabIndex = Array.IndexOf(order, i) + 1;
+                pane.Visible = paneCells.ContainsKey(i);
+            }
             if (!visiblePanes.Contains(activePane)) activePane = visiblePanes[0];
             for (int i = 0; i < layoutButtons.Length; i++)
                 layoutButtons[i].Checked = visiblePanes.Length == i + 1;
@@ -2248,18 +2264,20 @@ public sealed partial class MainForm : Form, IMessageFilter
         {
             paneHost.ResumeLayout(true);
             ApplySplitRatios();
+            deferPanePlacement = false;
+            PlacePanes();
             rebuilding = false;
         }
         ActivatePane(activePane);
         RefreshCloseHistory();
         ScheduleSave();
 
-        Control BuildNode(PaneLayout node, string path)
+        SplitContainer? BuildNode(PaneLayout node, string path, Control cell)
         {
             if (node.IsLeaf)
             {
-                panes[node.Pane].Visible = true;
-                return panes[node.Pane];
+                paneCells[node.Pane] = cell;
+                return null;
             }
             Size minimum = MinimumContentSize(node);
             Size first = MinimumContentSize(node.First!);
@@ -2274,8 +2292,13 @@ public sealed partial class MainForm : Form, IMessageFilter
                 Panel2MinSize = node.Vertical ? second.Width : second.Height
             };
             splits.Add((split, path));
-            split.Panel1.Controls.Add(BuildNode(node.First!, path + "0"));
-            split.Panel2.Controls.Add(BuildNode(node.Second!, path + "1"));
+            if (BuildNode(node.First!, path + "0", split.Panel1) is { } firstSplit) split.Panel1.Controls.Add(firstSplit);
+            if (BuildNode(node.Second!, path + "1", split.Panel2) is { } secondSplit) split.Panel2.Controls.Add(secondSplit);
+            foreach (var panel in new[] { split.Panel1, split.Panel2 })
+            {
+                panel.Resize += (_, _) => PlacePanes();
+                panel.Move += (_, _) => PlacePanes();
+            }
             split.SplitterMoved += (_, _) =>
             {
                 if (rebuilding || !ready) return;
@@ -2284,6 +2307,18 @@ public sealed partial class MainForm : Form, IMessageFilter
             };
             split.DoubleClick += (_, _) => EqualizeSplits();
             return split;
+        }
+    }
+
+    // A visible pane covers its layout cell: the host itself for a single pane, otherwise a split panel.
+    private void PlacePanes()
+    {
+        if (deferPanePlacement) return;
+        foreach (var (index, cell) in paneCells)
+        {
+            Rectangle bounds = cell == paneHost ? paneHost.DisplayRectangle : cell.ClientRectangle;
+            for (var control = cell; control != paneHost; control = control.Parent!) bounds.Offset(control.Location);
+            panes[index].Bounds = bounds;
         }
     }
 
