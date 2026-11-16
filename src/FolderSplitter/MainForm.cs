@@ -2241,11 +2241,11 @@ public sealed partial class MainForm : Form, IMessageFilter
             splits.Clear();
             paneCells.Clear();
             UpdateMinimumSize();
-            if (BuildNode(tree, "", paneHost) is { } root)
+            var root = BuildNode(tree, "", paneHost);
+            if (root is not null)
             {
                 root.TabIndex = 0;
                 paneHost.Controls.Add(root);
-                root.SendToBack();
             }
             int[] order = tree.GetPanes();
             for (int i = 0; i < panes.Length; i++)
@@ -2256,6 +2256,8 @@ public sealed partial class MainForm : Form, IMessageFilter
                 pane.TabIndex = Array.IndexOf(order, i) + 1;
                 pane.Visible = paneCells.ContainsKey(i);
             }
+            // On the first render the panes are added after the root. Send it behind them only now.
+            root?.SendToBack();
             if (!visiblePanes.Contains(activePane)) activePane = visiblePanes[0];
             for (int i = 0; i < layoutButtons.Length; i++)
                 layoutButtons[i].Checked = visiblePanes.Length == i + 1;
