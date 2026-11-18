@@ -62,6 +62,14 @@ struct CopiedSourceInventory {
         for entry in entries.reversed() {
             var current = stat(), copied = stat()
             let target = entry.relative.isEmpty ? destination : destination.appendingPathComponent(entry.relative)
+            func statTarget(_ out: inout stat) -> Bool {
+                if target.path.withCString({ lstat($0, &out) }) == 0 { return true }
+                guard !entry.relative.isEmpty else { return false }
+                let nfc = destination.appendingPathComponent(entry.relative.precomposedStringWithCanonicalMapping)
+                if nfc.path.withCString({ lstat($0, &out) }) == 0 { return true }
+                let nfd = destination.appendingPathComponent(entry.relative.decomposedStringWithCanonicalMapping)
+                return nfd.path.withCString({ lstat($0, &out) }) == 0
+            }
             guard entry.url.path.withCString({ lstat($0, &current) }) == 0 else {
                 if errno != ENOENT { firstError = firstError ?? POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
                 continue
@@ -70,7 +78,7 @@ struct CopiedSourceInventory {
             let directory = (original.st_mode & S_IFMT) == S_IFDIR
             guard current.st_dev == original.st_dev, current.st_ino == original.st_ino,
                   (current.st_mode & S_IFMT) == (original.st_mode & S_IFMT),
-                  target.path.withCString({ lstat($0, &copied) }) == 0,
+                  statTarget(&copied),
                   (copied.st_mode & S_IFMT) == (original.st_mode & S_IFMT),
                   directory || (current.st_size == original.st_size && copied.st_size == original.st_size &&
                     current.st_mtimespec.tv_sec == original.st_mtimespec.tv_sec && current.st_mtimespec.tv_nsec == original.st_mtimespec.tv_nsec) else {

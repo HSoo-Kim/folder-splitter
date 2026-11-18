@@ -119,6 +119,9 @@ final class AddressBarView: NSView, NSTextFieldDelegate, NSTableViewDataSource, 
         queryTask?.cancel(); dismissPanel(animated: true)
         isEditing = false; field.isHidden = true; clearError(); loadBreadcrumbs()
         if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor); self.outsideMonitor = nil }
+        if window?.firstResponder === field.currentEditor() || window?.firstResponder === field {
+            window?.makeFirstResponder(nil)
+        }
         delegate?.addressBarDidEndEditing(self)
     }
     private var liveText: String { (field.currentEditor() as? NSTextView)?.string ?? field.stringValue }
@@ -150,7 +153,7 @@ final class AddressBarView: NSView, NSTextFieldDelegate, NSTableViewDataSource, 
                 guard let self else { return }
                 if event.window === self.panel { return }
                 if event.window === self.window, self.bounds.contains(self.convert(event.locationInWindow, from: nil)) { return }
-                self.dismissPanel(animated: true)
+                self.endEditing()
             }
             return event
         }

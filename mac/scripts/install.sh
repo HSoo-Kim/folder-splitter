@@ -3,6 +3,14 @@
 source "$(dirname "$0")/env.sh"
 
 [[ "${1:-}" == "--no-build" ]] || "$ROOT/scripts/build.sh"   # --no-build: install the app QA just tested
+app="$BUILD/Folder Splitter.app"
+signing_keychain="$HOME/Library/Keychains/folder-splitter-signing.keychain-db"
+if [[ -f "$signing_keychain" ]] && keychain_pw="$(security find-generic-password -a "$USER" -s folder-splitter-signing-keychain -w 2>/dev/null)" && security unlock-keychain -p "$keychain_pw" "$signing_keychain" 2>/dev/null; then
+    identity="$(security find-identity -p codesigning "$signing_keychain" | awk '/"Folder Splitter Signing \(HSoo-Kim\)"/ { print $2; exit }')"
+    if [[ -n "$identity" ]]; then
+        codesign --force --sign "$identity" --identifier io.github.hsoo-kim.FolderSplitter --timestamp=none "$app"
+    fi
+fi
 target="/Applications/Folder Splitter.app"
 
 # SIGTERM quits like ⌘Q (the app saves its session); no AppleScript automation prompt.

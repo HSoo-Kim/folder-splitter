@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import UniformTypeIdentifiers
 
 final class FileOperationCancellation: @unchecked Sendable {
     private let lock = NSLock()
@@ -84,7 +85,15 @@ private final class CopyContext {
 private let copyProgressCallback: copyfile_callback_t = { what, stage, state, source, destination, raw in
     guard let raw else { return COPYFILE_CONTINUE }
     let context = Unmanaged<CopyContext>.fromOpaque(raw).takeUnretainedValue()
-    if context.token.isCancelled || what == COPYFILE_RECURSE_ERROR || stage == COPYFILE_ERR { return COPYFILE_QUIT }
+    if context.token.isCancelled || what == COPYFILE_RECURSE_ERROR { return COPYFILE_QUIT }
+    if stage == COPYFILE_ERR {
+        let code = errno
+        if what != COPYFILE_COPY_DATA &&
+            (code == ENOTSUP || code == EOPNOTSUPP || code == EPERM || code == EACCES || code == EINVAL) {
+            return COPYFILE_CONTINUE
+        }
+        return COPYFILE_QUIT
+    }
     if what == COPYFILE_RECURSE_FILE && stage == COPYFILE_START, let source {
         let url = URL(fileURLWithPath: String(cString: source))
         if OnlineOnlyItems.isStub(url) { context.onlineOnly = url; return COPYFILE_QUIT }
@@ -97,7 +106,10 @@ private let copyProgressCallback: copyfile_callback_t = { what, stage, state, so
         if lstat(source, &info) != 0 { context.errorCode = errno; return COPYFILE_QUIT }
         if (info.st_mode & 0o700) != 0o700 {
             let mode = (info.st_mode & 0o7777) | (what == COPYFILE_RECURSE_DIR ? 0o700 : 0)
-            if chmod(destination, mode) != 0 { context.errorCode = errno; return COPYFILE_QUIT }
+            if chmod(destination, mode) != 0 && errno != ENOTSUP && errno != EOPNOTSUPP && errno != EINVAL {
+                context.errorCode = errno
+                return COPYFILE_QUIT
+            }
         }
     }
     if what == COPYFILE_COPY_DATA {
@@ -129,7 +141,15 @@ final class FileOperationEngine: @unchecked Sendable {
     }
     static func renameExclusively(_ source: URL, _ destination: URL) -> Int32 {
         let result = source.path.withCString { src in destination.path.withCString { dst in renamex_np(src, dst, UInt32(RENAME_EXCL)) } }
-        return result == 0 ? 0 : errno
+        if result == 0 { return 0 }
+        let code = errno
+        // FSKit exFAT, FAT32, and some network filesystems return ENOTSUP/EINVAL for RENAME_EXCL.
+        if code == ENOTSUP || code == EOPNOTSUPP || code == ENOSYS || code == EINVAL {
+            if exists(destination) { return EEXIST }
+            let fallback = source.path.withCString { src in destination.path.withCString { dst in Darwin.rename(src, dst) } }
+            return fallback == 0 ? 0 : errno
+        }
+        return code
     }
     static func sameItem(_ lhs: URL, _ rhs: URL) -> Bool {
         var a = stat(), b = stat()
@@ -159,9 +179,24 @@ final class FileOperationEngine: @unchecked Sendable {
     static func validateName(_ name: String) throws {
         guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\0") else { throw FileEngineError.invalidName }
     }
+    private static let knownPackageExtensions: Set<String> = [
+        "app", "rtfd", "bundle", "framework", "plugin", "kext", "xpc",
+        "xcodeproj", "xcworkspace", "playground", "pages", "numbers", "key",
+        "photoslibrary", "musiclibrary", "tvlibrary", "fcpbundle", "logicx",
+        "band", "scptd", "prefpane", "qlgenerator", "mdimporter", "appex", "saver"
+    ]
     static func isNamingFolder(_ item: URL) throws -> Bool {
         let values = try item.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-        return values.isDirectory == true && values.isPackage != true
+        guard values.isDirectory == true else { return false }
+        if values.isPackage == true { return false }
+        let ext = item.pathExtension.lowercased()
+        if !ext.isEmpty {
+            if knownPackageExtensions.contains(ext) { return false }
+            if let type = UTType(filenameExtension: ext), (type.conforms(to: .package) || type.conforms(to: .bundle)) {
+                return false
+            }
+        }
+        return true
     }
     private func checkMove(_ source: URL, to destination: URL) throws {
         // Resolve parent links but not the item itself: moving a symbolic link must not
@@ -277,14 +312,20 @@ final class FileOperationEngine: @unchecked Sendable {
         let locked = staging.path.withCString { lstat($0, &stagedInfo) } == 0 &&
             (stagedInfo.st_mode & S_IFMT) != S_IFLNK && (stagedInfo.st_flags & UInt32(UF_IMMUTABLE)) != 0
         if locked && staging.path.withCString({ chflags($0, stagedInfo.st_flags & ~UInt32(UF_IMMUTABLE)) }) != 0 {
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            let code = errno
+            if code != ENOTSUP && code != EOPNOTSUPP && code != EINVAL {
+                throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+            }
         }
-        let committed = staging.path.withCString { src in destination.path.withCString { dst in renamex_np(src, dst, UInt32(RENAME_EXCL)) } }
-        if committed != 0 { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let committed = Self.renameExclusively(staging, destination)
+        if committed != 0 { throw POSIXError(POSIXErrorCode(rawValue: committed) ?? .EIO) }
         if locked && destination.path.withCString({ chflags($0, stagedInfo.st_flags) }) != 0 {
-            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            removeStaging(destination)
-            throw error
+            let code = errno
+            if code != ENOTSUP && code != EOPNOTSUPP && code != EINVAL {
+                let error = POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+                removeStaging(destination)
+                throw error
+            }
         }
     }
     func relocate(_ source: URL, to destination: URL,
@@ -541,8 +582,8 @@ final class FileOperationEngine: @unchecked Sendable {
         process.waitUntilExit(); monitor.cancel()
         if cancellation.isCancelled { throw FileEngineError.cancelled }
         guard process.terminationStatus == 0 else { throw NSError(domain: "FolderSplitter.Archive", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? tr("The archive could not be created.", "압축 파일을 생성할 수 없습니다.")]) }
-        let committed = archiveOutput.path.withCString { src in target.path.withCString { dst in renamex_np(src, dst, UInt32(RENAME_EXCL)) } }
-        if committed != 0 { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let committed = Self.renameExclusively(archiveOutput, target)
+        if committed != 0 { throw POSIXError(POSIXErrorCode(rawValue: committed) ?? .EIO) }
         return FileEngineResult(outcome: .init(produced: [target]), undo: [.trash(target)])
     }
     func trash(_ items: [URL]) -> FileEngineResult {

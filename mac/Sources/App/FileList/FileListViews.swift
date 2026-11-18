@@ -1,18 +1,52 @@
 import AppKit
 
 @MainActor
+final class FileListStateStackView: NSStackView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        if hit is NSButton { return hit }
+        return nil
+    }
+}
+
+@MainActor
 final class FileListBackgroundView: NSView {
+    weak var owner: FileListViewController?
     override var isOpaque: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     // NSView doesn't clip to bounds since the macOS 14 SDK; filling dirtyRect would paint
     // over neighbouring views (the pane's tab bar and address row).
     override func draw(_ dirtyRect: NSRect) { NSColor.controlBackgroundColor.setFill(); bounds.intersection(dirtyRect).fill() }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
+    override func mouseDown(with event: NSEvent) {
+        owner?.focus()
+    }
+    override func menu(for event: NSEvent) -> NSMenu? {
+        owner?.focus()
+        return owner?.contextMenu(for: nil)
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        owner?.dragOperation(sender, target: owner?.folder) ?? []
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        owner?.dragOperation(sender, target: owner?.folder) ?? []
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        owner?.cancelSpringLoad()
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        owner?.performDrop(sender, target: owner?.folder) ?? false
+    }
 }
 
 @MainActor
 final class FileOutlineView: NSOutlineView {
     weak var owner: FileListViewController?
-    override func mouseDown(with event: NSEvent) { owner?.activate(); super.mouseDown(with: event) }
+    override func mouseDown(with event: NSEvent) {
+        if owner?.renameURL == nil, window?.firstResponder !== self { window?.makeFirstResponder(self) }
+        owner?.activate()
+        super.mouseDown(with: event)
+    }
     /// Like Finder, a click into a background window selects (or starts dragging) right away.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func draggingExited(_ sender: NSDraggingInfo?) { owner?.cancelSpringLoad(); super.draggingExited(sender) }
@@ -33,6 +67,7 @@ final class FileOutlineView: NSOutlineView {
         if let node = item(atRow: row) as? FileNode { owner?.openItems([node.item.url], disposition: .newTab(activate: false)) }
     }
     override func menu(for event: NSEvent) -> NSMenu? {
+        if owner?.renameURL == nil, window?.firstResponder !== self { window?.makeFirstResponder(self) }
         owner?.activate()
         let row = row(at: convert(event.locationInWindow, from: nil))
         if row >= 0, !selectedRowIndexes.contains(row) { selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
@@ -47,6 +82,7 @@ final class FileCollectionView: NSCollectionView {
     weak var owner: FileListViewController?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) {
+        if owner?.renameURL == nil, window?.firstResponder !== self { window?.makeFirstResponder(self) }
         owner?.activate()
         super.mouseDown(with: event)
         if event.clickCount == 2 { owner?.openItems(owner?.selectedURLs ?? [], disposition: event.modifierFlags.contains(.command) ? .newTab(activate: true) : .current) }
@@ -68,6 +104,7 @@ final class FileCollectionView: NSCollectionView {
         if let path = indexPathForItem(at: convert(event.locationInWindow, from: nil)), let owner, owner.roots.indices.contains(path.item) { owner.openItems([owner.roots[path.item].item.url], disposition: .newTab(activate: false)) }
     }
     override func menu(for event: NSEvent) -> NSMenu? {
+        if owner?.renameURL == nil, window?.firstResponder !== self { window?.makeFirstResponder(self) }
         owner?.activate()
         let path = indexPathForItem(at: convert(event.locationInWindow, from: nil))
         if let path, !selectionIndexPaths.contains(path) { selectionIndexPaths = [path]; owner?.selectionDidChange() }

@@ -35,7 +35,7 @@ final class FileListViewController: NSViewController {
     let iconScroll = NSScrollView()
     private let message = NSTextField(wrappingLabelWithString: "")
     private let privacy = NSButton(title: tr("Open Privacy & Security Settings", "개인정보 보호 및 보안 설정 열기"), target: nil, action: nil)
-    private let stateStack = NSStackView()
+    private let stateStack = FileListStateStackView()
     var roots: [FileNode] = []
     var nodes: [URL: FileNode] = [:]
     private var snapshots: [URL: [FileItem]] = [:]
@@ -96,7 +96,9 @@ final class FileListViewController: NSViewController {
     override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = nil; panel.delegate = nil }
 
     override func loadView() {
-        view = FileListBackgroundView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        let background = FileListBackgroundView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
+        background.owner = self
+        view = background
         view.wantsLayer = true
         outline.owner = self
         outline.delegate = self
@@ -157,12 +159,13 @@ final class FileListViewController: NSViewController {
         stateStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stateStack)
         NSLayoutConstraint.activate([stateStack.centerXAnchor.constraint(equalTo: view.centerXAnchor), stateStack.centerYAnchor.constraint(equalTo: view.centerYAnchor), stateStack.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -48)])
+        view.registerForDraggedTypes([.fileURL])
         outline.registerForDraggedTypes([.fileURL])
-        outline.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
-        outline.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        outline.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: false)
+        outline.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: true)
         collection.registerForDraggedTypes([.fileURL])
-        collection.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
-        collection.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        collection.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: false)
+        collection.setDraggingSourceOperationMask([.copy, .move, .generic], forLocal: true)
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: .settingsDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(itemsProduced(_:)), name: .fileListItemsProduced, object: nil)
         NSApp.registerServicesMenuSendTypes([.fileURL, .URL, .string], returnTypes: [])
@@ -631,9 +634,15 @@ final class FileListViewController: NSViewController {
         if reload { reloadPreservingState() } else { rebuildPresentation() }
     }
     @objc private func itemsProduced(_ notification: Notification) {
-        guard let target = notification.userInfo?["folder"] as? URL, target.standardizedFileURL == folder?.standardizedFileURL,
-              let items = notification.userInfo?["items"] as? [URL], !items.isEmpty else { return }
-        show(target, selecting: items)
+        guard let current = folder?.standardizedFileURL else { return }
+        if let target = notification.userInfo?["folder"] as? URL, target.standardizedFileURL == current,
+           let items = notification.userInfo?["items"] as? [URL], !items.isEmpty {
+            show(target, selecting: items)
+            return
+        }
+        if let sources = notification.userInfo?["sourceFolders"] as? Set<URL>, sources.contains(current) {
+            reloadPreservingState()
+        }
     }
     func presentError(_ message: String) {
         let alert = NSAlert()

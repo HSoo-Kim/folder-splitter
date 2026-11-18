@@ -125,6 +125,7 @@ extension FileListViewController {
                 destination = resolved
             } else { destination = target }
             guard let mode = FileDrop.mode(for: urls, into: destination, operation: operation) else { return }
+            let sourceFolders = Set(urls.map { $0.deletingLastPathComponent().standardizedFileURL })
             let result = await AppServices.shared.fileOperations.transfer(urls, to: destination, mode: mode)
             guard let self else { return }
             if target == self.folder { self.show(target, selecting: result.produced) }
@@ -132,7 +133,7 @@ extension FileListViewController {
                 if let node = self.nodes[target] { self.outline.expandItem(node); self.rememberExpansion(node, expanded: true) }
                 self.show(current, selecting: result.produced)
             }
-            NotificationCenter.default.post(name: .fileListItemsProduced, object: self, userInfo: ["folder": destination, "items": result.produced])
+            NotificationCenter.default.post(name: .fileListItemsProduced, object: self, userInfo: ["folder": destination, "items": result.produced, "sourceFolders": sourceFolders])
         }
         return true
     }

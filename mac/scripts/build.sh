@@ -45,8 +45,7 @@ for lproj in "$ROOT"/Resources/*.lproj; do cp -R "$lproj" "$contents/Resources/"
 # Access and folder access; an ad-hoc signature changes it with every build.
 signing_keychain="$HOME/Library/Keychains/folder-splitter-signing.keychain-db"
 identity=""
-if [[ -f "$signing_keychain" ]]; then
-    security unlock-keychain -p "$(security find-generic-password -a "$USER" -s folder-splitter-signing-keychain -w)" "$signing_keychain"
+if [[ -f "$signing_keychain" ]] && keychain_pw="$(security find-generic-password -a "$USER" -s folder-splitter-signing-keychain -w 2>/dev/null)" && security unlock-keychain -p "$keychain_pw" "$signing_keychain" 2>/dev/null; then
     identity="$(security find-identity -p codesigning "$signing_keychain" | awk '/"Folder Splitter Signing \(HSoo-Kim\)"/ { print $2; exit }')"
 fi
 if [[ -n "$identity" ]]; then

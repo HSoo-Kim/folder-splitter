@@ -234,7 +234,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
     }
 
     func otherPane(of pane: PaneController) -> PaneController? {
-        paneMRU.lazy.filter { $0 != pane.id && self.layout.panes.contains($0) }.first.flatMap { panes[$0] }
+        if let local = paneMRU.lazy.filter({ $0 != pane.id && self.layout.panes.contains($0) }).first.flatMap({ panes[$0] }) {
+            return local
+        }
+        guard let controllers = (NSApp.delegate as? AppDelegate)?.windowControllers else { return nil }
+        return controllers.first(where: { $0 !== self && ($0.window?.isVisible ?? false) })?.activePane
     }
 
     private func applyLayout(animated: Bool) {
@@ -364,7 +368,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, WindowCo
 
     func openInOtherPane(_ folder: URL, selecting: [URL], from pane: PaneController) {
         guard let other = otherPane(of: pane) ?? split(pane, edge: .right) else { return }
-        activatePane(other)
+        other.windowController?.activatePane(other)
         other.show(folder, selecting: selecting)
         other.focusList()
     }

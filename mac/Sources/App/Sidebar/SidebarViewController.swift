@@ -473,22 +473,27 @@ private final class SidebarHeader: NSView {
         let writer = NSPasteboardItem(); writer.setString(url.absoluteString, forType: Self.favoriteDrag); return writer
     }
     func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
-        guard outlineView === sources, let node = item as? SidebarNode else { cancelSpring(); return [] }
+        guard let node = item as? SidebarNode else { cancelSpring(); return [] }
         if info.draggingPasteboard.availableType(from: [Self.favoriteDrag]) != nil {
             cancelSpring()
-            return index >= 0 && node === sections.first ? .move : []
+            return outlineView === sources && index >= 0 && node === sections.first ? .move : []
         }
         let urls = (info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         guard !urls.isEmpty else { cancelSpring(); return [] }
-        if index >= 0 && node === sections.first { cancelSpring(); return .copy }
-        guard index == NSOutlineViewDropOnItemIndex, let url = node.url, !node.missing,
-              sections.first?.children.contains(node) == true,
-              let mode = FileDrop.mode(for: urls, into: url, operation: info.draggingSourceOperationMask) else { cancelSpring(); return [] }
+        if outlineView === sources, index >= 0, node === sections.first { cancelSpring(); return .copy }
+        guard !node.section, let url = node.url, !node.missing else { cancelSpring(); return [] }
+        outlineView.setDropItem(node, dropChildIndex: NSOutlineViewDropOnItemIndex)
+        guard let mode = FileDrop.mode(for: urls, into: url, operation: info.draggingSourceOperationMask) else { cancelSpring(); return [] }
         if springURL != url {
             cancelSpring(); springURL = url
-            springTask = Task { [weak self] in
+            springTask = Task { [weak self, weak outlineView] in
                 try? await Task.sleep(for: .milliseconds(600))
-                guard !Task.isCancelled else { return }; self?.navigator?.open(url, disposition: .current)
+                guard !Task.isCancelled, let self else { return }
+                if outlineView === self.tree {
+                    await self.loadChildren(node)
+                    self.tree.expandItem(node)
+                }
+                self.navigator?.open(url, disposition: .current)
             }
         }
         return mode == .copy ? .copy : .move
@@ -496,26 +501,23 @@ private final class SidebarHeader: NSView {
     private func cancelSpring() { springTask?.cancel(); springTask = nil; springURL = nil }
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
         cancelSpring()
-        guard outlineView === sources, let node = item as? SidebarNode else { return false }
+        guard let node = item as? SidebarNode else { return false }
         if let value = info.draggingPasteboard.string(forType: Self.favoriteDrag) {
-            guard index >= 0, node === sections.first, let url = URL(string: value),
+            guard outlineView === sources, index >= 0, node === sections.first, let url = URL(string: value),
                   let source = AppServices.shared.favorites.favorites.firstIndex(of: url) else { return false }
             AppServices.shared.favorites.move(from: source, to: source < index ? index - 1 : index); return true
         }
         let urls = (info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         guard !urls.isEmpty else { return false }
-        if index >= 0 && node === sections.first {
+        if outlineView === sources, index >= 0, node === sections.first {
             Task {
                 let folders = await Task.detached { urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true } }.value
                 for (offset, url) in folders.enumerated() { AppServices.shared.favorites.add(url, at: index + offset) }
             }
             return true
         }
-        guard index == NSOutlineViewDropOnItemIndex, sections.first?.children.contains(node) == true,
-              !node.missing, let destination = node.url,
-              let mode = FileDrop.mode(for: urls, into: destination, operation: info.draggingSourceOperationMask) else { return false }
-        Task { _ = await AppServices.shared.fileOperations.transfer(urls, to: destination, mode: mode) }
-        return true
+        guard !node.section, !node.missing, let destination = node.url else { return false }
+        return FileDrop.perform(urls, into: destination, operation: info.draggingSourceOperationMask)
     }
 }
 

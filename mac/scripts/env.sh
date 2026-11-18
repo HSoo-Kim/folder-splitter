@@ -7,7 +7,7 @@ DEPLOYMENT_TARGET="15.0"
 ARCH="$(uname -m)"
 mkdir -p "$BUILD"
 
-SWIFTC=(xcrun swiftc -swift-version 5 -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET")
+SWIFTC=(xcrun swiftc -swift-version 5 -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" -module-cache-path "$BUILD/module-cache")
 
 # Some CommandLineTools installs ship a stale usr/include/swift/module.modulemap next to
 # bridging.modulemap, so every `import AppKit` fails with "redefinition of module

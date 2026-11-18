@@ -126,6 +126,7 @@ extension FileListViewController: FileCommands, NSMenuItemValidation, @preconcur
         guard !isTextEditing, let folder else { return }
         let urls = FileListClipboard.urls
         guard !urls.isEmpty else { return }
+        let sourceFolders = Set(urls.map { $0.deletingLastPathComponent().standardizedFileURL })
         let changeCount = NSPasteboard.general.changeCount
         Task { [weak self] in
             let outcome = await AppServices.shared.fileOperations.transfer(urls, to: folder, mode: moving ? .move : .copy)
@@ -133,7 +134,7 @@ extension FileListViewController: FileCommands, NSMenuItemValidation, @preconcur
                 // Retain skipped or failed cut items so a partial move can still be completed.
                 let remaining = await Task.detached(priority: .utility) { urls.filter { FileManager.default.fileExists(atPath: $0.path) } }.value
                 guard NSPasteboard.general.changeCount == changeCount else {
-                    self?.finishFileOperation(outcome, destination: folder)
+                    self?.finishFileOperation(outcome, destination: folder, sourceFolders: sourceFolders)
                     return
                 }
                 NSPasteboard.general.clearContents()
@@ -142,7 +143,7 @@ extension FileListViewController: FileCommands, NSMenuItemValidation, @preconcur
                     NSPasteboard.general.setString("1", forType: FileListClipboard.cutType)
                 }
             }
-            self?.finishFileOperation(outcome, destination: folder)
+            self?.finishFileOperation(outcome, destination: folder, sourceFolders: sourceFolders)
         }
     }
 
@@ -226,19 +227,22 @@ extension FileListViewController: FileCommands, NSMenuItemValidation, @preconcur
 
     func performFileOperation(destination: URL? = nil, _ operation: @escaping @MainActor () async -> FileOperationOutcome) {
         guard !isTextEditing, !selectedURLs.isEmpty else { return }
+        let sourceFolders = Set(selectedURLs.map { $0.deletingLastPathComponent().standardizedFileURL })
         Task { [weak self] in
             let outcome = await operation()
-            self?.finishFileOperation(outcome, destination: destination)
+            self?.finishFileOperation(outcome, destination: destination, sourceFolders: sourceFolders)
         }
     }
 
-    func finishFileOperation(_ outcome: FileOperationOutcome, destination: URL? = nil) {
+    func finishFileOperation(_ outcome: FileOperationOutcome, destination: URL? = nil, sourceFolders: Set<URL> = []) {
         let producedHere = outcome.produced.filter { $0.deletingLastPathComponent().standardizedFileURL == folder?.standardizedFileURL }
         if let folder, !producedHere.isEmpty { show(folder, selecting: producedHere) }
         else { reloadPreservingState() }
-        if let destination, !outcome.produced.isEmpty {
-            NotificationCenter.default.post(name: .fileListItemsProduced, object: self,
-                                            userInfo: ["folder": destination, "items": outcome.produced])
+        if !outcome.produced.isEmpty {
+            var info: [String: Any] = ["items": outcome.produced]
+            if let destination { info["folder"] = destination }
+            if !sourceFolders.isEmpty { info["sourceFolders"] = sourceFolders }
+            NotificationCenter.default.post(name: .fileListItemsProduced, object: self, userInfo: info)
         }
     }
 

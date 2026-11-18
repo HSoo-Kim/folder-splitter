@@ -32,7 +32,17 @@ enum FileDrop {
         }
         guard !items.isEmpty, let mode = mode(for: items, into: destination, operation: operation) else { return false }
         let operations = AppServices.shared.fileOperations
-        Task { _ = await operations.transfer(items, to: destination, mode: mode) }
+        let sourceFolders = Set(items.map { $0.deletingLastPathComponent().standardizedFileURL })
+        Task {
+            let outcome = await operations.transfer(items, to: destination, mode: mode)
+            if !outcome.produced.isEmpty {
+                NotificationCenter.default.post(
+                    name: .fileListItemsProduced,
+                    object: nil,
+                    userInfo: ["folder": destination, "items": outcome.produced, "sourceFolders": sourceFolders]
+                )
+            }
+        }
         return true
     }
 
