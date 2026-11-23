@@ -345,10 +345,10 @@ tools/
 
 应用代码不依赖任何外部 NuGet 包（仅 UI 测试使用 Lib.Harmony），只使用 Windows Shell 和 .NET Windows Forms。
 
-替换图标源文件后，用以下命令重新生成 Windows 用的 ICO。
+替换图标源文件后，用以下命令重新生成 Windows 用的 ICO。`app.png` 是 40px 及以上使用的完整图块；`app-small.png` 是为 32px 及以下裁得更紧的同一图块，避免图案在小尺寸下变得太小。
 
 ```powershell
-.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
+.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png -SmallSourcePng .\src\FolderSplitter\Assets\app-small.png
 ```
 
 ## 许可证

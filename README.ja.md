@@ -348,10 +348,10 @@ tools/
 
 アプリのコードは外部の NuGet パッケージに依存しません（UI テストのみ Lib.Harmony を使用）。Windows Shell と .NET Windows Forms を使用します。
 
-アイコンの原本を置き換えた場合は、次のコマンドで Windows 用 ICO を再生成してください。
+アイコンの原本を置き換えた場合は、次のコマンドで Windows 用 ICO を再生成してください。`app.png` は 40px 以上で使う全体のタイル、`app-small.png` は 32px 以下で絵柄が小さくなりすぎないよう同じタイルを狭く切り出したものです。
 
 ```powershell
-.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
+.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png -SmallSourcePng .\src\FolderSplitter\Assets\app-small.png
 ```
 
 ## ライセンス

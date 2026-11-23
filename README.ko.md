@@ -346,10 +346,10 @@ tools/
 
 앱 코드에는 외부 NuGet 패키지 의존성이 없습니다(UI 테스트만 Lib.Harmony 사용). Windows Shell과 .NET Windows Forms를 사용합니다.
 
-아이콘 원본을 교체할 때는 아래 명령으로 Windows용 ICO를 다시 생성합니다.
+아이콘 원본을 교체할 때는 아래 명령으로 Windows용 ICO를 다시 생성합니다. `app.png`는 40px 이상에 쓰는 전체 타일이고, `app-small.png`는 32px 이하에서 그림이 작아지지 않도록 같은 타일을 더 좁게 자른 것입니다.
 
 ```powershell
-.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
+.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png -SmallSourcePng .\src\FolderSplitter\Assets\app-small.png
 ```
 
 ## 라이선스

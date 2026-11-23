@@ -346,10 +346,10 @@ tools/
 
 The app code has no external NuGet package dependencies (only the UI tests use Lib.Harmony). It uses the Windows Shell and .NET Windows Forms.
 
-When you replace the source icon, regenerate the Windows ICO with the command below.
+When you replace the source icon, regenerate the Windows ICO with the command below. `app.png` is the full tile used from 40 px up; `app-small.png` is the same tile cropped tighter for 32 px and smaller, where the full tile's margin would shrink the artwork.
 
 ```powershell
-.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png
+.\tools\Build-Icon.ps1 -SourcePng .\src\FolderSplitter\Assets\app.png -SmallSourcePng .\src\FolderSplitter\Assets\app-small.png
 ```
 
 ## License
