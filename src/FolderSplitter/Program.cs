@@ -58,7 +58,7 @@ internal static class Program
             PostMessage(0xFFFF, ActivationMessage(sessionPath), toggle ? 1 : 0, 0);
             return;
         }
-        UpdateInstaller.RemovePrevious(Environment.ProcessPath);
+        if (UpdateInstaller.RemovePrevious(Environment.ProcessPath)) UpdateInstaller.RefreshShellIcon(Environment.ProcessPath!);
         var roots = DriveInfo.GetDrives().Where(drive => drive.DriveType == DriveType.Fixed && drive.IsReady)
             .Select(drive => drive.RootDirectory.FullName).ToArray();
         string storePath = sessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase)

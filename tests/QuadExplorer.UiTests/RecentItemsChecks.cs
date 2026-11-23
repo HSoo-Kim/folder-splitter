@@ -35,6 +35,10 @@ internal static partial class Program
         File.WriteAllBytes(Path.Combine(recent, "truncated.lnk"), sound[..(linkInfo + 0x1E)]);
         foreach (string damaged in new[] { "oversized.lnk", "truncated.lnk" }) File.SetLastWriteTime(Path.Combine(recent, damaged), stamp.AddMinutes(5));
         string[] expected = [folder, report, notes];
+        Check(RecentItems.Target(Path.Combine(recent, "notes.txt.lnk")).Equals(notes, StringComparison.OrdinalIgnoreCase)
+            && RecentItems.Target(Path.Combine(recent, "Folder C.lnk")).Equals(folder, StringComparison.OrdinalIgnoreCase)
+            && new[] { "oversized.lnk", "truncated.lnk", "missing.lnk" }.All(name => RecentItems.Target(Path.Combine(recent, name)) == ""),
+            "a shortcut's target is read from the file, and a damaged or missing shortcut has none");
 
         string previousRecent = ShellNative.Recent;
         ShellNative.Recent = recent;

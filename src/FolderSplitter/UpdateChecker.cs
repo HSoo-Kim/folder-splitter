@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Reflection.PortableExecutable;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -141,12 +142,36 @@ internal static class UpdateInstaller
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    public static void RemovePrevious(string? exe)
+    // Returns true when an update had moved the previous executable aside, which makes this the first start of a new version.
+    public static bool RemovePrevious(string? exe)
     {
-        if (exe is null) return;
-        try { File.Delete(exe + ".old"); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        if (exe is null || !File.Exists(exe + ".old")) return false;
+        try { File.Delete(exe + ".old"); return true; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
     }
+
+    // Windows keeps showing the icon it cached for a pinned taskbar button after the executable is replaced at the same
+    // path. The taskbar reloads a pin's icon only when the pin's own shortcut is reported as changed, not the executable,
+    // so the first start of a new version reports every pin that opens this executable, after dropping the cached icons.
+    public static void RefreshShellIcon(string exe)
+    {
+        SHChangeNotify(0x08000000, 0x3000, 0, 0); // SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT
+        SHChangeNotify(0x00002000, 0x3005, exe, 0); // SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT
+        string pins = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar");
+        string[] shortcuts;
+        try { shortcuts = Directory.GetFiles(pins, "*.lnk"); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return; }
+        foreach (string shortcut in shortcuts)
+            if (RecentItems.Target(shortcut).Equals(exe, StringComparison.OrdinalIgnoreCase))
+                SHChangeNotify(0x00002000, 0x3005, shortcut, 0);
+    }
+
+    [DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(int eventId, uint flags, nint item1, nint item2);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern void SHChangeNotify(int eventId, uint flags, string item1, nint item2);
 
     public static async Task InstallAsync(ReleaseInfo release, string exe,
         Func<Uri, CancellationToken, Task<Stream>> download, CancellationToken token, IProgress<UpdateProgress>? progress = null)

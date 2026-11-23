@@ -1464,8 +1464,8 @@ internal static partial class Program
             await UpdateInstaller.InstallAsync(Release(good, current), exe, Serve(good), CancellationToken.None);
             Check(File.ReadAllBytes(exe).SequenceEqual(application) && File.ReadAllText(exe + ".old") == "old" && !Leftovers(),
                 "a matching Windows package replaces the executable and keeps the previous one aside");
-            UpdateInstaller.RemovePrevious(exe);
-            Check(!File.Exists(exe + ".old"), "the previous executable is removed on the next start");
+            Check(UpdateInstaller.RemovePrevious(exe) && !File.Exists(exe + ".old") && !UpdateInstaller.RemovePrevious(exe),
+                "the previous executable is removed on the next start, which reports the finished update only once");
 
             File.WriteAllText(exe, "old");
             async Task Reject(byte[] package, Version version, string message, string? sha = null)

@@ -57,6 +57,21 @@ internal static class RecentItems
         return isFixed && !File.Exists(path) && !Directory.Exists(path);
     }
 
+    // The file or folder a shortcut points to, read the same way; empty for a missing or damaged shortcut.
+    public static string Target(string shortcut)
+    {
+        byte[] data;
+        try { data = File.ReadAllBytes(shortcut); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return ""; }
+        try
+        {
+            if (!Read(data, new char[32768], out nint pidl, out string target)) return "";
+            ShellNative.ILFree(pidl);
+            return target;
+        }
+        catch (ArgumentException) { return ""; }
+    }
+
     // [MS-SHLLINK] https://learn.microsoft.com/openspecs/windows_protocols/ms-shllink/16cb4ca1-9339-4d0c-a68d-bf1d6cc0f943
     // The header, the target's ID list (what IShellLink.GetIDList returns) and LinkInfo, which holds its path.
     private static bool Read(byte[] data, char[] path, out nint pidl, out string target)
