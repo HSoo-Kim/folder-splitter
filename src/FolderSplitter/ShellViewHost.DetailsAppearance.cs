@@ -218,7 +218,7 @@ public sealed partial class ShellViewHost
             else if (kind == DetailsWindowKind.List && (message.Msg == 0x0203
                 || message.Msg == 0x0100 && message.WParam == 0x1B)) owner.CancelCrossViewFileSelection();
             if (kind == DetailsWindowKind.Container && message.Msg == 0x004E
-                && owner.TryBeginCrossViewFileDrag(message.LParam))
+                && (owner.TryBeginCrossViewFileDrag(message.LParam) || owner.TryActivateFolderInPlace(message.LParam)))
             {
                 message.Result = 0;
                 return;

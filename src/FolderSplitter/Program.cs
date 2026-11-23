@@ -51,8 +51,10 @@ internal static class Program
         using var mutex = new Mutex(true, @"Local\QuadExplorer-" + key, out bool firstInstance);
         if (!firstInstance)
         {
-            // A second launch (for example Win+E) hands the foreground to the running window instead.
+            // A second launch (for example Win+E) hands the foreground to the running window instead,
+            // and folders it was asked to open, such as a folder double-clicked on the desktop, go along.
             AllowSetForegroundWindow(-1);
+            if (folders.Count > 0 && FolderHandoff.TrySend(sessionPath, folders, TimeSpan.FromSeconds(5))) return;
             PostMessage(0xFFFF, ActivationMessage(sessionPath), toggle ? 1 : 0, 0);
             return;
         }

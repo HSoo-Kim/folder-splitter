@@ -118,6 +118,7 @@ public sealed partial class ShellViewHost
                 uint flags = 0x10u | (OpenInTabNative.GetKeyState(0x10) < 0 ? 0x100u : 0u); // CANRENAME | EXTENDEDVERBS
                 if (menu.QueryContextMenu(popup, 0, FolderMenuFirstCommand, FolderMenuLastCommand, flags) < 0)
                     return false;
+                RemoveOwnFolderVerb(menu, popup, verbBuffer);
                 uint appItems = 0;
                 if (!HasFolderMenuCommand(menu, popup, verbBuffer, "opennewtab"))
                 {
@@ -229,6 +230,26 @@ public sealed partial class ShellViewHost
         return false;
     }
 
+    // Folder Splitter's own Explorer verb would start a second instance for what this view opens itself.
+    private static void RemoveOwnFolderVerb(IContextMenu handler, nint menu, nint verbBuffer)
+    {
+        for (int i = FolderMenuNative.GetMenuItemCount(menu) - 1; i >= 0; i--)
+        {
+            if (!string.Equals(FolderContextMenuVerb(handler, FolderMenuNative.GetMenuItemID(menu, i), verbBuffer),
+                FolderOpenRegistration.Verb, StringComparison.OrdinalIgnoreCase)) continue;
+            bool wasDefault = FolderMenuNative.GetMenuDefaultItem(menu, 1, 0) == (uint)i; // by position
+            FolderMenuNative.DeleteMenu(menu, (uint)i, 0x0400); // MF_BYPOSITION
+            if (!wasDefault) continue;
+            for (int j = 0, count = FolderMenuNative.GetMenuItemCount(menu); j < count; j++)
+                if (string.Equals(FolderContextMenuVerb(handler, FolderMenuNative.GetMenuItemID(menu, j), verbBuffer), "open",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    FolderMenuNative.SetMenuDefaultItem(menu, (uint)j, 1);
+                    break;
+                }
+        }
+    }
+
     private static string? FolderContextMenuVerb(IContextMenu menu, uint command, nint name)
     {
         if (command < FolderMenuFirstCommand || command > FolderMenuLastCommand) return null;
@@ -263,6 +284,9 @@ public sealed partial class ShellViewHost
         [DllImport("user32.dll")] internal static extern int GetMenuItemCount(nint menu);
         [DllImport("user32.dll")] internal static extern uint GetMenuItemID(nint menu, int position);
         [DllImport("user32.dll")] internal static extern nint GetSubMenu(nint menu, int position);
+        [DllImport("user32.dll")] internal static extern uint GetMenuDefaultItem(nint menu, uint byPosition, uint flags);
+        [DllImport("user32.dll")] internal static extern bool SetMenuDefaultItem(nint menu, uint item, uint byPosition);
+        [DllImport("user32.dll")] internal static extern bool DeleteMenu(nint menu, uint position, uint flags);
         [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         internal static extern bool InsertMenuW(nint menu, uint position, uint flags, nuint command, string text);
         [DllImport("user32.dll")] internal static extern uint TrackPopupMenuEx(nint menu, uint flags, int x, int y, nint owner, nint parameters);

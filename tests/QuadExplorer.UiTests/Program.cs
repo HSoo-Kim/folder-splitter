@@ -59,6 +59,8 @@ internal static partial class Program
                 return RunPublishedGroupSmoke(publishedExecutable, publishedOutput);
             if (args is ["--published-single-smoke", var singleExecutable, var singleOutput])
                 return RunPublishedSinglePaneSmoke(singleExecutable, singleOutput);
+            if (args is ["--published-folder-handoff", var handoffExecutable, var handoffOutput])
+                return RunPublishedFolderHandoffSmoke(handoffExecutable, handoffOutput);
             if (args is ["--rename"])
             {
                 RunRenameScenario(root);
@@ -258,6 +260,12 @@ internal static partial class Program
                 Console.WriteLine($"FOLDER_TAB_MENU_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--folder-open"])
+            {
+                RunFolderOpenScenario(root);
+                Console.WriteLine($"FOLDER_OPEN_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--native-open-selection"])
             {
                 RunNativeOpenSelectionScenario(root);
@@ -435,6 +443,7 @@ internal static partial class Program
             RunNativeOpenSelectionScenario(root);
             RunOpenInTabScenario(root);
             RunNativeFolderTabMenuScenario(root);
+            RunFolderOpenScenario(root);
             RunFavoriteDropScenario(root);
             RunRenameScenario(root);
             RunNativeShortcutMenuScenario(root);

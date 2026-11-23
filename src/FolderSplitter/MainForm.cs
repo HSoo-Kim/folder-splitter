@@ -38,10 +38,13 @@ public sealed partial class MainForm : Form, IMessageFilter
     private int folderTreeHeight;
     private readonly ToolStripMenuItem hotkeyItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem winEItem = new() { CheckOnClick = true };
+    private readonly ToolStripMenuItem folderMenuItem = new() { CheckOnClick = true };
+    private readonly ToolStripMenuItem folderDefaultItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem startupItem = new() { CheckOnClick = true };
     private readonly ToolStripMenuItem confirmCloseGroupItem = new() { CheckOnClick = true };
     private bool startWithWindows { get => application.State.StartWithWindows; set => application.ChangeState(s => s with { StartWithWindows = value }); }
     private WinEShortcut winE => application.WinE;
+    private FolderOpenRegistration folderOpening => application.FolderOpening;
     private bool globalHotkey { get => application.State.GlobalHotkey; set => application.ChangeState(s => s with { GlobalHotkey = value }); }
     private readonly ToolStripMenuItem trayItem = new() { CheckOnClick = true };
     private bool closeToTray => application.State.KeepInTray;
@@ -155,6 +158,7 @@ public sealed partial class MainForm : Form, IMessageFilter
     private readonly ToolStripDropDownButton workspaceButton = new() { AccessibleName = "Workspaces" };
     internal event Action<bool, string?>? FileOperationFinished;
     private bool ready;
+    internal bool IsReady => ready;
     private bool rebuilding;
     private bool tabDragging;
     private readonly record struct Place(string Label, string Path, bool Favorite = false)
@@ -847,19 +851,30 @@ public sealed partial class MainForm : Form, IMessageFilter
         BindIcon(settings, "\uE713", "Shortcuts and Windows integration");
         BindText(hotkeyItem, "Win+Alt+E brings Folder Splitter to the front");
         BindText(winEItem, "Open Folder Splitter with Win+E instead of File Explorer");
+        BindText(folderMenuItem, "Show \"Open in Folder Splitter\" when right-clicking a folder");
+        BindText(folderDefaultItem, "Open folders in Folder Splitter by default");
         BindText(startupItem, "Start Folder Splitter with Windows");
         hotkeyItem.Checked = globalHotkey;
         hotkeyItem.CheckedChanged += (_, _) => SetGlobalHotkey(hotkeyItem.Checked);
         winEItem.Click += (_, _) => SetWinEShortcut(winEItem.Checked);
+        // Opening folders by default needs the right-click verb, and removing that verb also ends the default.
+        folderMenuItem.Click += (_, _) => application.SetFolderOpening(folderMenuItem.Checked,
+            folderMenuItem.Checked && folderOpening.DefaultEnabled, this);
+        folderDefaultItem.Click += (_, _) => application.SetFolderOpening(folderDefaultItem.Checked || folderOpening.MenuEnabled,
+            folderDefaultItem.Checked, this);
         startupItem.Click += (_, _) => SetStartWithWindows(startupItem.Checked);
         settings.DropDownOpening += (_, _) =>
         {
             winEItem.Checked = winE.IsEnabled;
+            folderMenuItem.Checked = folderOpening.MenuEnabled;
+            folderDefaultItem.Checked = folderOpening.DefaultEnabled;
             startupItem.Checked = Startup.IsEnabled;
             startupItem.Enabled = Startup.IsSupported;
         };
         settings.DropDownItems.Add(hotkeyItem);
         settings.DropDownItems.Add(winEItem);
+        settings.DropDownItems.Add(folderMenuItem);
+        settings.DropDownItems.Add(folderDefaultItem);
         settings.DropDownItems.Add(startupItem);
         BindText(trayItem, "Keep running in the notification area when closed");
         trayItem.Checked = closeToTray;
@@ -1762,6 +1777,14 @@ public sealed partial class MainForm : Form, IMessageFilter
         Activate();
         SetForegroundWindow(Handle);
         Active.FocusFiles();
+    }
+
+    // Folders a second launch handed over, such as a folder double-clicked on the desktop, open as new tabs.
+    internal void OpenLaunchedFolders(IReadOnlyList<string> folders)
+    {
+        var pane = Active;
+        for (int i = 0; i < folders.Count; i++) pane.AddTab(folders[i], select: i == 0);
+        pane.FocusFiles();
     }
 
 
@@ -3145,6 +3168,8 @@ public sealed partial class MainForm : Form, IMessageFilter
         trayItem.Checked = state.KeepInTray;
         startupItem.Checked = Startup.IsEnabled;
         winEItem.Checked = winE.IsEnabled;
+        folderMenuItem.Checked = folderOpening.MenuEnabled;
+        folderDefaultItem.Checked = folderOpening.DefaultEnabled;
         updateItem.Checked = state.CheckUpdates;
         autoUpdateItem.Checked = state.AutoUpdate;
         confirmCloseGroupItem.Checked = state.ConfirmCloseGroup;

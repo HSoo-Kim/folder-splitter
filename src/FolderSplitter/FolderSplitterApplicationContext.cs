@@ -28,6 +28,8 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     private bool restoringWindows;
     private readonly HashSet<MainForm> pendingPresentation = [];
     private MainForm? restoredActiveWindow;
+    private readonly List<string> launchedFolders = [];
+    private bool launchPending;
     private MainForm? transferringSource;
     private string? saveError;
     private bool syncingSavedGroups;
@@ -42,6 +44,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     internal IReadOnlyList<SavedTabGroup> SavedGroups => State.SavedGroups;
     internal FolderVisits FolderVisits { get; }
     internal WinEShortcut WinE { get; } = WinEShortcut.ForCurrentUser();
+    internal FolderOpenRegistration FolderOpening { get; set; } = FolderOpenRegistration.ForCurrentUser();
     internal StartupRegistration Startup { get; set; }
     internal Func<IReadOnlyList<string>, bool>? RestartLauncher { get; set; }
     internal Func<string?> UpdateExecutablePath { get; set; } = UpdateInstaller.InstallablePath;
@@ -459,6 +462,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
                 if (active.Visible && active.WindowState != FormWindowState.Minimized) active.Activate();
             });
         }
+        OpenLaunchedFolders();
     }
 
     internal void ChangeState(Func<SessionState, SessionState> change) => State = change(State);
@@ -477,7 +481,14 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
         refreshing = true;
         try
         {
+            bool languageChanged = text.Language != SessionStore.NormalizeLanguage(State.Language);
             text.SetLanguage(State.Language);
+            // Only the default session follows the registered label; work and test sessions never write it.
+            if (languageChanged && SessionPath.Equals(SessionStore.DefaultPath, StringComparison.OrdinalIgnoreCase))
+            {
+                try { FolderOpening.UpdateLabel(text.T("Open in Folder Splitter")); }
+                catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException) { }
+            }
             if (theme) ApplyPalette();
             foreach (var window in windows.ToArray()) window.RefreshSharedSettings(publishedState, theme);
             RefreshTray();
@@ -649,6 +660,32 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
         catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         { owner.SetApplicationStatus("Could not change the Win+E setting: {0}", error.Message); }
         PublishSharedSettings();
+    }
+
+    internal void SetFolderOpening(bool menu, bool openByDefault, MainForm owner)
+    {
+        try { FolderOpening.Apply(menu, openByDefault, text.T("Open in Folder Splitter")); }
+        catch (Exception error) when (error is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        { owner.SetApplicationStatus("Could not change the folder opening setting: {0}", error.Message); }
+        PublishSharedSettings();
+    }
+
+    // Folders handed over by a second launch open as new tabs where the user last worked, once that window is ready.
+    internal void QueueLaunchedFolders(IReadOnlyList<string> folders)
+    {
+        launchedFolders.AddRange(folders);
+        launchPending = true;
+        receiver.PostOpenFolders();
+    }
+
+    private void OpenLaunchedFolders()
+    {
+        if (!launchPending || disposed || shuttingDown || LastActiveWindow is not { IsReady: true } window) return;
+        launchPending = false;
+        string[] folders = [.. launchedFolders];
+        launchedFolders.Clear();
+        Summon();
+        if (folders.Length > 0) window.OpenLaunchedFolders(folders);
     }
 
     internal void SetStartWithWindows(bool enabled, MainForm owner)
@@ -860,17 +897,20 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
     }
 
     // HWND_BROADCAST does not reach message-only windows; this invisible top-level HWND outlives browsers.
+    // Its title names the session so a second launch can send it folders.
     private sealed class ActivationReceiver : NativeWindow, IDisposable
     {
         private const int HotkeyId = 0x4653;
+        private const int OpenFoldersMessage = 0x800F; // WM_APP + 15
         private readonly FolderSplitterApplicationContext application;
         private readonly uint activationMessage;
         internal ActivationReceiver(FolderSplitterApplicationContext application, uint activationMessage)
         {
             this.application = application;
             this.activationMessage = activationMessage;
-            CreateHandle(new CreateParams { Caption = "Folder Splitter activation", ExStyle = 0x80 });
+            CreateHandle(new CreateParams { Caption = FolderHandoff.ReceiverTitle(application.SessionPath), ExStyle = 0x80 });
         }
+        internal void PostOpenFolders() => PostMessage(Handle, OpenFoldersMessage, 0, 0);
         internal void SetHotkey(bool enabled)
         {
             UnregisterHotKey(Handle, HotkeyId);
@@ -885,10 +925,19 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
                 if (m.WParam == 1) application.ToggleFromHotkey(); else application.Summon();
                 return;
             }
+            // A message sent from another process must not make COM calls, so the tabs open from a posted message.
+            if (m.Msg == FolderHandoff.CopyDataMessage && FolderHandoff.Read(m.LParam) is { } folders)
+            {
+                application.QueueLaunchedFolders(folders);
+                m.Result = 1;
+                return;
+            }
+            if (m.Msg == OpenFoldersMessage) { application.OpenLaunchedFolders(); return; }
             base.WndProc(ref m);
         }
         public void Dispose() { UnregisterHotKey(Handle, HotkeyId); DestroyHandle(); }
         [DllImport("user32.dll")] private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
         [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint window, int id);
+        [DllImport("user32.dll")] private static extern bool PostMessage(nint window, int message, nint wParam, nint lParam);
     }
 }
