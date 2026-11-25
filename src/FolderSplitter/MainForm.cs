@@ -334,7 +334,12 @@ public sealed partial class MainForm : Form, IMessageFilter
         });
         languageBindings.Add(previewPane.RefreshLanguage);
         languageBindings.Add(() => previewWindow?.RefreshLanguage());
-        sidebar = new Panel { Dock = DockStyle.Left, Width = sidebarWidth, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
+        sidebar = new Panel { Dock = DockStyle.Left, Padding = new Padding(10, 12, 8, 8), BackColor = Theme.Canvas };
+        // The saved width is at 96 DPI. Start at the system DPI, then follow the window's own DPI once its handle exists
+        // (a no-op on a monitor at the system DPI) and after each DPI change.
+        ApplySidebarWidth();
+        HandleCreated += (_, _) => ApplySidebarWidth();
+        sidebar.DpiChangedAfterParent += (_, _) => ApplySidebarWidth();
         sidebarSplitter = new Splitter
         {
             Dock = DockStyle.Left, Width = 6, MinSize = 140, MinExtra = 300,
@@ -343,7 +348,7 @@ public sealed partial class MainForm : Form, IMessageFilter
         sidebarSplitter.SplitterMoved += (_, _) =>
         {
             sidebarWidth = Math.Clamp((int)Math.Round(sidebar.Width * 96d / DeviceDpi), 140, 480);
-            sidebar.Width = (int)Math.Round(sidebarWidth * DeviceDpi / 96d);
+            ApplySidebarWidth();
             UpdateMinimumSize();
             ScheduleSave();
         };
@@ -1901,10 +1906,12 @@ public sealed partial class MainForm : Form, IMessageFilter
     internal void SetSidebarWidth(int width)
     {
         sidebarWidth = Math.Clamp(width, 140, 480);
-        sidebar.Width = (int)Math.Round(sidebarWidth * DeviceDpi / 96d);
+        ApplySidebarWidth();
         UpdateMinimumSize();
         ScheduleSave();
     }
+
+    private void ApplySidebarWidth() => sidebar.Width = (int)Math.Round(sidebarWidth * DeviceDpi / 96d);
 
     internal void SetSidebarVisible(bool visible)
     {

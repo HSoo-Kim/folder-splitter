@@ -20,7 +20,7 @@ internal static partial class Program
         SessionStore.Save(session, new SessionState
         {
             Layout = 1, Language = "en", ExplorerFavoritesImported = true, CheckUpdates = false, AutoRestartMemory = 0,
-            WindowWidth = 900, WindowHeight = 600, Panes = [new PaneState { Tabs = [folder] }]
+            WindowWidth = 900, WindowHeight = 600, SidebarWidth = 166, Panes = [new PaneState { Tabs = [folder] }]
         });
         using var form = new MainForm(session, []);
         form.Shown += async (_, _) =>
@@ -28,6 +28,10 @@ internal static partial class Program
             try
             {
                 var context = form.ApplicationContext;
+                var sidebarSplitter = Descendants(form).OfType<Splitter>().Single(s => s.AccessibleName == "Resize quick access");
+                bool SidebarAtScale() => sidebarSplitter.Left == (int)Math.Round(166 * form.DeviceDpi / 96d);
+                Console.WriteLine($"SIDEBAR_START dpi={form.DeviceDpi} system={context.SystemDpi} splitter_left={sidebarSplitter.Left}");
+                Check(SidebarAtScale(), "a saved sidebar width opens at the window's scaling");
                 var launches = new List<IReadOnlyList<string>>();
                 form.RestartLauncher = arguments => { launches.Add(arguments); return false; };
                 int scale = context.SystemDpi;
@@ -76,9 +80,12 @@ internal static partial class Program
                     await MoveTo(other);
                     Check(form.DeviceDpi != formDpi && !await Launched(4),
                         "moving a window to a monitor with other scaling does not restart while the session scaling is unchanged");
+                    Console.WriteLine($"SIDEBAR_MOVED dpi={form.DeviceDpi} splitter_left={sidebarSplitter.Left}");
+                    Check(SidebarAtScale(), "the sidebar keeps its saved width at the other monitor's scaling");
                     scale = context.SystemDpi * 2;
                     await MoveTo(home);
                     Check(await Launched(5) && launches.Count == 1, "a window's own DPI change also checks the session scaling");
+                    Check(SidebarAtScale(), "the sidebar returns to its saved width at the first monitor's scaling");
                 }
             }
             catch (Exception ex) { failures++; Console.Error.WriteLine("FAIL " + ex); }

@@ -272,6 +272,8 @@ internal static partial class Program
 
     private static async Task TgNamedPins(MainForm form, ExplorerPane pane, string[] paths)
     {
+        // The natural-width checks need an ample strip: the default 220-DIP sidebar takes 275 px at 125%.
+        form.SetSidebarVisible(false);
         string[] named = paths.Take(6).ToArray();
         pane.ReplaceTabs(new PaneState { Tabs = named.ToList(), PinnedCount = 2 });
         var pins = pane.Tabs.Take(2).ToArray();
@@ -361,6 +363,7 @@ internal static partial class Program
         }
         finally { pane.Dock = dock; pane.Bounds = bounds; form.PerformLayout(); }
         TgResetForm(form);
+        form.SetSidebarVisible(true);
     }
 
     private static void TgPinMouse(ExplorerPane pane, FolderTabButton button, bool action, bool hoverOnly = false)
