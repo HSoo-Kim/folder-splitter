@@ -543,7 +543,7 @@ public sealed partial class MainForm : Form, IMessageFilter
             PositionGlobalToolbarOverlay();
         };
         Deactivate += (_, _) => { if (!globalToolbarPinned) HideGlobalToolbarOverlay(); };
-        DpiChanged += (_, _) => { RefreshGlobalToolbar(); UpdateMinimumSize(); };
+        DpiChanged += (_, _) => { RefreshGlobalToolbar(); UpdateMinimumSize(); application.DisplayChanged(); };
         Resize += (_, _) => updateProgressBar.RefreshAnimation();
         showSidebar = initialState.ShowSidebar;
         sidebar.Visible = initialState.ShowSidebar;
@@ -2894,6 +2894,9 @@ public sealed partial class MainForm : Form, IMessageFilter
     [DllImport("user32.dll")]
     private static extern bool ReleaseCapture();
 
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowEnabled(nint window);
+
     // Memory inside Windows' hosted file list grows with every folder visited and is only returned when the
     // process ends. Once it grew past the chosen amount, restart quietly while the window is out of the way.
     internal static bool ShouldRestartForMemory(long growth, int thresholdMb, TimeSpan uptime, bool unobtrusive) =>
@@ -3130,9 +3133,11 @@ public sealed partial class MainForm : Form, IMessageFilter
     }
 
     internal string ActiveFolder => Active.CurrentPath;
-    internal bool IsUnobtrusive => (!Visible || WindowState == FormWindowState.Minimized)
-        && previewWindows.Count == 0 && !tabDragging && columnDrag is null
-        && OwnedForms.All(form => !form.Visible);
+    internal bool IsUnobtrusive => (!Visible || WindowState == FormWindowState.Minimized) && previewWindows.Count == 0 && !IsInteracting;
+
+    // A drag, an open dialog, or a native modal box (which disables this window) is under way.
+    internal bool IsInteracting => tabDragging || columnDrag is not null || OwnedForms.Any(form => form.Visible)
+        || (IsHandleCreated && !IsWindowEnabled(Handle));
 
     internal BrowserWindowState CaptureWindowState()
     {

@@ -266,6 +266,12 @@ internal static partial class Program
                 Console.WriteLine($"FOLDER_OPEN_RESULT checks={checks} failures={failures}");
                 return failures == 0 ? 0 : 1;
             }
+            if (args is ["--display-scale"])
+            {
+                RunDisplayScaleScenario(root);
+                Console.WriteLine($"DISPLAY_SCALE_RESULT checks={checks} failures={failures}");
+                return failures == 0 ? 0 : 1;
+            }
             if (args is ["--native-open-selection"])
             {
                 RunNativeOpenSelectionScenario(root);
@@ -444,6 +450,7 @@ internal static partial class Program
             RunOpenInTabScenario(root);
             RunNativeFolderTabMenuScenario(root);
             RunFolderOpenScenario(root);
+            RunDisplayScaleScenario(root);
             RunFavoriteDropScenario(root);
             RunRenameScenario(root);
             RunNativeShortcutMenuScenario(root);

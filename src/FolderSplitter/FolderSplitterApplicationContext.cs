@@ -109,6 +109,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
         saveTimer.Tick += (_, _) => SaveSession();
         updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
         memoryTimer.Tick += (_, _) => CheckMemory();
+        InitializeDisplayScale();
         ApplyPalette();
         Theme.EndTransition();
         if (createWindows)
@@ -883,6 +884,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
             saveTimer.Dispose();
             updateTimer.Dispose();
             memoryTimer.Dispose();
+            displayTimer.Dispose();
             receiver.Dispose();
             trayIcon.Visible = false;
             trayIcon.ContextMenuStrip?.Dispose();
@@ -909,6 +911,7 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
             this.application = application;
             this.activationMessage = activationMessage;
             CreateHandle(new CreateParams { Caption = FolderHandoff.ReceiverTitle(application.SessionPath), ExStyle = 0x80 });
+            WTSRegisterSessionNotification(Handle, 0); // NOTIFY_FOR_THIS_SESSION
         }
         internal void PostOpenFolders() => PostMessage(Handle, OpenFoldersMessage, 0, 0);
         internal void SetHotkey(bool enabled)
@@ -933,11 +936,16 @@ public sealed partial class FolderSplitterApplicationContext : ApplicationContex
                 return;
             }
             if (m.Msg == OpenFoldersMessage) { application.OpenLaunchedFolders(); return; }
+            // Connecting from another computer, or returning to this one, can change the display scaling.
+            if (m.Msg == 0x007E || (m.Msg == 0x02B1 && (int)m.WParam is 1 or 3)) // WM_DISPLAYCHANGE; WTS_CONSOLE/REMOTE_CONNECT
+                application.DisplayChanged();
             base.WndProc(ref m);
         }
-        public void Dispose() { UnregisterHotKey(Handle, HotkeyId); DestroyHandle(); }
+        public void Dispose() { UnregisterHotKey(Handle, HotkeyId); WTSUnRegisterSessionNotification(Handle); DestroyHandle(); }
         [DllImport("user32.dll")] private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
         [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint window, int id);
         [DllImport("user32.dll")] private static extern bool PostMessage(nint window, int message, nint wParam, nint lParam);
+        [DllImport("wtsapi32.dll")] private static extern bool WTSRegisterSessionNotification(nint window, uint flags);
+        [DllImport("wtsapi32.dll")] private static extern bool WTSUnRegisterSessionNotification(nint window);
     }
 }
